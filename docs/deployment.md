@@ -2,7 +2,11 @@
 
 CI runs on pull requests and main pushes. It installs the lockfile, checks TypeScript, runs offline unit/provider tests and builds `dist/`. The seven-day `personal-radio-web` artifact contains only the frontend. No real provider calls or secrets are needed. Actions are pinned to commit SHAs, workflow permissions are read-only, and Dependabot proposes updates.
 
-No public deployment is enabled. Repository visibility does not authorize exposing personal profiles, paid provider endpoints or ASK. No Azure resources, billing or accounts are created by this prototype.
+The user authorized public GitHub Pages hosting for the audio-only prototype. After successful tests and build on main, CI packages the same dist/ directory and deploys it to Pages. Pull requests never deploy. Deployment has job-scoped pages/id-token permissions and uses the github-pages environment; no personal token is required. No Azure resources, billing, provider endpoints or credentials are exposed.
+
+One-time repository setting: Settings → Pages → Build and deployment → Source: GitHub Actions. If not enabled, the deployment job will fail; enable this setting, then rerun the failed job. Expected address: https://heimberg.github.io/personal-radio/ (only live after successful deployment).
+
+This authorization covers the local audio demo only. The later personalized application and paid backend still require private access control. The demo stores preferences on the visitor's device and does not upload local audio files.
 
 ## Target once hosting is selected
 
