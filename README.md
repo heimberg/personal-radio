@@ -29,11 +29,12 @@ npm run build
 - Bounded playback event log; downloadable JSON with browser information but no filenames/profile.
 - Device-local preference storage with corrupt-storage fallback; not yet connected to content selection.
 - Server-only ASK and Mistral adapters with mocked contract tests, timeouts and segment limits.
+- Server-side segment orchestration foundation: required verifier port, source/script limits, per-process daily TTS character budget, concurrency bound and in-flight duplicate coalescing. Not exposed to the app; budget is not durable or cross-instance.
 - GitHub Actions type checks, tests, build and a downloadable web build artifact.
 
 ## Not included yet
 
-Server routes, private app login, source ingestion, editorial verification, persistent jobs/database, real provider calls, adaptive learning, hosted deployment, PWA/service worker and native Android playback. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
+Server routes, private app login, source ingestion, a substantive editorial verifier, persistent budgets/jobs/database, live provider calls, adaptive learning, hosted deployment, PWA/service worker and native Android playback. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
 
 ## Next decisions
 
