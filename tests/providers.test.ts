@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskTextGenerator, MistralSpeechSynthesizer } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, MistralSpeechSynthesizer } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -34,6 +34,19 @@ test('ASK rejects insecure endpoint and missing sources before request', async (
   assert.throws(() => new AskTextGenerator({ baseUrl: 'http://ask.example', key: 'test', model: 'test' }));
   const ask = new AskTextGenerator({ baseUrl: 'https://ask.example', key: 'test', model: 'test' }, async () => { throw new Error('must not call'); });
   await assert.rejects(ask.generate(defaultProfile, []), /sources missing/);
+});
+test('ASK verifier approves only direct quotes from cited source excerpts', async () => {
+  const verifier = new AskEditorialVerifier({ baseUrl: 'https://ask.example/api/v1', key: 'test', model: 'test' }, async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.temperature, 0);
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ approved: true,
+      checks: [{ claim: 'Ein Test', sourceIds: ['s1'], quote: 'Ein Test.', supported: true }], reasons: [] }) } }] });
+  });
+  assert.equal((await verifier.verify({ title: 'News', text: 'Ein Test.', sourceIds: ['s1'] }, sources)).approved, true);
+  const forged = new AskEditorialVerifier({ baseUrl: 'https://ask.example/api/v1', key: 'test', model: 'test' }, async () =>
+    Response.json({ choices: [{ message: { content: JSON.stringify({ approved: true,
+      checks: [{ claim: 'Behauptung', sourceIds: ['s1'], quote: 'Das steht hier nicht.', supported: true }], reasons: [] }) } }] }));
+  assert.equal((await forged.verify({ title: 'News', text: 'Behauptung.', sourceIds: ['s1'] }, sources)).approved, false);
 });
 test('Mistral decodes audio_data and sends voice and model', async () => {
   const tts = new MistralSpeechSynthesizer({ key: 'test', voiceId: 'voice-test' }, async (url, init) => {

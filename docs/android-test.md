@@ -1,6 +1,6 @@
 # Android playback acceptance test
 
-Status: NOT RUN on a physical Android device. Desktop automation cannot pass this gate.
+Status: User confirmed that screen-off playback works on their Android device. Device/browser details and individual test durations were not recorded; remaining rows below are still pending. Desktop automation cannot pass this gate.
 
 Record device, Android/browser versions, installed/browser mode, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
 

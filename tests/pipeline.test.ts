@@ -65,11 +65,11 @@ test('same concurrent idempotency key cannot be reused for another payload', asy
   release(); await a;
 });
 
-test('character budget is per owner, uses Unicode code points and rolls by day', () => {
+test('character budget is per owner, uses Unicode code points and rolls by day', async () => {
   let now = new Date('2026-09-25T23:59:00Z'); const budget = new CharacterBudget(3, () => now);
-  budget.reserve('one', 2); budget.reserve('two', 3);
-  assert.throws(() => budget.reserve('one', 2), error => error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED');
-  now = new Date('2026-09-26T00:01:00Z'); budget.reserve('one', 3);
+  await budget.reserve('one', 2); await budget.reserve('two', 3);
+  await assert.rejects(budget.reserve('one', 2), error => error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED');
+  now = new Date('2026-09-26T00:01:00Z'); await budget.reserve('one', 3);
 });
 
 test('daily budget is charged before TTS and a failed call cannot bypass it', async () => {

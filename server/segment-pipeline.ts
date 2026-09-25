@@ -1,11 +1,11 @@
 // Server-only orchestration. Invoke only after authenticating the owner.
-import { createHash } from 'node:crypto';
 import { parseProfile, parseScript } from '../src/domain/program.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer } from '../src/domain/program.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 export interface EditorialVerifier { verify(script: Script, sources: Source[]): Promise<EditorialDecision> }
 export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg'; ttsCharacters: number }
+export interface CharacterBudgetStore { reserve(ownerId: string, characters: number): Promise<void> }
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
@@ -34,7 +34,7 @@ function validateSources(sources: Source[]) {
 }
 
 /** Hard cap per individual segment, before any paid provider call. */
-export class CharacterBudget {
+export class CharacterBudget implements CharacterBudgetStore {
   private spent = new Map<string, { day: string; used: number }>();
   readonly maxCharactersPerOwnerPerDay: number;
   private readonly now: () => Date;
@@ -43,7 +43,7 @@ export class CharacterBudget {
     this.now = now;
     if (!Number.isSafeInteger(maxCharactersPerOwnerPerDay) || maxCharactersPerOwnerPerDay < 1) throw new Error('Invalid character budget');
   }
-  reserve(ownerId: string, characters: number) {
+  async reserve(ownerId: string, characters: number) {
     if (!ownerId || !Number.isSafeInteger(characters) || characters < 1) throw new PipelineError('INVALID_INPUT');
     const day = this.now().toISOString().slice(0, 10), current = this.spent.get(ownerId);
     const used = current?.day === day ? current.used : 0;
@@ -58,13 +58,13 @@ export class SegmentPipeline {
   private readonly text: TextGenerator;
   private readonly speech: SpeechSynthesizer;
   private readonly verifier: EditorialVerifier;
-  private readonly budget: CharacterBudget;
+  private readonly budget: CharacterBudgetStore;
   private readonly maxConcurrent: number;
   constructor(
     text: TextGenerator,
     speech: SpeechSynthesizer,
     verifier: EditorialVerifier,
-    budget: CharacterBudget,
+    budget: CharacterBudgetStore,
     maxConcurrent = 4,
   ) {
     this.text = text; this.speech = speech; this.verifier = verifier;
@@ -75,7 +75,7 @@ export class SegmentPipeline {
     if (!ownerId || !/^[a-zA-Z0-9_-]{12,100}$/.test(idempotencyKey)) return Promise.reject(new PipelineError('INVALID_INPUT'));
     try { validateSources(sources); } catch (error) { return Promise.reject(error); }
     const safeProfile = parseProfile(profile);
-    const fingerprint = createHash('sha256').update(JSON.stringify({ profile: safeProfile, sources })).digest('hex');
+    const fingerprint = JSON.stringify({ profile: safeProfile, sources });
     const key = `${ownerId}:${idempotencyKey}`;
     const existing = this.active.get(key);
     if (existing) {
@@ -97,7 +97,7 @@ export class SegmentPipeline {
     catch { throw new PipelineError('REJECTED'); }
     if (!decision.approved) throw new PipelineError('REJECTED');
     const characters = [...script.text].length;
-    this.budget.reserve(ownerId, characters);
+    await this.budget.reserve(ownerId, characters);
     const audio = await this.speech.synthesize(script.text);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 12_000_000) throw new PipelineError('INVALID_INPUT');
     return { script, audio, contentType: 'audio/mpeg', ttsCharacters: characters };

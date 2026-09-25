@@ -17,6 +17,6 @@ This authorization covers the local audio demo only. The later personalized appl
 5. Run the editorial API/worker separately from the static frontend. Set ASK and Mistral credentials in server secrets; no VITE_ secrets.
 6. Apply API authentication, rate limits and actual generation budget enforcement before enabling paid operations.
 
-Azure Static Web Apps is an option, not yet a provisioned dependency. Choose its authentication/access-control plan and worker hosting after checking ASK reachability. If public hosting is chosen for this audio-only demo, explicitly agree that separately from private production. PWA installability, caching and update behavior come later.
+The private Worker target is now Cloudflare Workers + D1 + Cloudflare Access; see [cloudflare-deployment.md](cloudflare-deployment.md). It is not provisioned or deployed yet. The Pages app remains the approved public audio-only demo. PWA installability, caching and update behavior come later.
 
 Before merging, inspect CI. GitHub may require a repository owner's approval or workflow permission changes for initial runs. Branch protection is not set by this commit; configure required CI checks and review once the workflow exists. Never bypass failed checks to deploy.
