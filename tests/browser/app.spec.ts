@@ -63,7 +63,7 @@ test('source form sends selected profile to private API and plays returned segme
   await page.getByLabel('Kurzer Textauszug').fill('Ein überprüfbarer Auszug der Nachricht.');
   await page.getByRole('button', { name: 'Beitrag erstellen und abspielen' }).click();
   await expect(page.getByRole('heading', { name: 'Ein eingeordneter Beitrag' })).toBeVisible();
-  await expect(page.getByText('ASK · Mistral · Quelle user-source-1')).toBeVisible();
+  await expect(page.locator('.queue').getByText('ASK · Mistral · Quelle user-source-1')).toBeVisible();
   expect(submitted.profile.topics).toContain('Kultur');
   expect(submitted.sources[0]).toMatchObject({ title: 'Aktuelle Meldung', url: 'https://news.example.test/article', excerpt: 'Ein überprüfbarer Auszug der Nachricht.' });
 });
