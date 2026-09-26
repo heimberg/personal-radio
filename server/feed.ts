@@ -17,7 +17,7 @@ export class FeedError extends Error {
 const MAX_BYTES = 512_000;
 const MAX_ITEMS = 20;
 
-function validateFeedUrl(input: unknown): URL {
+export function validateFeedUrl(input: unknown): URL {
   if (typeof input !== 'string' || input.length > 2048) throw new FeedError('INVALID_FEED_URL');
   let url: URL;
   try { url = new URL(input); } catch { throw new FeedError('INVALID_FEED_URL'); }

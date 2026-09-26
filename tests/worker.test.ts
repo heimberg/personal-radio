@@ -9,10 +9,11 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
   const team = 'personal-radio-test.cloudflareaccess.com', aud = 'test-audience';
   const token = await new SignJWT({ email: 'owner@example.test', type: 'app' }).setProtectedHeader({ alg: 'RS256', kid: 'worker-test-key' })
     .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
-  const originalFetch = globalThis.fetch; let askCalls = 0, ttsCalls = 0, requestsUsed = 0, charactersUsed = 0;
+  const originalFetch = globalThis.fetch; let askCalls = 0, ttsCalls = 0, requestsUsed = 0, charactersUsed = 0, feedRequestsUsed = 0;
   globalThis.fetch = async input => {
     const url = String(input);
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
+    if (url === 'https://news.example.test/feed.xml') return new Response('<rss><item><title>News</title><link>https://news.example.test/article</link><description>Short summary</description></item></rss>', { headers: { 'Content-Type': 'application/rss+xml' } });
     if (url.endsWith('/chat/completions')) {
       askCalls++;
       return Response.json({ choices: [{ message: { content: JSON.stringify(askCalls === 1
@@ -28,6 +29,9 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
       if (sql.includes('daily_requests')) {
         const limit = Number(values[2]); if (requestsUsed >= limit) return null; requestsUsed++; return { requests: requestsUsed };
       }
+      if (sql.includes('daily_feed_requests')) {
+        const limit = Number(values[2]); if (feedRequestsUsed >= limit) return null; feedRequestsUsed++; return { requests: feedRequestsUsed };
+      }
       if (sql.includes('daily_usage')) {
         const amount = Number(values[2]), limit = Number(values[3]); if (charactersUsed + amount > limit) return null;
         charactersUsed += amount; return { characters: charactersUsed };
@@ -37,7 +41,7 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     return statement;
   } };
   const env = { DB: db, ASSETS: { fetch: async () => new Response('app') }, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud,
-    ALLOWED_EMAIL: 'owner@example.test', DAILY_GENERATIONS: '1', DAILY_TTS_CHARACTERS: '12000',
+    ALLOWED_EMAIL: 'owner@example.test', DAILY_GENERATIONS: '1', DAILY_FEED_REQUESTS: '1', DAILY_TTS_CHARACTERS: '12000',
     ASK_BASE_URL: 'https://ask.example/api/v1', ASK_API_KEY: 'ask-secret', ASK_MODEL: 'test', MISTRAL_API_KEY: 'mistral-secret', MISTRAL_VOICE_ID: 'voice' };
   try {
     const makeRequest = (key: string) => new Request('https://private.example/api/segments', { method: 'POST',
@@ -49,12 +53,26 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     const foreignHeaders = new Headers(foreign.headers); foreignHeaders.set('Origin', 'https://attacker.example');
     assert.equal((await worker.fetch(new Request(foreign, { headers: foreignHeaders }), env as never)).status, 403);
     assert.equal(requestsUsed, 0); assert.equal(askCalls, 0);
+    const podcastWithoutGemini = makeRequest('request-key-no-gemini');
+    const podcastBody = await podcastWithoutGemini.json() as Record<string, unknown>;
+    podcastBody.mode = 'podcast';
+    const unavailable = new Request('https://private.example/api/segments', { method: 'POST', headers: new Headers(podcastWithoutGemini.headers), body: JSON.stringify({ ...podcastBody, mode: 'podcast' }) });
+    assert.equal((await worker.fetch(unavailable, env as never)).status, 503);
+    assert.equal(requestsUsed, 0); assert.equal(askCalls, 0);
     const response = await worker.fetch(makeRequest('request-key-0001'), env as never);
     assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'audio/mpeg');
     assert.equal(new TextDecoder().decode(await response.arrayBuffer()), 'ID3');
     assert.equal(askCalls, 2); assert.equal(ttsCalls, 1); assert.equal(requestsUsed, 1); assert.equal(charactersUsed, 9);
     const limited = await worker.fetch(makeRequest('request-key-0002'), env as never);
     assert.equal(limited.status, 429); assert.equal(askCalls, 2);
+    const feedRequest = () => new Request('https://private.example/api/feed-items', { method: 'POST',
+      headers: { Origin: 'https://private.example', 'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': token },
+      body: JSON.stringify({ url: 'https://news.example.test/feed.xml' }) });
+    const feedResponse = await worker.fetch(feedRequest(), env as never);
+    assert.equal(feedResponse.status, 200);
+    assert.equal((await feedResponse.json() as { items: unknown[] }).items.length, 1);
+    assert.equal((await worker.fetch(feedRequest(), env as never)).status, 429);
+    assert.equal(feedRequestsUsed, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
 

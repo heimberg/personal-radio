@@ -1,4 +1,4 @@
-export interface Track { id: string; title: string; url: string; kind: string }
+export interface Track { id: string; title: string; url: string; kind: string; interests?: string[]; feedbackId?: string }
 export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'ended' | 'error';
 export interface PlayerState {
   status: PlayerStatus; index: number; position: number; duration: number;
@@ -9,6 +9,7 @@ export interface AudioPort extends EventTarget {
   play(): Promise<void>; pause(): void; load(): void; removeAttribute(name: string): void;
 }
 export interface LogEntry { at: string; event: string; track: number; detail?: string }
+export interface PlaybackSignal { action: 'skip' | 'complete'; track: Track; listenedRatio: number }
 
 // One audio element owns playback. UI rerenders never recreate the player.
 export class RadioPlayer {
@@ -17,6 +18,7 @@ export class RadioPlayer {
   state: PlayerState = { status: 'idle', index: 0, position: 0, duration: 0, completed: 0, repeat: true, error: '' };
   logs: LogEntry[] = [];
   private listeners = new Set<() => void>();
+  private signalListeners = new Set<(signal: PlaybackSignal) => void>();
   private generation = 0;
   private wantsPlayback = false;
 
@@ -38,6 +40,8 @@ export class RadioPlayer {
       if (this.wantsPlayback) { this.update({ status: 'buffering' }); this.log('buffering'); }
     });
     audio.addEventListener('ended', () => {
+      const track = this.tracks[this.state.index];
+      if (track) this.emitSignal({ action: 'complete', track, listenedRatio: 1 });
       this.wantsPlayback = false;
       this.update({ completed: this.state.completed + 1 }); this.log('ended');
       if (this.state.index + 1 < this.tracks.length) void this.start(this.state.index + 1);
@@ -51,6 +55,8 @@ export class RadioPlayer {
     });
   }
   subscribe = (callback: () => void) => { this.listeners.add(callback); return () => { this.listeners.delete(callback); }; };
+  subscribeSignals = (callback: (signal: PlaybackSignal) => void) => { this.signalListeners.add(callback); return () => { this.signalListeners.delete(callback); }; };
+  private emitSignal(signal: PlaybackSignal) { this.signalListeners.forEach(fn => fn(signal)); }
   snapshot = () => this.state;
   private update(patch: Partial<PlayerState>) {
     this.state = { ...this.state, ...patch }; this.listeners.forEach(fn => fn());
@@ -86,7 +92,13 @@ export class RadioPlayer {
     }
   }
   pause() { ++this.generation; this.wantsPlayback = false; this.audio.pause(); this.update({ status: 'paused' }); this.log('pause'); }
-  next() { if (this.tracks.length) return this.start((this.state.index + 1) % this.tracks.length); }
+  next() {
+    if (!this.tracks.length) return;
+    const track = this.tracks[this.state.index];
+    const ratio = this.state.duration > 0 ? Math.min(1, this.state.position / this.state.duration) : 0;
+    if (track) this.emitSignal({ action: 'skip', track, listenedRatio: ratio });
+    return this.start((this.state.index + 1) % this.tracks.length);
+  }
   previous() { if (this.tracks.length) return this.start(Math.max(0, this.state.index - 1)); }
   repeat(value: boolean) { this.update({ repeat: value }); }
   seek(seconds: number) {

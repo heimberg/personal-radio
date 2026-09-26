@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, MistralSpeechSynthesizer } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -12,9 +12,36 @@ test('script rejects missing sources and empty text', () => {
 });
 test('corrupt profile is bounded and unknown topics removed', () => {
   assert.deepEqual(parseProfile({ topics: ['Wissenschaft', 'Wissenschaft', 'bad'], speechMinutes: 999, exploration: -10 }), {
-    topics: ['Wissenschaft'], speechMinutes: 10, exploration: 0,
+    topics: ['Wissenschaft'], interests: [], interestWeights: {}, speechMinutes: 10, exploration: 0,
   });
   assert.equal(parseProfile({ speechMinutes: NaN }).speechMinutes, 3);
+});
+test('Gemini creates a validated, source-cited two-host script from the official generation endpoint', async () => {
+  const generator = new GeminiPodcastGenerator({ key: 'test-key' }, async (url, init) => {
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
+    assert.equal(new Headers(init?.headers).get('x-goog-api-key'), 'test-key');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.generationConfig.responseMimeType, 'application/json');
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: 'Zwei Hosts', turns: [
+      { speaker: 'host-a', text: 'Erste Aussage.' }, { speaker: 'host-b', text: 'Zweite Aussage.' },
+    ], sourceIds: ['s1'], interestTags: ['Geschichte'] }) }] } }] });
+  });
+  const result = await generator.generate({ ...defaultProfile, interests: ['Geschichte'] }, sources);
+  assert.equal(result.text, 'Erste Aussage. Zweite Aussage.');
+  assert.equal(result.turns?.[1]?.speaker, 'host-b');
+});
+test('Gemini TTS sends two configured voices and accepts only WAV audio', async () => {
+  const wav = Buffer.alloc(48); wav.write('RIFF', 0); wav.write('WAVE', 8);
+  const synth = new GeminiPodcastSpeechSynthesizer({ key: 'test-key', voiceA: 'Kore', voiceB: 'Puck' }, async (url, init) => {
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.generation_config.speech_config.mode, 'conversational');
+    assert.deepEqual(body.generation_config.speech_config.speakers.map((speaker: any) => speaker.voice), ['Kore', 'Puck']);
+    assert.deepEqual(body.input[0].content.map((turn: any) => turn.annotations[0].speaker), ['host-a', 'host-b']);
+    return Response.json({ steps: [{ type: 'model_output', content: [{ type: 'audio', data: wav.toString('base64') }] }] });
+  });
+  const result = await synth.synthesize('A B', [{ speaker: 'host-a', text: 'A' }, { speaker: 'host-b', text: 'B' }]);
+  assert.equal(Buffer.from(result).toString('ascii', 0, 4), 'RIFF');
 });
 test('ASK keeps source text in data and uses configured endpoint', async () => {
   const ask = new AskTextGenerator({ baseUrl: 'https://ask.example/api/v1/', key: 'test-only', model: 'test-model' }, async (url, init) => {

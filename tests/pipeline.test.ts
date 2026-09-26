@@ -4,7 +4,7 @@ import { CharacterBudget, PipelineError, SegmentPipeline } from '../server/segme
 import type { EditorialVerifier } from '../server/segment-pipeline.ts';
 import type { Profile, Source, TextGenerator, SpeechSynthesizer } from '../src/domain/program.ts';
 
-const profile: Profile = { topics: ['Wissenschaft'], speechMinutes: 2, exploration: 10 };
+const profile: Profile = { topics: ['Wissenschaft'], interests: ['Geschichte'], interestWeights: {}, speechMinutes: 2, exploration: 10 };
 const sources: Source[] = [{ id: 'src-1', url: 'https://news.example.org/item', title: 'Eine Meldung',
   publishedAt: '2026-09-25T10:00:00Z', retrievedAt: '2026-09-25T10:05:00Z', excerpt: 'Belegbarer Quellenauszug.' }];
 const key = 'request-key-0001';
@@ -27,6 +27,22 @@ test('approved script is checked before speech and returned with citations', asy
   assert.equal(result.script.title, 'Einordnung'); assert.deepEqual(result.script.sourceIds, ['src-1']);
   assert.equal(result.contentType, 'audio/mpeg'); assert.equal(result.ttsCharacters, 26);
   assert.deepEqual(f.counts(), { textCalls: 1, verifyCalls: 1, ttsCalls: 1 });
+});
+
+test('podcast mode uses the Gemini two-host path while retaining ASK evidence review', async () => {
+  let podcastTextCalls = 0, podcastSpeechCalls = 0;
+  const wav = new Uint8Array(48); wav.set(new TextEncoder().encode('RIFF'), 0); wav.set(new TextEncoder().encode('WAVE'), 8);
+  const generator: TextGenerator = { generate: async () => { podcastTextCalls++; return {
+    title: 'Dialog', text: 'Hallo. Welt.', sourceIds: ['src-1'], interestTags: ['Geschichte'],
+    turns: [{ speaker: 'host-a', text: 'Hallo.' }, { speaker: 'host-b', text: 'Welt.' }],
+  }; } };
+  const speech: SpeechSynthesizer = { synthesize: async (_text, turns) => { podcastSpeechCalls++; assert.equal(turns?.length, 2); return wav; } };
+  const verifier: EditorialVerifier = { verify: async script => ({ approved: script.sourceIds.includes('src-1'), reasons: [] }) };
+  const pipeline = new SegmentPipeline({ generate: async () => { throw new Error('ASK short path must not run'); } },
+    { synthesize: async () => { throw new Error('Mistral path must not run'); } }, verifier, new CharacterBudget(), 4, { text: generator, speech });
+  const result = await pipeline.prepare('user-123', key, profile, sources, 'podcast');
+  assert.equal(result.mode, 'podcast'); assert.equal(result.contentType, 'audio/wav'); assert.equal(result.script.turns?.length, 2);
+  assert.deepEqual([podcastTextCalls, podcastSpeechCalls], [1, 1]);
 });
 
 test('unapproved or malformed citation never reaches TTS', async () => {
@@ -83,7 +99,7 @@ test('daily budget is charged before TTS and a failed call cannot bypass it', as
 });
 
 test('script budget and concurrency have hard bounds', async () => {
-  const long = fixture({ text: 'x'.repeat(6001) });
+  const long = fixture({ text: 'x'.repeat(12_001) });
   await assert.rejects(long.pipeline.prepare('user-123', key, profile, sources), /Skript oder Quellenverweise ungültig/);
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
   const f = fixture({ gate }); const work = Array.from({ length: 4 }, (_, i) => f.pipeline.prepare('user-123', `request-key-000${i}`, profile, sources));

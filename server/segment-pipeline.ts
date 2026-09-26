@@ -4,7 +4,8 @@ import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer } from '
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 export interface EditorialVerifier { verify(script: Script, sources: Source[]): Promise<EditorialDecision> }
-export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg'; ttsCharacters: number }
+export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number; mode: 'brief' | 'podcast' }
+export interface PodcastProviders { text: TextGenerator; speech: SpeechSynthesizer }
 export interface CharacterBudgetStore { reserve(ownerId: string, characters: number): Promise<void> }
 
 export class PipelineError extends Error {
@@ -60,22 +61,25 @@ export class SegmentPipeline {
   private readonly verifier: EditorialVerifier;
   private readonly budget: CharacterBudgetStore;
   private readonly maxConcurrent: number;
+  private readonly podcast?: PodcastProviders;
   constructor(
     text: TextGenerator,
     speech: SpeechSynthesizer,
     verifier: EditorialVerifier,
     budget: CharacterBudgetStore,
     maxConcurrent = 4,
+    podcast?: PodcastProviders,
   ) {
     this.text = text; this.speech = speech; this.verifier = verifier;
-    this.budget = budget; this.maxConcurrent = maxConcurrent;
+    this.budget = budget; this.maxConcurrent = maxConcurrent; this.podcast = podcast;
   }
 
-  prepare(ownerId: string, idempotencyKey: string, profile: Profile, sources: Source[]): Promise<PreparedSegment> {
+  prepare(ownerId: string, idempotencyKey: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast' = 'brief'): Promise<PreparedSegment> {
     if (!ownerId || !/^[a-zA-Z0-9_-]{12,100}$/.test(idempotencyKey)) return Promise.reject(new PipelineError('INVALID_INPUT'));
     try { validateSources(sources); } catch (error) { return Promise.reject(error); }
     const safeProfile = parseProfile(profile);
-    const fingerprint = JSON.stringify({ profile: safeProfile, sources });
+    if (mode !== 'brief' && mode !== 'podcast' || mode === 'podcast' && !this.podcast) return Promise.reject(new PipelineError('INVALID_INPUT'));
+    const fingerprint = JSON.stringify({ profile: safeProfile, sources, mode });
     const key = `${ownerId}:${idempotencyKey}`;
     const existing = this.active.get(key);
     if (existing) {
@@ -84,22 +88,26 @@ export class SegmentPipeline {
     }
     if (this.active.size >= this.maxConcurrent) return Promise.reject(new PipelineError('TOO_MANY_REQUESTS'));
     // Remove settled entries: this coalesces concurrent retries only, not retries after completion.
-    const promise = this.run(ownerId, safeProfile, sources).finally(() => this.active.delete(key));
+    const promise = this.run(ownerId, safeProfile, sources, mode).finally(() => this.active.delete(key));
     this.active.set(key, { fingerprint, promise });
     return promise;
   }
 
-  private async run(ownerId: string, profile: Profile, sources: Source[]): Promise<PreparedSegment> {
-    const script = parseScript(await this.text.generate(profile, sources), sources);
-    if (script.text.length > 6_000 || [...script.text.trim().split(/\s+/)].length > 280) throw new PipelineError('INVALID_INPUT');
+  private async run(ownerId: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast'): Promise<PreparedSegment> {
+    const textProvider = mode === 'podcast' ? this.podcast!.text : this.text;
+    const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
+    const script = parseScript(await textProvider.generate(profile, sources), sources);
+    const allowedTags = new Set([...profile.topics, ...profile.interests]);
+    script.interestTags = script.interestTags?.filter(tag => allowedTags.has(tag)).slice(0, 30) ?? [];
+    if (script.text.length > 12_000 || [...script.text.trim().split(/\s+/)].length > 1400 || mode === 'podcast' && !script.turns) throw new PipelineError('INVALID_INPUT');
     let decision: EditorialDecision;
     try { decision = await this.verifier.verify(script, sources); }
     catch { throw new PipelineError('REJECTED'); }
     if (!decision.approved) throw new PipelineError('REJECTED');
     const characters = [...script.text].length;
     await this.budget.reserve(ownerId, characters);
-    const audio = await this.speech.synthesize(script.text);
-    if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 12_000_000) throw new PipelineError('INVALID_INPUT');
-    return { script, audio, contentType: 'audio/mpeg', ttsCharacters: characters };
+    const audio = await speechProvider.synthesize(script.text, script.turns);
+    if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
+    return { script, audio, contentType: mode === 'podcast' ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters, mode };
   }
 }

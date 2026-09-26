@@ -1,8 +1,8 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, MistralSpeechSynthesizer } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from './providers.ts';
 import type { Profile, Source } from '../src/domain/program.ts';
-import { fetchFeed, FeedError } from './feed.ts';
+import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 
 interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null> }
 interface D1Database { prepare(query: string): D1Statement }
@@ -15,11 +15,17 @@ interface Environment {
   ALLOWED_EMAIL: string;
   DAILY_TTS_CHARACTERS?: string;
   DAILY_GENERATIONS?: string;
+  DAILY_FEED_REQUESTS?: string;
   ASK_BASE_URL: string;
   ASK_API_KEY: string;
   ASK_MODEL: string;
   MISTRAL_API_KEY: string;
   MISTRAL_VOICE_ID: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_TEXT_MODEL?: string;
+  GEMINI_TTS_MODEL?: string;
+  GEMINI_VOICE_A?: string;
+  GEMINI_VOICE_B?: string;
 }
 
 class D1CharacterBudget implements CharacterBudgetStore {
@@ -47,6 +53,20 @@ class D1DailyCounter implements DailyCounter {
       VALUES (?, ?, 1) ON CONFLICT(owner_id, utc_day) DO UPDATE
       SET requests = daily_requests.requests + 1
       WHERE daily_requests.requests < ? RETURNING requests`)
+      .bind(ownerId, day, limit).first<{ requests: number }>();
+    if (!result) throw new PipelineError('BUDGET_EXCEEDED');
+  }
+}
+
+class D1FeedCounter implements DailyCounter {
+  private db: D1Database;
+  constructor(db: D1Database) { this.db = db; }
+  async reserve(ownerId: string, limit: number) {
+    const day = new Date().toISOString().slice(0, 10);
+    const result = await this.db.prepare(`INSERT INTO daily_feed_requests (owner_id, utc_day, requests)
+      VALUES (?, ?, 1) ON CONFLICT(owner_id, utc_day) DO UPDATE
+      SET requests = daily_feed_requests.requests + 1
+      WHERE daily_feed_requests.requests < ? RETURNING requests`)
       .bind(ownerId, day, limit).first<{ requests: number }>();
     if (!result) throw new PipelineError('BUDGET_EXCEEDED');
   }
@@ -97,6 +117,12 @@ export default {
         if (new TextEncoder().encode(raw).byteLength > 4096) return json({ error: 'request_too_large' }, 413);
         let body: { url?: unknown };
         try { body = JSON.parse(raw) as { url?: unknown }; } catch { return json({ error: 'invalid_json' }, 400); }
+        try { validateFeedUrl(body.url); } catch { return json({ error: 'invalid_feed_url' }, 400); }
+        try { await new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)); }
+        catch (error) {
+          if (error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED') return json({ error: 'feed_daily_limit' }, 429);
+          return json({ error: 'feed_quota_unavailable' }, 503);
+        }
         return json({ items: await fetchFeed(body.url) }, 200);
       } catch (error) {
         const status = error instanceof FeedError ? error.code === 'INVALID_FEED_URL' ? 400 : 422 : 502;
@@ -110,12 +136,15 @@ export default {
     const length = Number(request.headers.get('Content-Length') ?? 0);
     if (length > 32_768) return json({ error: 'request_too_large' }, 413);
     if (request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') return json({ error: 'json_required' }, 415);
-    let input: { profile?: Profile; sources?: Source[] };
+    let input: { profile?: Profile; sources?: Source[]; mode?: 'brief' | 'podcast' };
     try {
       const raw = await request.text();
       if (new TextEncoder().encode(raw).byteLength > 32_768) return json({ error: 'request_too_large' }, 413);
       input = JSON.parse(raw);
     } catch { return json({ error: 'invalid_json' }, 400); }
+    const mode = input.mode ?? 'brief';
+    if (mode !== 'brief' && mode !== 'podcast') return json({ error: 'invalid_mode' }, 400);
+    if (mode === 'podcast' && !env.GEMINI_API_KEY) return json({ error: 'podcast_provider_not_configured' }, 503);
     try { await new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)); }
     catch (error) {
       if (error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED') return json({ error: 'daily_generation_limit' }, 429);
@@ -130,16 +159,22 @@ export default {
           new MistralSpeechSynthesizer({ key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID }),
           new AskEditorialVerifier({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
           new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
+          4,
+          env.GEMINI_API_KEY ? {
+            text: new GeminiPodcastGenerator({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }),
+            speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }),
+          } : undefined,
         );
         pipelines.set(env.DB as object, pipeline);
       }
-      const result = await pipeline.prepare(owner, idempotencyKey, input.profile as Profile, input.sources as Source[]);
+      const result = await pipeline.prepare(owner, idempotencyKey, input.profile as Profile, input.sources as Source[], mode);
       const audioBuffer = new ArrayBuffer(result.audio.byteLength);
       new Uint8Array(audioBuffer).set(result.audio);
       return new Response(audioBuffer, { headers: {
-        'Content-Type': result.contentType, 'Cache-Control': 'no-store', 'X-TTS-Characters': String(result.ttsCharacters),
+        'Content-Type': result.contentType, 'Cache-Control': 'no-store', 'X-TTS-Characters': String(result.ttsCharacters), 'X-Audio-Mode': result.mode,
         'X-Script-Title': encodeURIComponent(result.script.title),
         'X-Script-Source-Ids': result.script.sourceIds.join(','),
+        'X-Script-Interest-Tags': (result.script.interestTags ?? []).join(','),
       } });
     } catch (error) {
       const status = statusFor(error);

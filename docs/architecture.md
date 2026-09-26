@@ -8,7 +8,7 @@ Current directories: `src/domain` holds contracts/validation, `src/audio` holds 
 
 ## Planned bounded modules
 
-Profile, sources, editorial generation, verification, speech, program scheduling, playback, feedback and operations. Adapters implement `TextGenerator` and `SpeechSynthesizer`. Later add `SourceProvider`, `MusicProvider`, repository and job-store ports only when used.
+Profile, sources, editorial generation, verification, speech, program scheduling, playback, feedback and operations. Adapters implement `TextGenerator` and `SpeechSynthesizer`. The short format is ASK → ASK evidence review → Mistral speech. The two-host podcast format is Gemini text generation → ASK evidence review → Gemini multi-speaker TTS. Keep credentials server-side and provider selection behind those interfaces. Later add `SourceProvider`, `MusicProvider`, repository and job-store ports only when used.
 
 ## Editorial pipeline
 
@@ -20,11 +20,13 @@ Store source provenance, retrieval time, prompt/model version, verification stat
 
 Prefetch only a bounded amount of audio. Expire news by freshness policy, not just cache age. If ASK/TTS fail, use still-valid prepared content with a clear status. Never invent replacement news. Each provider adapter makes one bounded request per call. `server/segment-pipeline.ts` orchestrates bounded source inputs, ASK script generation, structural citation checks, an editorial-verifier port, per-owner/day character reservation before TTS, output-size checks, concurrency bounds and in-flight idempotency. The mobile UI accepts a user-entered source or lets the user load and select one entry from an RSS/Atom feed. The verifier requires exact source quotes but cannot prove every claim is captured or that sources are truthful; automated scheduling, deduplication and preference-based feed selection remain out of scope for this slice.
 
-The current budget and in-flight coalescing are process-local. They reset on restart, do not coordinate across instances and only coalesce concurrent requests (not retries after completion). Treat this as a testable foundation, not a production cost-control or exactly-once guarantee. Persist budgets/jobs transactionally and authenticate owners before exposing a route. The private Worker can fetch a user-entered HTTPS RSS/Atom URL for a bounded list of entries: redirects are rejected, the response is capped at 500 KB, and the selected entry is only sent to ASK after an explicit generation action. Feed URL checks reject credentials, IP literals, localhost and common private hostnames; provider terms and rights still need review per feed. Feed fetching is authenticated but currently has no separate per-day quota.
+The current in-flight coalescing is process-local. It resets on restart, does not coordinate across instances and only coalesces concurrent requests (not retries after completion). Treat this as a testable foundation, not an exactly-once guarantee. Persist budgets/jobs transactionally and authenticate owners before exposing a route. The private Worker can fetch a user-entered HTTPS RSS/Atom URL for a bounded list of entries: redirects are rejected, the response is capped at 500 KB, and the selected entry is only sent to ASK after an explicit generation action. Feed URL checks reject credentials, IP literals, localhost and common private hostnames; Cloudflare Worker outbound fetches are restricted to public internet services; provider terms and rights still need review per feed. D1 enforces a separate 60-feed-request daily quota per owner.
 
 ## Learning
 
-Keep explicit preferences separate from session intent and inferred preferences. Explicit settings win. Strong signals: “more/less like this”, “already known”. Weak signal: skipped own editorial segment; an interruption must not count as dislike. Decay old inferences, expose/reset/export the learned profile and retain a user-controlled exploration fraction. Do not infer sensitive traits. No model training at MVP stage. Do not feed Spotify data into ASK or infer profiles from Spotify listening.
+Keep explicit preferences separate from session intent and inferred preferences. Explicit choices seed the content model. Strong signals: thumbs up/down. Weak signals: completing a segment is slightly positive; skipping after 20% is weak negative; a skip before 20% is ignored as likely interruption. Use a neutral prior and 45-day half-life so sparse/old evidence moves back towards neutral. Rank feed items by interest match and learned weight; epsilon-greedy exploration keeps the user-selected exploration share for alternatives. Keep this one-user system content-based and explainable; collaborative filtering has no useful population signal in a private single-user installation. Feedback history and learned weights stay on-device and can be reset. Do not infer sensitive traits. No model training at MVP stage. Do not feed Spotify data into ASK or infer profiles from Spotify listening.
+
+The feed matcher currently uses text overlap between explicit interests and each entry's title/excerpt. It then preselects the highest-ranked entry; it does not yet autonomously poll feeds or generate a continuous queue. Add semantic tagging, deduplication and freshness/diversity policy before unattended generation. Spotify and background location are separate permission-gated features.
 
 ## Android decision gate
 
@@ -42,7 +44,7 @@ Public repository, private application. The Worker validates Cloudflare Access J
 
 0. Feasibility: real Android 60-minute result; ASK endpoint/permission test; Mistral voice test; music policy decision.
 1. Foundation: responsive UI, deterministic tests/CI, private deployment with no provider secrets in browser.
-2. Vertical slice: one allowed feed → cited ASK draft → review/verification → Mistral audio → playback → feedback, with a cost ceiling.
+2. Vertical slice: one allowed feed → cited ASK short draft or Gemini two-host podcast → ASK evidence review → provider-specific speech → playback → local feedback learning, with a cost ceiling.
 3. Program: topics, variety, licensed music provider, persisted resume, buffering and job recovery.
 4. Learning: explainable feedback weights, profile review/reset, replayable evaluation set.
 5. PWA: installability, cache only authorized own audio, safe update during playback and offline messages; native fallback if required.
@@ -53,5 +55,8 @@ Public repository, private application. The Worker validates Cloudflare Access J
 - https://developer.android.com/media/media3/session/background-playback
 - https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation
 - https://docs.mistral.ai/studio/audio/text_to_speech/speech
+- https://ai.google.dev/gemini-api/docs/text-generation
+- https://ai.google.dev/gemini-api/docs/speech-generation
+- https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/podcast-api (deprecated; not used)
 
 Plan checked 2026-09-25. ASK's actual deployment contract still needs verification.

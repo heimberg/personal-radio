@@ -68,7 +68,33 @@ test('source form sends selected profile to private API and plays returned segme
   expect(submitted.sources[0]).toMatchObject({ title: 'Aktuelle Meldung', url: 'https://news.example.test/article', excerpt: 'Ein überprüfbarer Auszug der Nachricht.' });
 });
 
-test('feed URL loads entries and selecting one fills the source form', async ({ page }) => {
+test('podcast mode, explicit interests and thumbs feedback stay local and affect future profile payloads', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Mein Programm', exact: true }).click();
+  await page.getByLabel('Eigene Interessen').fill('Geologie');
+  await page.getByRole('button', { name: 'Hinzufügen' }).click();
+  await page.reload();
+  let submitted: any;
+  await page.route('**/api/segments', async route => {
+    submitted = JSON.parse(route.request().postData() ?? '{}');
+    await route.fulfill({ status: 200, contentType: 'audio/wav',
+      headers: { 'X-Script-Title': 'Ortsgeschichte', 'X-Script-Source-Ids': 'user-source-1', 'X-Script-Interest-Tags': 'Geologie' }, body: Buffer.from('RIFF') });
+  });
+  await page.getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByLabel('Beitragsstil').selectOption('podcast');
+  await page.getByLabel('Titel', { exact: true }).fill('Geologie am Ort');
+  await page.getByLabel('HTTPS-Link zur Quelle').fill('https://news.example.test/geology');
+  await page.getByLabel('Kurzer Textauszug').fill('Geologie erklärt Gestein und Landschaft.');
+  await page.getByRole('button', { name: 'Beitrag erstellen und abspielen' }).click();
+  await expect(page.locator('.queue').getByText(/Gemini · Zwei Hosts/)).toBeVisible();
+  await page.getByRole('button', { name: 'Gefällt mir' }).click();
+  await expect(page.getByText(/1 Lernsignale/)).toBeVisible();
+  expect(submitted.mode).toBe('podcast');
+  expect(submitted.profile.interests).toContain('Geologie');
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem('radio.feedback.v1') ?? '[]'))[0].action).toBe('like');
+});
+
+test('feed URL can be saved locally, restored and used to fill the source form', async ({ page }) => {
   let feedRequest: any;
   await page.route('**/api/feed-items', async route => {
     feedRequest = JSON.parse(route.request().postData() ?? '{}');
@@ -78,6 +104,11 @@ test('feed URL loads entries and selecting one fills the source form', async ({ 
   });
   await page.goto('/');
   await page.getByLabel('RSS/Atom-Feed URL').fill('https://news.example.test/rss.xml');
+  await page.getByLabel('Name des Feeds').fill('Lokal Bern');
+  await page.getByRole('button', { name: 'Speichern' }).click();
+  await expect(page.getByText('Feed wurde auf diesem Gerät gespeichert.')).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /Lokal Bern/ }).click();
   await page.getByRole('button', { name: 'Feed laden' }).click();
   await expect(page.getByRole('button', { name: /Bundesrat informiert/ })).toBeVisible();
   expect(feedRequest.url).toBe('https://news.example.test/rss.xml');
@@ -85,4 +116,22 @@ test('feed URL loads entries and selecting one fills the source form', async ({ 
   await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('Bundesrat informiert');
   await expect(page.getByLabel('HTTPS-Link zur Quelle')).toHaveValue('https://news.example.test/article/1');
   await expect(page.getByLabel('Kurzer Textauszug')).toHaveValue('Der ausgewählte Auszug.');
+});
+
+test('saved feeds are searched together and the strongest initial interest match is preselected', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('radio.profile.v1', JSON.stringify({ topics: [], interests: ['Geologie'], interestWeights: {}, speechMinutes: 3, exploration: 0 })));
+  await page.route('**/api/feed-items', async route => {
+    const { url } = JSON.parse(route.request().postData() ?? '{}');
+    const isGeo = String(url).includes('geo');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [
+      { id: isGeo ? 'geo-1' : 'tech-1', title: isGeo ? 'Geologie der Alpen' : 'Neue Smartphone-News', url: `https://news.example.test/${isGeo ? 'geology' : 'phone'}`, excerpt: isGeo ? 'Geologie und Gestein der Alpen.' : 'Ein Telefon erscheint.', publishedAt: '2026-09-25T12:00:00.000Z' },
+    ] }) });
+  });
+  await page.goto('/');
+  await page.getByLabel('RSS/Atom-Feed URL').fill('https://news.example.test/tech.xml');
+  await page.getByLabel('Name des Feeds').fill('Technik'); await page.getByRole('button', { name: 'Speichern' }).click();
+  await page.getByLabel('RSS/Atom-Feed URL').fill('https://news.example.test/geo.xml');
+  await page.getByLabel('Name des Feeds').fill('Geologie'); await page.getByRole('button', { name: 'Speichern' }).click();
+  await page.getByRole('button', { name: 'Passenden Beitrag in allen Feeds finden' }).click();
+  await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('Geologie der Alpen');
 });
