@@ -1,0 +1,14 @@
+{
+  "id": "./",
+  "name": "Personal Radio",
+  "short_name": "Radio",
+  "description": "Dein persönliches Audioprogramm",
+  "lang": "de-CH",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#111d20",
+  "background_color": "#111d20",
+  "icons": [{ "src": "./icons/radio.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

@@ -16,9 +16,13 @@ Record device, Android/browser versions, installed/browser mode, battery saver s
 | Browser backgrounded | Same queue continues | Pending |
 | Local-file reload | Files must be selected again; no false resume claim | Pending |
 | Wi-Fi/mobile/network interruption | NOT covered by local blobs; repeat with real HTTPS audio in next phase | Pending |
-| Installed PWA | NOT covered until PWA milestone | Pending |
+| Installed PWA | Install from Chrome menu and repeat locked playback tests | Pending |
 | Spotify/moderation transition | NOT implemented or authorized by this test | Pending |
 
 Export the JSON log from Audiotest after each run. Events include wall-clock timestamps, segment numbers, play/pause/error/ended, visibility and online/offline changes. An “ended” event counts a completed segment; manually skipped tracks do not. Browser events can be delayed during suspension, and success in the log does not prove audible output: record your listening observations too. Profiles/file names are not included; logs still contain browser details and timestamps, so review before sharing publicly.
 
 If the required background test fails, do not declare PWA a fix. Diagnose from the log, reproduce and decide on native media-service playback.
+
+## Install the PWA
+
+The HTTPS build includes a web app manifest and a service worker. In Chrome on Android, open the app and choose **Install app** from the browser menu. The service worker caches the static app shell and same-origin JavaScript, CSS and icon files. API calls and generated audio are never cached, so offline use is limited to opening the interface; generation and playback of remote audio still need a connection.

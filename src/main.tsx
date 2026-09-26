@@ -9,6 +9,14 @@ import { defaultProfile, parseProfile } from './domain/program.ts';
 import type { Profile, Topic } from './domain/program.ts';
 import './style.css';
 
+// Cache only the static app shell; API calls and generated audio stay online-only.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { type: 'module' })
+      .catch(error => console.warn('PWA offline shell registration failed', error));
+  }, { once: true });
+}
+
 const audio = new Audio(); audio.preload = 'auto';
 const player = new RadioPlayer(audio);
 player.setTracks(demoTracks());
