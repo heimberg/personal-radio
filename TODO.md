@@ -10,6 +10,7 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - [ ] **ASK erreichbar machen:** HTTPS-Basis-URL und API-Key für das gewünschte Modell bereitstellen und sicherstellen, dass Cloudflare Workers den ASK-Endpunkt erreichen darf.
 - [ ] **Sprachausgabe freischalten:** Mistral-API-Key und eine für diesen Zweck autorisierte Stimme bereitstellen.
 - [ ] **Gemini aktivieren:** Gemini-API-Key bereitstellen und ein kleines Testbudget festlegen. Gemini wird nur für Dialogskript und Zwei-Stimmen-TTS im Podcast-Modus aufgerufen.
+- [ ] **Spotify-App konfigurieren:** Spotify Developer Client ID als GitHub-Repository-Variable `SPOTIFY_CLIENT_ID` setzen und die private Worker-URL exakt als Redirect URI in der Spotify-App erlauben. Nur die Client ID, kein Client Secret, in die private Frontend-Build-Variable geben.
 - [ ] **Feeds auswählen:** Gewünschte RSS/Atom-Feeds in der App eintragen und deren Nutzungsbedingungen/Rechte prüfen.
 - [ ] **Android-Abnahme:** Nach dem privaten Deployment Screen-aus-Wiedergabe, Pause/Resume, Skip, Daumenfeedback, Netzwechsel und erneutes Öffnen testen. Die bisherige Bestätigung gilt nur für den Audio-Prototyp mit lokalem Audio.
 
@@ -25,9 +26,20 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Später gemeinsam entscheiden
 
-- [ ] Spotify-Integration und zulässige Wiedergabe-/Nutzungsbedingungen klären, bevor Musik eingebunden wird.
+- [ ] Profilpersistenz implementieren: IndexedDB als lokale Quelle der Wahrheit; Interessen, Feedback-Ereignisse und berechnete Gewichte getrennt speichern; Profil prüfen, zurücksetzen, exportieren und löschen können.
+- [ ] Optionalen Konten-/Sync-Bedarf entscheiden. Falls gewünscht: authentifizierter Worker + D1, nur mit aktivierter Synchronisierung. Graph- und Vektordatenbank bleiben bis zu einem belegten Bedarf ausserhalb des MVP.
+- [ ] Spotify-Verbindung für das private PWA implementieren: Authorization Code mit PKCE, Spotify Web Playback SDK, vom Nutzer gewählter Playlist-/Kontext und sichere Token-Lebensdauer.
+- [ ] Spotify-Wiedergabe mit KI-Sprechbeiträgen auf Android erproben: Spotify vor dem Sprachbeitrag pausieren, danach fortsetzen; nie Audio überlappen. Die öffentliche Pages-Demo darf den Spotify-SDK nicht laden.
+- [ ] Spotify-Berechtigungsumfang laut Nutzer: private integrierte Nutzung ist freigegeben. Spotify-Audio, Metadaten und Hörverhalten zunächst nicht an KI-Anbieter senden und nicht fürs Profil-Lernen verwenden.
 - [ ] Dauerhafte Audio-/Job-Warteschlange und automatische, zeitgesteuerte Beitragsproduktion planen.
 - [ ] PWA-Installation und Offline-Verhalten auf dem echten privaten Deployment abnehmen.
+
+## Architekturentscheidungen übernommen
+
+- Profil lokal zuerst in IndexedDB; Feedback-Rohereignisse getrennt von erklärbaren, daraus berechneten Themengewichten.
+- D1 als mögliche spätere SQL-Synchronisierung, nicht als Voraussetzung für lokalen Betrieb.
+- Keine Graph- oder Vektordatenbank zum Start.
+- Spotify ist die vorgesehene Musikquelle für den privaten integrierten Prototyp; Integration bleibt auf den vom Nutzer bestätigten Freigabeumfang begrenzt.
 
 ## Bereits geprüft
 

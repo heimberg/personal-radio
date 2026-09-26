@@ -6,6 +6,7 @@ import { demoTracks } from './audio/demo.ts';
 import { connectMediaSession } from './audio/media-session.ts';
 import { SegmentGenerator } from './components/SegmentGenerator.tsx';
 import { PublicLearningDemo } from './components/PublicLearningDemo.tsx';
+import { SpotifyPanel, type SpotifyControls } from './components/SpotifyPanel.tsx';
 import { defaultProfile, parseProfile } from './domain/program.ts';
 import type { Profile, Topic } from './domain/program.ts';
 import { learnedWeights, parseFeedback } from './domain/recommendation.ts';
@@ -13,6 +14,7 @@ import type { FeedbackAction, FeedbackEvent } from './domain/recommendation.ts';
 import './style.css';
 
 const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
+const spotifyClientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? '';
 
 // Cache only the static app shell; API calls and generated audio stay online-only.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -47,6 +49,8 @@ function App() {
   const [interestDraft, setInterestDraft] = useState('');
   const [notice, setNotice] = useState('');
   const [queueVersion, setQueueVersion] = useState(0);
+  const spotifyControls = useRef<SpotifyControls | null>(null);
+  player.beforeStart = () => spotifyControls.current?.pause();
   const track = player.tracks[state.index];
   const generationProfile = { ...profile, interestWeights: learnedWeights(feedback) };
   const active = ['playing', 'loading', 'buffering'].includes(state.status);
@@ -63,6 +67,9 @@ function App() {
   }
   const signalRef = useRef(signal); signalRef.current = signal;
   useEffect(() => player.subscribeSignals(event => signalRef.current(event.action, event.track, event.listenedRatio)), []);
+  useEffect(() => {
+    if ((state.status === 'ended' || state.status === 'error') && (track?.kind.startsWith('ASK') || track?.kind.startsWith('Gemini'))) spotifyControls.current?.resume();
+  }, [state.status, track]);
   function save(next: Profile) {
     setProfile(next);
     try { localStorage.setItem('radio.profile.v1', JSON.stringify(next)); setNotice('Auf diesem Gerät gespeichert.'); }
@@ -73,6 +80,7 @@ function App() {
     old.forEach(t => URL.revokeObjectURL(t.url)); setQueueVersion(v => v + 1);
   }
   function playGenerated(track: Track) {
+    spotifyControls.current?.pause();
     player.repeat(false); replace([track]); void player.start(0);
   }
   function exportLog() {
@@ -97,6 +105,7 @@ function App() {
           {track?.interests?.length ? <div className="feedback-controls" aria-label="Beitrag bewerten"><span>Mehr davon?</span><button aria-label="Gefällt mir" aria-pressed={feedback.some(item => item.itemId === (track.feedbackId ?? track.id) && item.action === 'like')} onClick={() => signal('like')}>👍</button><button aria-label="Weniger davon" aria-pressed={feedback.some(item => item.itemId === (track.feedbackId ?? track.id) && item.action === 'dislike')} onClick={() => signal('dislike')}>👎</button><small>{feedback.length} Lernsignale · lokal gespeichert</small></div> : null}
           {state.error && <p role="alert" className="error">{state.error}</p>}
         </section>
+        {!publicDemo && spotifyClientId && <SpotifyPanel clientId={spotifyClientId} controlsRef={spotifyControls} onSpotifyPlay={() => player.pause()} />}
         {publicDemo ? <PublicLearningDemo profile={generationProfile} feedback={feedback} onFeedback={event => storeFeedback([...feedback, { ...event, createdAt: new Date().toISOString() }])} /> : <SegmentGenerator profile={generationProfile} onReady={playGenerated} />}
         <section className="panel"><div className="section-heading"><h2>Als Nächstes</h2><span>{player.tracks.some(item => item.kind.startsWith('ASK')) ? 'KI-Beitrag' : 'Lokaler Audiotest'}</span></div><ol className="queue" key={queueVersion}>{player.tracks.map((t, i) => <li key={t.id}><button onClick={() => void player.start(i)} aria-current={state.index === i ? 'true' : undefined}><span className="queue-num">{String(i + 1).padStart(2, '0')}</span><span><strong>{t.title}</strong><small>{t.kind}</small></span><span aria-hidden="true">{state.index === i ? '●' : '↗'}</span></button></li>)}</ol></section>
         <section className="note"><strong>{publicDemo ? 'Öffentliche Testversion' : 'Privater KI-Test'}</strong><p>{publicDemo ? 'Hier kannst du Interessen, lokales Feedback-Lernen und den Android-Audioplayer testen. Nachrichtenfeeds, KI-Beiträge und Spotify sind nicht verbunden.' : 'Die Beitragserstellung funktioniert nur auf der privaten Cloudflare-Version nach deren Einrichtung. Auf der öffentlichen Pages-Demo bleiben Testtöne und lokale Dateien verfügbar. Spotify ist nicht verbunden.'}</p></section>

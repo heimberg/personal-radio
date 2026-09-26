@@ -22,6 +22,14 @@ Prefetch only a bounded amount of audio. Expire news by freshness policy, not ju
 
 The current in-flight coalescing is process-local. It resets on restart, does not coordinate across instances and only coalesces concurrent requests (not retries after completion). Treat this as a testable foundation, not an exactly-once guarantee. Persist budgets/jobs transactionally and authenticate owners before exposing a route. The private Worker can fetch a user-entered HTTPS RSS/Atom URL for a bounded list of entries: redirects are rejected, the response is capped at 500 KB, and the selected entry is only sent to ASK after an explicit generation action. Feed URL checks reject credentials, IP literals, localhost and common private hostnames; Cloudflare Worker outbound fetches are restricted to public internet services; provider terms and rights still need review per feed. D1 enforces a separate 60-feed-request daily quota per owner.
 
+## Profile storage
+
+Use a local-first profile. The PWA stores explicit interests, feedback events, learned weights, feed preferences and playback position in IndexedDB so that personalization works offline and remains on the user's device. The public demo remains client-only. Treat browser storage as persistent application storage, not a secure vault: do not put provider credentials or access tokens there.
+
+Keep the profile model relational and explainable. Separate explicit interests from append-only feedback events (like, dislike, completion, skip, listening progress) and from derived topic weights. Store event timestamps and content/source identifiers so ranking changes can be replayed; allow the user to inspect, reset, export and delete this data. Keep only the minimum location-derived context needed for personalization; do not create a precise long-term location trail by default.
+
+Add optional cross-device sync later through an authenticated Worker repository backed by D1. Sync only after the user enables an account/sync feature. Model core entities with SQL tables and use JSON only for provider-specific or evolving metadata. Do not add a graph database or vector database at MVP: use ordinary relational links for topic/place/source relationships. Reconsider graph storage only if multi-hop relationship queries become a core feature; reconsider vector search when semantic retrieval over a substantial content library is demonstrably useful. D1 is the planned low-cost managed SQL option, not a requirement for local-only use.
+
 ## Learning
 
 Keep explicit preferences separate from session intent and inferred preferences. Explicit choices seed the content model. Strong signals: thumbs up/down. Weak signals: completing a segment is slightly positive; skipping after 20% is weak negative; a skip before 20% is ignored as likely interruption. Use a neutral prior and 45-day half-life so sparse/old evidence moves back towards neutral. Rank feed items by interest match and learned weight; epsilon-greedy exploration keeps the user-selected exploration share for alternatives. Keep this one-user system content-based and explainable; collaborative filtering has no useful population signal in a private single-user installation. Feedback history and learned weights stay on-device and can be reset. Do not infer sensitive traits. No model training at MVP stage. Do not feed Spotify data into ASK or infer profiles from Spotify listening.
@@ -32,9 +40,13 @@ The feed matcher currently uses text overlap between explicit interests and each
 
 PWA installation and a service worker do not guarantee uninterrupted background execution. Measure real screen-locked playback, transitions, external controls and interruptions. A failed mandatory Android test triggers a native playback decision: reuse the web UI but implement an actual Android Media3 foreground media service. A plain WebView wrapper is not the solution. Native Spotify App Remote would be a separate integration and does not remove Spotify policy constraints.
 
-## Spotify blocker
+## Music integration
 
-Spotify's developer policy restricts mixing/segueing audio, integration with other services' content, news generation and ingestion of Spotify content into AI. Personal/noncommercial use does not waive this. No Spotify implementation until this use case is clarified. No music downloading, re-streaming, AI ingestion or covert workarounds. An independent spoken news app or suitably licensed own music is a different scope and must be agreed as such.
+The user states that Spotify has granted permission for this private integrated use. Proceed with a single-user Spotify integration on that basis. Limit the initial implementation to playback from a user-selected Spotify playlist/context and its basic transport controls. Do not send Spotify audio, metadata, or listening behaviour to ASK, Mistral or Gemini or use it for profile learning; those uses are outside the scope currently established for the permission.
+
+Use Spotify Authorization Code with PKCE in the browser (no client secret in the app), and the Web Playback SDK for the private PWA. Keep OAuth access/refresh tokens in memory; use session storage only for the short-lived PKCE verifier/state during redirect. The Client ID is public configuration and belongs only in the private build configuration. The public GitHub Pages demo must not load the Spotify SDK or expose a connect flow. Playback requires Spotify Premium, and Development Mode is limited to one Client ID and up to five authorized users. Test screen-locked playback on the target Android device; Web SDK support in mobile browsers does not guarantee reliable PWA background playback.
+
+Keep the adapter behind a `MusicProvider` port so playlist playback, AI interludes, and future sources are not coupled to React or Spotify SDK types. Implement serialized transitions: pause Spotify before the radio audio element plays, then resume Spotify after the segment ends. Never overlap the two players. If Spotify's written permission has narrower conditions, configure the implementation to those conditions before enabling the affected feature. See the official policy, which prohibits mixing Spotify audio with other audio absent an applicable authorization: https://developer.spotify.com/policy.
 
 ## Security and deployment
 
@@ -52,6 +64,9 @@ Public repository, private application. The Worker validates Cloudflare Access J
 ## References
 
 - https://developer.spotify.com/policy
+- https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
+- https://developer.spotify.com/documentation/web-playback-sdk
+- https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide
 - https://developer.android.com/media/media3/session/background-playback
 - https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation
 - https://docs.mistral.ai/studio/audio/text_to_speech/speech

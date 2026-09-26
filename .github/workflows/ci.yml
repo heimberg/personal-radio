@@ -28,7 +28,7 @@ jobs:
       - name: Build app
         run: npm run build
         env:
-          VITE_PUBLIC_DEMO: ${{ github.ref == 'refs/heads/feat/ai-segment-pipeline' && 'true' || 'false' }}
+          VITE_PUBLIC_DEMO: 'true'
       - run: npx wrangler deploy --dry-run
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -21,6 +21,7 @@ export class RadioPlayer {
   private signalListeners = new Set<(signal: PlaybackSignal) => void>();
   private generation = 0;
   private wantsPlayback = false;
+  beforeStart?: () => void;
 
   constructor(audio: AudioPort) {
     this.audio = audio;
@@ -73,6 +74,7 @@ export class RadioPlayer {
   }
   async start(index = this.state.index) {
     const track = this.tracks[index]; if (!track) return;
+    this.beforeStart?.();
     const generation = ++this.generation;
     this.wantsPlayback = false; this.audio.pause();
     if (this.audio.src !== track.url) {

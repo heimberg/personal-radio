@@ -48,7 +48,7 @@ Persistent jobs/audio cache, semantic feed classification, autonomous scheduled 
 2. Verify that the authorized ASK endpoint accepts outbound HTTPS from Cloudflare Workers; keep its key in Worker secrets.
 3. Configure provider secrets, including Gemini for two-host podcasts, and run a short paid quality check after setting the daily usage caps.
 4. Complete the remaining Android acceptance checks in [docs/android-test.md](docs/android-test.md).
-5. Resolve Spotify terms before building integrated music/moderation playback. Use suitable licensed/self-owned audio for the feasibility test.
+5. Configure the private Spotify app: add the Spotify Client ID as the GitHub repository variable `SPOTIFY_CLIENT_ID`, register the private Worker URL as a redirect URI, then test PKCE login, playlist playback and screen-off behavior on Android. Spotify metadata and listening behavior are not sent to AI or used for profile learning in this first slice.
 
 See [architecture and roadmap](docs/architecture.md) and [deployment](docs/deployment.md).
 See [private Cloudflare deployment](docs/cloudflare-deployment.md) for account and secret setup.
