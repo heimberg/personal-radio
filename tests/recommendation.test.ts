@@ -35,6 +35,15 @@ test('ranking promotes explicit interests and retains deliberate exploration', (
   assert.notEqual(explore[0]?.id, 'science');
 });
 
+test('a specific user interest outranks candidates matching only broad selected topics', () => {
+  const candidates = [
+    { id: 'geo', interests: ['Geologie', 'Wissenschaft'] },
+    { id: 'weather', interests: ['Technologie', 'Wissenschaft'] },
+  ];
+  const ordered = rankCandidates(candidates, ['Technologie', 'Wissenschaft', 'Geologie'], {}, 0, 1, ['Geologie']);
+  assert.equal(ordered[0]?.id, 'geo');
+});
+
 test('repeated negative evidence can suppress an explicit interest in candidate ranking', () => {
   const now = Date.parse('2026-09-26T00:00:00Z');
   const weights = learnedWeights([event('dislike'), { ...event('dislike'), itemId: 'item-2' }, { ...event('dislike'), itemId: 'item-3' }], now);

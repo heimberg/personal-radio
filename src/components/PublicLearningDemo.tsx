@@ -24,7 +24,7 @@ interface Props {
 
 export function PublicLearningDemo({ profile, feedback, onFeedback }: Props) {
   const interests = [...profile.topics, ...profile.interests];
-  const ranked = rankCandidates(examples, interests, profile.interestWeights, profile.exploration);
+  const ranked = rankCandidates(examples, interests, profile.interestWeights, profile.exploration, Math.random(), profile.interests);
   const latest = new Map<string, FeedbackAction>();
   for (const event of feedback) latest.set(event.itemId, event.action);
 

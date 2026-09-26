@@ -41,11 +41,12 @@ export function learnedWeights(events: FeedbackEvent[], now = Date.now()): Recor
 }
 
 /** Content-first score with an explicit epsilon-greedy exploration chance. */
-export function rankCandidates<T extends Candidate>(candidates: T[], explicitInterests: string[], weights: Record<string, number>, explorationPercent: number, seed = Math.random()): T[] {
+export function rankCandidates<T extends Candidate>(candidates: T[], explicitInterests: string[], weights: Record<string, number>, explorationPercent: number, seed = Math.random(), priorityInterests: string[] = []): T[] {
   const explicit = new Set(explicitInterests.map(x => x.toLocaleLowerCase()));
+  const priority = new Set(priorityInterests.map(x => x.toLocaleLowerCase()));
   const scored = candidates.map(candidate => {
     const tags = [...new Set(candidate.interests.map(x => x.toLocaleLowerCase()))];
-    const relevance = tags.reduce((total, tag) => total + (explicit.has(tag) ? 0.5 : 0) + (weights[tag] ?? weights[Object.keys(weights).find(key => key.toLocaleLowerCase() === tag) ?? ''] ?? 0), 0) / Math.max(tags.length, 1);
+    const relevance = tags.reduce((total, tag) => total + (explicit.has(tag) ? (priority.has(tag) ? 1.25 : 0.5) : 0) + (weights[tag] ?? weights[Object.keys(weights).find(key => key.toLocaleLowerCase() === tag) ?? ''] ?? 0), 0) / Math.max(tags.length, 1);
     return { candidate, relevance, tie: Math.random() };
   }).sort((a, b) => b.relevance - a.relevance || a.tie - b.tie);
   const explorationChance = Math.max(0, Math.min(50, explorationPercent)) / 100;

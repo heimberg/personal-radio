@@ -11,6 +11,7 @@ export function SpotifyPanel({ clientId, controlsRef, onSpotifyPlay }: Props) {
   const [deviceId, setDeviceId] = useState('');
   const [context, setContext] = useState('');
   const [track, setTrack] = useState('');
+  const [spotifyPlaying, setSpotifyPlaying] = useState(false);
   const [status, setStatus] = useState('Mit Spotify verbinden');
   const [error, setError] = useState('');
 
@@ -51,6 +52,7 @@ export function SpotifyPanel({ clientId, controlsRef, onSpotifyPlay }: Props) {
         if (!value) return;
         const item = value.track_window?.current_track;
         setTrack(item ? `${item.name}${item.artists?.length ? ` · ${item.artists.map(artist => artist.name).join(', ')}` : ''}` : '');
+        setSpotifyPlaying(!value.paused);
         setStatus(value.paused ? 'Spotify pausiert' : 'Spotify spielt');
       });
       for (const event of ['initialization_error', 'authentication_error', 'account_error', 'playback_error']) {
@@ -80,6 +82,18 @@ export function SpotifyPanel({ clientId, controlsRef, onSpotifyPlay }: Props) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Spotify-Wiedergabe fehlgeschlagen.'); }
   }
 
+  function togglePlayback() {
+    if (!spotifyPlaying) onSpotifyPlay?.();
+    void playerRef.current?.togglePlay();
+  }
+
+  function skipTrack(direction: 'previous' | 'next') {
+    onSpotifyPlay?.();
+    const player = playerRef.current;
+    if (direction === 'previous') void player?.previousTrack();
+    else void player?.nextTrack();
+  }
+
   return <section className="panel settings spotify-panel" aria-label="Spotify-Musik">
     <div className="section-heading"><h2>Spotify-Musik</h2><span>Privater Player</span></div>
     <p>Verbinde dein Spotify-Premium-Konto und wähle eine Playlist, ein Album oder einen Künstler.</p>
@@ -88,9 +102,9 @@ export function SpotifyPanel({ clientId, controlsRef, onSpotifyPlay }: Props) {
       <label htmlFor="spotify-context">Spotify-Playlist, Album oder Künstler</label>
       <div className="feed-load-row"><input id="spotify-context" value={context} onChange={event => setContext(event.target.value)} placeholder="Spotify-Link oder spotify:playlist:…" /><button className="primary" onClick={() => void startContext()} disabled={!deviceId}>Start</button></div>
       <div className="controls spotify-controls">
-        <button aria-label="Spotify vorheriger Titel" disabled={!deviceId} onClick={() => void playerRef.current?.previousTrack()}>↤</button>
-        <button className="play" disabled={!deviceId} onClick={() => void playerRef.current?.togglePlay()}>▶ / Ⅱ</button>
-        <button aria-label="Spotify nächster Titel" disabled={!deviceId} onClick={() => void playerRef.current?.nextTrack()}>↦</button>
+        <button aria-label="Spotify vorheriger Titel" disabled={!deviceId} onClick={() => skipTrack('previous')}>↤</button>
+        <button className="play" disabled={!deviceId} onClick={togglePlayback}>▶ / Ⅱ</button>
+        <button aria-label="Spotify nächster Titel" disabled={!deviceId} onClick={() => skipTrack('next')}>↦</button>
       </div>
     </>}
     <p role="status">{track ? `${status} · ${track}` : status}</p>

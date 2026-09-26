@@ -49,7 +49,7 @@ export function SegmentGenerator({ profile, onReady }: Props) {
         : 'Feed nicht lesbar. Prüfe URL, XML-Format und Erreichbarkeit.');
       const interests = [...profile.topics, ...profile.interests];
       const candidates = (result.items ?? []).map(item => ({ ...item, interests: interests.filter(interest => `${item.title} ${item.excerpt}`.toLocaleLowerCase().includes(interest.toLocaleLowerCase())) }));
-      const ranked = rankCandidates(candidates, interests, profile.interestWeights, profile.exploration);
+      const ranked = rankCandidates(candidates, interests, profile.interestWeights, profile.exploration, Math.random(), profile.interests);
       setFeedItems(ranked);
       if (ranked[0]) {
         selectFeedItem(ranked[0]);
@@ -80,7 +80,7 @@ export function SegmentGenerator({ profile, onReady }: Props) {
       const unique = [...new Map(collected.map(item => [item.url, item])).values()];
       const interests = [...profile.topics, ...profile.interests];
       const candidates = unique.map(item => ({ ...item, interests: interests.filter(interest => `${item.title} ${item.excerpt}`.toLocaleLowerCase().includes(interest.toLocaleLowerCase())) }));
-      const ranked = rankCandidates(candidates, interests, profile.interestWeights, profile.exploration);
+      const ranked = rankCandidates(candidates, interests, profile.interestWeights, profile.exploration, Math.random(), profile.interests);
       setFeedItems(ranked);
       if (ranked[0]) {
         const selected = ranked[0] as typeof ranked[number] & { feedName: string; feedUrl: string };
