@@ -2,7 +2,7 @@
 
 Mobile-first personal radio prototype with ASK/Mistral short segments and an optional Gemini two-host podcast pipeline.
 
-**Status: feasibility prototype, not a working AI radio station.** The Pages demo plays generated test tones or user-selected local audio and calls no paid API. The user has confirmed screen-off playback works on the tested Android device; the broader device/headset/network acceptance matrix is not recorded. Spotify is deliberately not connected.
+**Status: feasibility prototype, not a working AI radio station.** The public Pages demo plays generated test tones or user-selected local audio and includes a local simulation of interest-based topic ranking and thumbs feedback. It calls no paid API and contains no live news. Screen-off playback was confirmed on the tested Android device; the broader device/headset/network acceptance matrix is not recorded. Spotify is deliberately not connected.
 
 ## Run
 
@@ -27,7 +27,9 @@ npm run build
 - One persistent HTML audio player, queue, repeat, seek, previous/next and Media Session handlers.
 - Local, low-volume generated 30-second WAV test segments; local file selection with no upload.
 - Bounded playback event log; downloadable JSON with browser information but no filenames/profile.
-- Editable initial profile with custom interests, on-device thumbs/skip/completion learning, time-decayed weights and a user-controlled exploration rate.
+- Editable initial profile with custom interests and a user-controlled exploration rate.
+- Public demo topic cards to try interest ranking and thumbs feedback locally; example cards are not news and make no network requests.
+- Private app logic for thumbs/skip/completion learning and time-decayed weights; public test tones have no inferred topic and do not update those playback signals.
 - Server-only ASK and Mistral adapters with mocked contract tests, timeouts and segment limits.
 - Server-side segment orchestration foundation: required verifier port, source/script limits, per-process daily TTS character budget, concurrency bound and in-flight duplicate coalescing. Not exposed to the app; budget is not durable or cross-instance.
 - Cloudflare Worker API foundation with Access JWT validation, ASK claim/evidence verification and atomic D1 daily request/TTS quotas. Requires account setup and provider secrets; not deployed or connected to the Pages demo.
