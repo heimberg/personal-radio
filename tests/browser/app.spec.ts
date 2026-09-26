@@ -108,7 +108,7 @@ test('feed URL can be saved locally, restored and used to fill the source form',
   await page.getByRole('button', { name: 'Speichern' }).click();
   await expect(page.getByText('Feed wurde auf diesem Gerät gespeichert.')).toBeVisible();
   await page.reload();
-  await page.getByRole('button', { name: /Lokal Bern/ }).click();
+  await page.getByRole('button', { name: 'Lokal Bern news.example.test' }).click();
   await page.getByRole('button', { name: 'Feed laden' }).click();
   await expect(page.getByRole('button', { name: /Bundesrat informiert/ })).toBeVisible();
   expect(feedRequest.url).toBe('https://news.example.test/rss.xml');
