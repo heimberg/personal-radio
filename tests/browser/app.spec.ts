@@ -46,3 +46,24 @@ test('ended event advances real audio and corrupt stored profile recovers', asyn
   await page.getByRole('button', { name: 'Audiotest', exact: true }).click();
   await expect(page.locator('.stats strong').first()).toHaveText('1');
 });
+
+test('source form sends selected profile to private API and plays returned segment', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Mein Programm', exact: true }).click();
+  await page.getByRole('button', { name: 'Kultur', exact: true }).click();
+  let submitted: any;
+  await page.route('**/api/segments', async route => {
+    submitted = JSON.parse(route.request().postData() ?? '{}');
+    await route.fulfill({ status: 200, contentType: 'audio/mpeg',
+      headers: { 'X-Script-Title': encodeURIComponent('Ein eingeordneter Beitrag'), 'X-Script-Source-Ids': 'user-source-1' }, body: Buffer.from('ID3') });
+  });
+  await page.getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByLabel('Titel', { exact: true }).fill('Aktuelle Meldung');
+  await page.getByLabel('HTTPS-Link zur Quelle').fill('https://news.example.test/article');
+  await page.getByLabel('Kurzer Textauszug').fill('Ein überprüfbarer Auszug der Nachricht.');
+  await page.getByRole('button', { name: 'Beitrag erstellen und abspielen' }).click();
+  await expect(page.getByRole('heading', { name: 'Ein eingeordneter Beitrag' })).toBeVisible();
+  await expect(page.getByText('ASK · Mistral · Quelle user-source-1')).toBeVisible();
+  expect(submitted.profile.topics).toContain('Kultur');
+  expect(submitted.sources[0]).toMatchObject({ title: 'Aktuelle Meldung', url: 'https://news.example.test/article', excerpt: 'Ein überprüfbarer Auszug der Nachricht.' });
+});
