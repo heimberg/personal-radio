@@ -1,5 +1,5 @@
 const VERSION = 'personal-radio-shell-v1';
-const SHELL = ['./', './manifest.webmanifest', './icons/radio.svg'];
+const SHELL = ['./', './manifest.webmanifest', './icons/radio.svg', './icons/radio-192.png', './icons/radio-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -24,7 +24,7 @@ self.addEventListener('fetch', event => {
   }
 
   // Cache app assets only. Never persist audio, API responses, or user-generated blobs.
-  if (/\.(?:js|css|svg|webmanifest)$/.test(url.pathname)) {
+  if (/\.(?:js|css|svg|webmanifest|png)$/.test(url.pathname)) {
     event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
       if (response.ok) void caches.open(VERSION).then(cache => cache.put(request, response.clone()));
       return response;
