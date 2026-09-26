@@ -55,13 +55,17 @@ async function readBounded(response: Response): Promise<string> {
 }
 
 function decodeXml(value: string): string {
+  const codePoint = (value: string, radix: number) => {
+    const code = parseInt(value, radix);
+    return code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? '\uFFFD' : String.fromCodePoint(code);
+  };
   return value.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Math.min(Number(n), 0x10ffff)))
-    .replace(/&#x([\da-f]+);/gi, (_, n: string) => String.fromCodePoint(Math.min(parseInt(n, 16), 0x10ffff)))
+    .replace(/&#(\d+);/g, (_, n: string) => codePoint(n, 10))
+    .replace(/&#x([\da-f]+);/gi, (_, n: string) => codePoint(n, 16))
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
     .replace(/\s+/g, ' ').trim();
@@ -83,7 +87,8 @@ function itemsFromXml(xml: string, feedUrl: URL, now: Date): FeedItem[] {
     let link = '';
     if (isAtom) {
       const links = [...block.matchAll(/<link\b([^>]*)\/?\s*>/gi)];
-      const preferred = links.find(x => !/\brel=["'](?:self|alternate)\b/i.test(x[1]) || /\brel=["']alternate["']/i.test(x[1])) ?? links[0];
+      const preferred = links.find(x => /\brel=["']alternate["']/i.test(x[1]))
+        ?? links.find(x => !/\brel=["']/i.test(x[1])) ?? links[0];
       link = preferred?.[1].match(/\bhref=["']([^"']+)["']/i)?.[1] ?? '';
     } else link = tag(block, 'link') || tag(block, 'guid');
     let resolved: URL;

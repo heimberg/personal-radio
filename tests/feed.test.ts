@@ -16,7 +16,7 @@ test('RSS feed returns bounded, sanitized headlines and excerpts with normalized
 });
 
 test('Atom link and dates are supported; non-HTTPS article links are discarded', async () => {
-  const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Aktuelles</title><link href="https://news.example.test/1" rel="alternate"/><summary>Ein Ausschnitt</summary><updated>2026-09-25T10:00:00Z</updated></entry><entry><title>unsicher</title><link href="http://news.example.test/2"/><summary>Text</summary></entry></feed>`;
+  const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Aktuelles</title><link href="https://news.example.test/media.mp3" rel="enclosure"/><link href="https://news.example.test/1" rel="alternate"/><summary>Ein Ausschnitt</summary><updated>2026-09-25T10:00:00Z</updated></entry><entry><title>unsicher</title><link href="http://news.example.test/2"/><summary>Text</summary></entry></feed>`;
   const items = await fetchFeed('https://news.example.test/atom.xml', async () => response(xml, 'application/atom+xml'));
   assert.equal(items.length, 1);
   assert.equal(items[0].url, 'https://news.example.test/1');
