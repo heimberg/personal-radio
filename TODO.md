@@ -17,8 +17,8 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Codex
 
-- [ ] **Änderungen in den Draft-PR übernehmen:** Implementierung, Dokumentation und 40 Unit-/Worker-Tests auf `feat/ai-segment-pipeline` aktualisieren; PR bleibt Draft.
-- [ ] **GitHub Actions abwarten und Fehler beheben:** Browser-E2E, TypeScript, Unit-Tests, Build und Wrangler-Dry-Run müssen grün sein.
+- [x] **Änderungen in den Draft-PR übernehmen:** Implementierung, Dokumentation und TODO auf `feat/ai-segment-pipeline` aktualisiert; PR bleibt Draft.
+- [ ] **GitHub Actions abwarten und Fehler beheben:** Browser-E2E, TypeScript, Unit-Tests, Build und Wrangler-Dry-Run für Commit `88223cd` laufen gerade.
 - [ ] **Nach Matthias' Cloudflare-Einrichtung deployen:** D1-Migrationen und privaten Worker über den Workflow ausrollen; Access-Schutz und API-Authentisierung prüfen.
 - [ ] **Live-KI-Test durchführen:** Einen kurzen ASK/Mistral-Beitrag und einen Gemini-Zwei-Stimmen-Podcast mit echten Quellen testen; Audio, Latenz, Fehlerfälle und Kostenobergrenzen prüfen.
 - [ ] **Android-Test mit dem echten Backend begleiten:** Wiedergabe bei gesperrtem Bildschirm und Verhalten bei Verbindungsabbrüchen prüfen; nötige Korrekturen umsetzen.
@@ -33,4 +33,4 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 - [x] Mobile-first Audio-Prototyp; Bildschirm-aus-Wiedergabe wurde auf dem Android-Gerät des Nutzers bestätigt.
 - [x] Lokal: `npm test` (40 Tests), `npm run build` und `npx wrangler deploy --dry-run` erfolgreich.
-- [x] PR #10: GitHub Actions für den bisherigen PR-Stand erfolgreich. Die aktuelle lokale Erweiterung ist darin noch nicht enthalten.
+- [x] PR #10: Vorheriger GitHub-Actions-Lauf erfolgreich; neuer Lauf für die Erweiterung ist gestartet.
