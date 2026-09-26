@@ -1,0 +1,26 @@
+name = "personal-radio-private"
+main = "server/worker.ts"
+compatibility_date = "2026-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "personal-radio"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+ASK_MODEL = "ask-base"
+GEMINI_TEXT_MODEL = "gemini-3.8-flash"
+GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
+GEMINI_VOICE_A = "Kore"
+GEMINI_VOICE_B = "Puck"
+DAILY_GENERATIONS = "24"
+DAILY_FEED_REQUESTS = "60"
+DAILY_TTS_CHARACTERS = "12000"

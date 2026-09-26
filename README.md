@@ -1,8 +1,8 @@
 # Personal Radio
 
-Mobile-first personal audio application with a planned ASK editorial pipeline and Mistral speech synthesis.
+Mobile-first personal radio prototype with ASK/Mistral short segments and an optional Gemini two-host podcast pipeline.
 
-**Status: feasibility prototype, not a working AI radio station.** The browser plays generated test tones or user-selected local audio. No paid API is called. Spotify is deliberately not connected. Android lock-screen reliability has not been established.
+**Status: feasibility prototype, not a working AI radio station.** The public Pages demo plays generated test tones or user-selected local audio and includes a local simulation of interest-based topic ranking and thumbs feedback. It calls no paid API and contains no live news. Screen-off playback was confirmed on the tested Android device; the broader device/headset/network acceptance matrix is not recorded. Spotify is deliberately not connected.
 
 ## Run
 
@@ -27,23 +27,31 @@ npm run build
 - One persistent HTML audio player, queue, repeat, seek, previous/next and Media Session handlers.
 - Local, low-volume generated 30-second WAV test segments; local file selection with no upload.
 - Bounded playback event log; downloadable JSON with browser information but no filenames/profile.
-- Device-local preference storage with corrupt-storage fallback; not yet connected to content selection.
+- Editable initial profile with custom interests and a user-controlled exploration rate.
+- Public demo topic cards to try interest ranking and thumbs feedback locally; example cards are not news and make no network requests.
+- Private app logic for thumbs/skip/completion learning and time-decayed weights; public test tones have no inferred topic and do not update those playback signals.
 - Server-only ASK and Mistral adapters with mocked contract tests, timeouts and segment limits.
+- Server-side segment orchestration foundation: required verifier port, source/script limits, per-process daily TTS character budget, concurrency bound and in-flight duplicate coalescing. Not exposed to the app; budget is not durable or cross-instance.
+- Cloudflare Worker API foundation with Access JWT validation, ASK claim/evidence verification and atomic D1 daily request/TTS quotas. Requires account setup and provider secrets; not deployed or connected to the Pages demo.
+- User-entered RSS/Atom feeds with bounded server retrieval; the app compares saved feeds, ranks entries against interests and learned preferences, and preselects a match.
+- Optional Gemini dialog generation and two-speaker TTS, keeping source evidence verification in ASK and all API credentials in Worker secrets.
+- PWA manifest, Android install icons and a service worker that caches only the static app shell.
 - GitHub Actions type checks, tests, build and a downloadable web build artifact.
 
 ## Not included yet
 
-Server routes, private app login, source ingestion, editorial verification, persistent jobs/database, real provider calls, adaptive learning, hosted deployment, PWA/service worker and native Android playback. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
+Persistent jobs/audio cache, semantic feed classification, autonomous scheduled generation and native Android playback. The private Worker deployment is not set up; the GitHub Pages demo remains public and does not call this API. The feed loader requires the private Worker. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
 
 ## Next decisions
 
-1. Run the Android test in [docs/android-test.md](docs/android-test.md).
-2. Confirm an authorized, HTTPS-accessible ASK endpoint, model and API contract from the intended backend host. Keys belong in server secrets, never browser/VITE variables.
-3. Choose a Mistral voice and run a short paid, explicitly enabled contract/quality check.
-4. Choose private hosting/access control before deployment. Public source code does not imply a public application.
-5. Resolve Spotify terms before building integrated music/moderation playback. Use suitable licensed/self-owned audio for the feasibility test.
+1. Set up the private Cloudflare Worker and Access policy using [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md).
+2. Verify that the authorized ASK endpoint accepts outbound HTTPS from Cloudflare Workers; keep its key in Worker secrets.
+3. Configure provider secrets, including Gemini for two-host podcasts, and run a short paid quality check after setting the daily usage caps.
+4. Complete the remaining Android acceptance checks in [docs/android-test.md](docs/android-test.md).
+5. Configure the private Spotify app: add the Spotify Client ID as the GitHub repository variable `SPOTIFY_CLIENT_ID`, register the private Worker URL as a redirect URI, then test PKCE login, playlist playback and screen-off behavior on Android. Spotify metadata and listening behavior are not sent to AI or used for profile learning in this first slice.
 
 See [architecture and roadmap](docs/architecture.md) and [deployment](docs/deployment.md).
+See [private Cloudflare deployment](docs/cloudflare-deployment.md) for account and secret setup.
 
 ## Privacy
 
