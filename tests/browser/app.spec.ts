@@ -67,3 +67,22 @@ test('source form sends selected profile to private API and plays returned segme
   expect(submitted.profile.topics).toContain('Kultur');
   expect(submitted.sources[0]).toMatchObject({ title: 'Aktuelle Meldung', url: 'https://news.example.test/article', excerpt: 'Ein überprüfbarer Auszug der Nachricht.' });
 });
+
+test('feed URL loads entries and selecting one fills the source form', async ({ page }) => {
+  let feedRequest: any;
+  await page.route('**/api/feed-items', async route => {
+    feedRequest = JSON.parse(route.request().postData() ?? '{}');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [
+      { id: 'feed-1', title: 'Bundesrat informiert', url: 'https://news.example.test/article/1', excerpt: 'Der ausgewählte Auszug.', publishedAt: '2026-09-25T12:00:00.000Z' },
+    ] }) });
+  });
+  await page.goto('/');
+  await page.getByLabel('RSS/Atom-Feed URL').fill('https://news.example.test/rss.xml');
+  await page.getByRole('button', { name: 'Feed laden' }).click();
+  await expect(page.getByRole('button', { name: /Bundesrat informiert/ })).toBeVisible();
+  expect(feedRequest.url).toBe('https://news.example.test/rss.xml');
+  await page.getByRole('button', { name: /Bundesrat informiert/ }).click();
+  await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('Bundesrat informiert');
+  await expect(page.getByLabel('HTTPS-Link zur Quelle')).toHaveValue('https://news.example.test/article/1');
+  await expect(page.getByLabel('Kurzer Textauszug')).toHaveValue('Der ausgewählte Auszug.');
+});

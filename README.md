@@ -31,11 +31,13 @@ npm run build
 - Server-only ASK and Mistral adapters with mocked contract tests, timeouts and segment limits.
 - Server-side segment orchestration foundation: required verifier port, source/script limits, per-process daily TTS character budget, concurrency bound and in-flight duplicate coalescing. Not exposed to the app; budget is not durable or cross-instance.
 - Cloudflare Worker API foundation with Access JWT validation, ASK claim/evidence verification and atomic D1 daily request/TTS quotas. Requires account setup and provider secrets; not deployed or connected to the Pages demo.
+- User-entered RSS/Atom feed picker with bounded server-side retrieval; only a selected entry is copied into the existing source form and sent to ASK after the user starts generation.
+- PWA manifest, Android install icons and a service worker that caches only the static app shell.
 - GitHub Actions type checks, tests, build and a downloadable web build artifact.
 
 ## Not included yet
 
-Source ingestion, persistent jobs/audio cache, adaptive learning, PWA/service worker and native Android playback. The private Worker deployment is not set up; the GitHub Pages demo remains public and does not call this API. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
+Persistent jobs/audio cache, adaptive learning and native Android playback. The private Worker deployment is not set up; the GitHub Pages demo remains public and does not call this API. The feed loader requires the private Worker. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
 
 ## Next decisions
 

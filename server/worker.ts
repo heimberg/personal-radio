@@ -2,6 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
 import { AskEditorialVerifier, AskTextGenerator, MistralSpeechSynthesizer } from './providers.ts';
 import type { Profile, Source } from '../src/domain/program.ts';
+import { fetchFeed, FeedError } from './feed.ts';
 
 interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null> }
 interface D1Database { prepare(query: string): D1Statement }
@@ -86,6 +87,23 @@ export default {
     const owner = await authenticate(request, env);
     if (!owner) return json({ error: 'unauthorized' }, 401);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (url.pathname === '/api/feed-items') {
+      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+      if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+      if (Number(request.headers.get('Content-Length') ?? 0) > 4096) return json({ error: 'request_too_large' }, 413);
+      if (request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') return json({ error: 'json_required' }, 415);
+      try {
+        const raw = await request.text();
+        if (new TextEncoder().encode(raw).byteLength > 4096) return json({ error: 'request_too_large' }, 413);
+        let body: { url?: unknown };
+        try { body = JSON.parse(raw) as { url?: unknown }; } catch { return json({ error: 'invalid_json' }, 400); }
+        return json({ items: await fetchFeed(body.url) }, 200);
+      } catch (error) {
+        const status = error instanceof FeedError ? error.code === 'INVALID_FEED_URL' ? 400 : 422 : 502;
+        const code = error instanceof FeedError ? error.code.toLowerCase() : 'feed_unavailable';
+        return json({ error: code }, status);
+      }
+    }
     if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
