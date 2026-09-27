@@ -2,7 +2,7 @@ import { defaultProfile, parseProfile } from './program.ts';
 import type { HostPersona, Profile } from './program.ts';
 
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
-export type ShowFormat = 'brief' | 'podcast';
+export type ShowFormat = 'brief' | 'podcast' | 'artist_hour';
 export type VerificationPolicy = 'strict' | 'light' | 'off';
 export type TextProvider = 'gemini' | 'ask';
 export type SourceMode = 'feeds' | 'web';
@@ -24,6 +24,11 @@ export interface ShowConfig {
   sourceMode: SourceMode;
   /** Research brief for `web` shows, written by the owner. */
   researchPrompt: string;
+  /** Artist hour: fixed artist or band; without it the AI picks one from the listener's interests. */
+  artist?: string;
+  /** Artist hour: number of tracks and spoken seconds before each track. */
+  tracks?: number;
+  talkSeconds?: number;
 }
 export interface ScheduleSlot { id: string; days: number[]; from: string; to: string; showIds: string[] }
 export interface StationConfig {
@@ -41,6 +46,9 @@ export interface StationConfig {
 
 export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'failed' | 'expired';
 export const OPEN_STATES: readonly TimelineState[] = ['planned', 'voicing', 'ready'];
+export type TimelinePartView =
+  | { kind: 'speech'; audioUrl?: string }
+  | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number };
 export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
   id: string;
@@ -59,10 +67,13 @@ export interface TimelineItemView {
   searchQueries?: string[];
   error?: string;
   audioUrl?: string;
+  /** Artist hour: speech and Spotify tracks in playing order. */
+  parts?: TimelinePartView[];
+  artist?: string;
 }
 
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */
-export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10] };
+export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90] };
 
 export class ConfigError extends Error {}
 
@@ -136,7 +147,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
   const showIds = new Set<string>();
   const shows = list(c.shows, 'shows', 20).map((value, index): ShowConfig => {
     const path = `shows[${index}]`, s = record(value, path);
-    if (s.format !== 'brief' && s.format !== 'podcast') fail(`${path}.format`, '«brief» oder «podcast»');
+    if (s.format !== 'brief' && s.format !== 'podcast' && s.format !== 'artist_hour') fail(`${path}.format`, '«brief», «podcast» oder «artist_hour»');
     if (s.verification !== 'strict' && s.verification !== 'light' && s.verification !== 'off') fail(`${path}.verification`, '«strict», «light» oder «off»');
     const [min, max] = MINUTES_LIMITS[s.format];
     const targetMinutes = Number(s.targetMinutes);
@@ -149,6 +160,12 @@ export function parseStationConfig(raw: unknown): StationConfig {
     const textProvider = s.textProvider ?? 'gemini';
     if (textProvider !== 'gemini' && textProvider !== 'ask') fail(`${path}.textProvider`, '«gemini» oder «ask»');
     if (s.format === 'podcast' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Dialoge schreibt nur «gemini»');
+    if (s.format === 'artist_hour' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Künstler-Stunden schreibt nur «gemini» (Websuche)');
+    const whole = (value: unknown, name: string, min: number, max: number, fallback: number) => {
+      if (value === undefined) return fallback;
+      if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) fail(`${path}.${name}`, `ganze Zahl von ${min} bis ${max}`);
+      return value as number;
+    };
     const sourceMode = s.sourceMode ?? 'feeds';
     if (sourceMode !== 'feeds' && sourceMode !== 'web') fail(`${path}.sourceMode`, '«feeds» oder «web»');
     return {
@@ -156,6 +173,11 @@ export function parseStationConfig(raw: unknown): StationConfig {
       format: s.format, instructions: text(s.instructions ?? '', `${path}.instructions`, 2000, false),
       feedIds: [...new Set(showFeeds)], targetMinutes, verification: s.verification,
       textProvider, sourceMode, researchPrompt: text(s.researchPrompt ?? '', `${path}.researchPrompt`, 1000, false),
+      ...(s.format === 'artist_hour' ? {
+        ...(s.artist !== undefined && String(s.artist).trim() ? { artist: text(s.artist, `${path}.artist`, 100) } : {}),
+        tracks: whole(s.tracks, 'tracks', 3, 15, 10),
+        talkSeconds: whole(s.talkSeconds, 'talkSeconds', 20, 120, 60),
+      } : {}),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),
     };
   });
@@ -201,6 +223,9 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
       { id: 'entdecken', name: 'Entdeckungen', enabled: true, format: 'brief', feedIds: [], verification: 'strict', sourceMode: 'web',
         targetMinutes: 2, instructions: 'Erzähle eine konkrete Entdeckung, nicht eine Übersicht.',
         researchPrompt: 'Finde eine aktuelle, wenig bekannte Entwicklung zu einem meiner Interessen, die ich wahrscheinlich noch nicht kenne.' },
+      { id: 'kuenstler', name: 'Künstler-Stunde', enabled: false, format: 'artist_hour', feedIds: [], verification: 'light', sourceMode: 'web',
+        targetMinutes: 60, tracks: 10, talkSeconds: 60, instructions: 'Frühwerk und Einflüsse betonen, keine Chart-Statistiken.',
+        researchPrompt: 'Wenig bekannte Hintergründe zur Entstehung der Songs.' },
     ],
     schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['kurz', 'entdecken', 'dialog'] }],
   });

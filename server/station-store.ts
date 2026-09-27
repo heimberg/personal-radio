@@ -35,6 +35,16 @@ export interface TimelineRow {
 export type TimelinePatch = Partial<Pick<TimelineRow, 'state' | 'attempts' | 'lease_until' | 'script_json' | 'sources_json' | 'verification' | 'audio_key' | 'content_type' | 'research_json' | 'error'>>;
 const PATCHABLE = ['state', 'attempts', 'lease_until', 'script_json', 'sources_json', 'verification', 'audio_key', 'content_type', 'research_json', 'error'] as const;
 
+/** An artist hour keeps one audio file per spoken part; everything else has at most one. */
+export function audioKeysOf(row: Pick<TimelineRow, 'audio_key' | 'script_json'>): string[] {
+  const keys = new Set<string>(row.audio_key ? [row.audio_key] : []);
+  try {
+    const parts = (JSON.parse(row.script_json ?? '{}') as { parts?: Array<{ audioKey?: unknown }> }).parts ?? [];
+    for (const part of parts) if (typeof part.audioKey === 'string') keys.add(part.audioKey);
+  } catch { /* No parts. */ }
+  return [...keys];
+}
+
 export class StationStore {
   private db: D1Database;
   constructor(db: D1Database) { this.db = db; }
@@ -140,8 +150,9 @@ export class StationStore {
   /** Deletes failed and expired items (all, or only those last changed before the cutoff) and returns their audio keys. */
   async purge(owner: string, updatedBefore?: Date): Promise<{ removed: number; audioKeys: string[] }> {
     const rows = (await this.db.prepare(`DELETE FROM timeline_items WHERE owner_id = ? AND state IN ('failed', 'expired')
-      AND updated_at < ? RETURNING audio_key`).bind(owner, updatedBefore?.toISOString() ?? '9999-12-31T23:59:59.999Z').all<{ audio_key: string | null }>()).results;
-    return { removed: rows.length, audioKeys: rows.map(row => row.audio_key).filter((key): key is string => !!key) };
+      AND updated_at < ? RETURNING audio_key, script_json`).bind(owner, updatedBefore?.toISOString() ?? '9999-12-31T23:59:59.999Z')
+      .all<{ audio_key: string | null; script_json: string | null }>()).results;
+    return { removed: rows.length, audioKeys: rows.flatMap(row => audioKeysOf(row)) };
   }
 
   async recentFailures(owner: string, since: Date): Promise<number> {
