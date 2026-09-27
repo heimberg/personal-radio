@@ -84,6 +84,24 @@ test('Mistral decodes audio_data and sends voice and model', async () => {
   });
   assert.equal(Buffer.from(await tts.synthesize('Guten Tag.')).toString(), 'ID3');
 });
+test('Mistral sends pinned German CC0 reference audio when Kerstin is selected', async () => {
+  const sample = new Uint8Array(1024).fill(65);
+  let calls = 0;
+  const synth = new MistralSpeechSynthesizer({ key: 'test' }, async (url, init) => {
+    calls++;
+    if (url.includes('raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/')) {
+      assert.equal(init?.method, undefined);
+      return new Response(sample, { status: 200 });
+    }
+    assert.equal(url, 'https://api.mistral.ai/v1/audio/speech');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.ref_audio, Buffer.from(sample).toString('base64'));
+    assert.equal('voice_id' in body, false);
+    return Response.json({ audio_data: 'SUQz' });
+  });
+  await synth.synthesize('Guten Tag.', undefined, 'de_kerstin_cc0');
+  assert.equal(calls, 2);
+});
 test('Mistral accepts the voice selected by the authenticated app without a Worker voice secret', async () => {
   const synth = new MistralSpeechSynthesizer({ key: 'test' }, async (_url, init) => {
     assert.equal(JSON.parse(String(init?.body)).voice_id, 'preset-de');
