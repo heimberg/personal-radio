@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playPause: Button
     private lateinit var upcomingView: TextView
     private lateinit var spotifyButton: Button
+    private lateinit var spotifyStatus: TextView
     private lateinit var spotify: SpotifyLink
     private var spotifyClientId: String? = null
 
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         playPause = findViewById(R.id.play_pause)
         upcomingView = findViewById(R.id.upcoming)
         spotifyButton = findViewById(R.id.spotify)
+        spotifyStatus = findViewById(R.id.spotify_status)
         spotify = SpotifyLink(this)
 
         playPause.setOnClickListener { togglePlayback() }
@@ -117,14 +119,20 @@ class MainActivity : AppCompatActivity() {
      */
     private fun connectSpotify() {
         val clientId = spotifyClientId ?: return
+        spotifyStatus.visibility = View.VISIBLE
         if (!spotify.installed) {
-            statusView.text = getString(R.string.spotify_missing)
+            spotifyStatus.text = getString(R.string.spotify_missing)
             return
         }
-        statusView.text = getString(R.string.spotify_connecting)
+        spotifyStatus.text = getString(R.string.spotify_connecting)
+        spotifyButton.isEnabled = false
         spotify.connect(clientId, showAuthView = true) { error ->
-            statusView.text = error ?: getString(R.string.spotify_connected)
-            if (error == null) lifecycleScope.launch { refreshTimeline() }
+            spotifyButton.isEnabled = true
+            spotifyStatus.text = error ?: getString(R.string.spotify_connected)
+            if (error == null) {
+                spotifyButton.text = getString(R.string.spotify_connected_button)
+                lifecycleScope.launch { refreshTimeline() }
+            }
         }
     }
 

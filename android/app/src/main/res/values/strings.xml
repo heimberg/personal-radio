@@ -31,6 +31,7 @@
     <string name="spotify_connect">Spotify verbinden</string>
     <string name="spotify_connecting">Spotify wird verbunden …</string>
     <string name="spotify_connected">Spotify verbunden. Künstlerstunden laufen jetzt mit Musik.</string>
+    <string name="spotify_connected_button">Spotify verbunden ✓</string>
     <string name="spotify_missing">Installiere die Spotify-App und melde dich dort an.</string>
     <string name="spotify_tracks">%1$d Songs über Spotify</string>
 </resources>
