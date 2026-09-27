@@ -17,6 +17,7 @@ database_id = "d76d06b3-cb52-4c4c-88ff-b05329bac327"
 migrations_dir = "migrations"
 
 [vars]
+ASK_BASE_URL = "https://ask.ict-tfbern.ch/api/v1"
 ASK_MODEL = "ask-base"
 GEMINI_TEXT_MODEL = "gemini-3.8-flash"
 GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
