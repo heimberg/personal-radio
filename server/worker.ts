@@ -9,7 +9,9 @@ import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
-import { produceItem, tick, toView } from './station.ts';
+import { produceItem, scheduleShowNow, tick, toView } from './station.ts';
+import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
+import type { MusicCatalog, MusicWriter } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
@@ -43,6 +45,10 @@ interface Environment {
   GEMINI_API_KEY?: string;
   GEMINI_TEXT_MODEL?: string;
   GEMINI_RESEARCH_MODEL?: string;
+  /** Spotify app credentials for track search (client credentials, no user login). */
+  SPOTIFY_CLIENT_ID?: string;
+  SPOTIFY_CLIENT_SECRET?: string;
+  SPOTIFY_MARKET?: string;
   GEMINI_TTS_MODEL?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
@@ -184,6 +190,20 @@ function pipelineFor(env: Environment): SegmentPipeline {
   return pipeline;
 }
 
+const musicCache = new WeakMap<object, { writer?: MusicWriter; catalog?: MusicCatalog }>();
+function musicFor(env: Environment) {
+  let music = musicCache.get(env.DB as object);
+  if (!music) {
+    music = {
+      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }) } : {}),
+      ...(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
+        ? { catalog: new SpotifyCatalog({ clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET }) } : {}),
+    };
+    musicCache.set(env.DB as object, music);
+  }
+  return music;
+}
+
 function stationDeps(env: Environment): StationDeps {
   return {
     store: new StationStore(env.DB), pipeline: pipelineFor(env), audio: env.AUDIO,
@@ -197,6 +217,8 @@ function stationDeps(env: Environment): StationDeps {
       return format === 'podcast' ? providers.geminiDialog : providers.geminiBrief;
     },
     researcher: providersFor(env).researcher,
+    musicWriter: musicFor(env).writer,
+    catalog: musicFor(env).catalog,
   };
 }
 
@@ -262,19 +284,39 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const result = await refreshProgram(env, owner, false);
     return json({ ...reset, planned: result.planned, queued: result.due.length }, 200);
   }
+  const produce = url.pathname.match(/^\/api\/shows\/([a-z0-9-]{1,40})\/produce$/);
+  if (produce) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    await store.touch(owner, new Date());
+    const itemId = await scheduleShowNow(stationDeps(env), owner, produce[1]);
+    if (!itemId) return json({ error: 'unknown_show' }, 404);
+    await env.PRODUCTION.send({ owner, itemId });
+    return json({ itemId }, 200);
+  }
   const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
   if (match[2] === 'audio') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
-    if (!row.audio_key || row.state === 'expired') return json({ error: 'audio_unavailable' }, 404);
+    // Artist hours keep one file per spoken part: ?part=<index into the hour's parts>.
+    let key = row.audio_key, contentType = row.content_type;
+    const part = url.searchParams.get('part');
+    if (part !== null) {
+      let parts: Array<{ kind?: string; audioKey?: string; contentType?: string }> = [];
+      try { parts = (JSON.parse(row.script_json ?? '{}') as { parts?: typeof parts }).parts ?? []; } catch { /* No parts. */ }
+      const chosen = /^\d{1,3}$/.test(part) ? parts[Number(part)] : undefined;
+      key = chosen?.kind === 'speech' && chosen.audioKey ? chosen.audioKey : null;
+      contentType = chosen?.contentType ?? 'audio/mpeg';
+    }
+    if (!key || row.state === 'expired') return json({ error: 'audio_unavailable' }, 404);
     const wantsRange = request.headers.has('Range');
     let object: StoredAudio | null;
-    try { object = await env.AUDIO.get(row.audio_key, wantsRange ? { range: request.headers } : undefined); }
+    try { object = await env.AUDIO.get(key, wantsRange ? { range: request.headers } : undefined); }
     catch { return new Response(null, { status: 416 }); }
     if (!object) return json({ error: 'audio_unavailable' }, 404);
-    const headers = new Headers({ 'Content-Type': row.content_type ?? 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=86400', ETag: object.httpEtag });
+    const headers = new Headers({ 'Content-Type': contentType ?? 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=86400', ETag: object.httpEtag });
     if (wantsRange && object.range) {
       const { offset, length, suffix } = object.range;
       const start = suffix !== undefined ? object.size - suffix : offset ?? 0;

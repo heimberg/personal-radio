@@ -4,7 +4,7 @@ import { activeSlot, ConfigError, defaultStationConfig, parseStationConfig } fro
 import type { StationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
-import { planTimeline, produceItem, tick, toView } from '../server/station.ts';
+import { planTimeline, produceItem, scheduleShowNow, tick, toView } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { PipelineError } from '../server/segment-pipeline.ts';
 import { ProviderError } from '../server/providers.ts';
@@ -329,4 +329,69 @@ test('failures are summarised, cleaned up on request and purged automatically af
   await tick(h.deps, OWNER);
   assert.equal(await h.store.getItem(OWNER, due[3]), null);
   assert.equal((await h.store.getItem(OWNER, due[4]))?.state, 'failed');
+});
+
+test('an artist hour researches, resolves picks on Spotify, writes moderations and voices part by part', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true, artist: 'Portishead', tracks: 3 } : { ...show, enabled: false });
+  const h = harness({ station: parseStationConfig(station) }); await h.setup();
+  const dossier = [{ id: 'w1', url: 'https://example.org/p', title: 'example.org', excerpt: 'Dummy erschien 1994.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }];
+  const researched: string[] = [];
+  h.deps.researcher = { research: async request => { researched.push(request.brief); return { sources: dossier, queries: ['portishead dummy'] }; } };
+  const spotifyAsked: string[] = [];
+  h.deps.catalog = { find: async pick => { spotifyAsked.push(pick.title); return pick.title === 'Unbekannt' ? null : { uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 240_000 }; } };
+  let hourInput: any;
+  h.deps.musicWriter = {
+    pickArtist: async () => { throw new Error('the artist is fixed'); },
+    pickTracks: async () => ['Glory Box', 'Unbekannt', 'Roads', 'Sour Times', 'Numb'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
+    writeHour: async input => { hourInput = input; return { title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
+      tracks: [{ index: 0, text: 'Zu Glory Box.', sourceIds: ['w1'] }, { index: 2, text: 'Zu Sour Times.', sourceIds: [] }], outro: { text: 'Danke.', sourceIds: [] } }; },
+  };
+  let voiceCalls = 0, failAt = 3;
+  h.deps.pipeline.voice = async (_owner, script, _format, voiceId) => {
+    voiceCalls++;
+    if (voiceCalls === failAt) throw new Error('Mistral request failed (503)');
+    assert.equal(voiceId, 'de_kerstin_cc0');
+    return { audio: new TextEncoder().encode(script.text), contentType: 'audio/mpeg', ttsCharacters: script.text.length };
+  };
+  // The hour is not in the program clock: "Jetzt produzieren" plans it directly.
+  const id = (await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!;
+  assert.equal((await h.store.getItem(OWNER, id))?.estimated_minutes, 60);
+  assert.equal(await produceItem(h.deps, OWNER, id), 'retry');
+  assert.match(researched[0], /Künstler-Stunde über Portishead/);
+  assert.deepEqual(spotifyAsked, ['Glory Box', 'Unbekannt', 'Roads', 'Sour Times']); // stops once 3 tracks resolved
+  assert.deepEqual(hourInput.picks.map((pick: { title: string }) => pick.title), ['Glory Box', 'Roads', 'Sour Times']);
+  assert.equal(h.calls.review, 1);
+  // Two parts were voiced before the failure; the retry voices only the rest.
+  h.advance(11); failAt = 0;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  assert.equal(voiceCalls, 5); // intro, Glory Box, (failed), Sour Times, outro
+  const view = toView((await h.store.getItem(OWNER, id))!, parseStationConfig(station));
+  assert.equal(view.title, 'Portishead'); assert.equal(view.artist, 'Portishead'); assert.equal(view.audioUrl, undefined);
+  assert.deepEqual(view.parts!.map(part => part.kind === 'track' ? part.title : part.audioUrl), [
+    `api/timeline/${id}/audio?part=0`, `api/timeline/${id}/audio?part=1`, 'Glory Box', 'Roads',
+    `api/timeline/${id}/audio?part=4`, 'Sour Times', `api/timeline/${id}/audio?part=6`,
+  ]);
+  assert.equal(h.bucket.size, 4);
+  // Expiry releases every part's audio.
+  h.advance(13 * 60);
+  await tick(h.deps, OWNER);
+  assert.equal(h.bucket.size, 0);
+});
+
+test('an artist hour without enough Spotify matches fails with the count; missing Spotify is reported', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true } : { ...show, enabled: false });
+  const h = harness({ station: parseStationConfig(station) }); await h.setup();
+  const due = [(await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!];
+  h.deps.researcher = { research: async () => ({ sources: [{ id: 'w1', url: 'https://example.org/p', title: 't', excerpt: 'x', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }) };
+  h.deps.musicWriter = { pickArtist: async () => ({ artist: 'Björk', reason: 'r' }), pickTracks: async () => [{ title: 'A', artist: 'Björk', reason: '' }, { title: 'B', artist: 'Björk', reason: '' }],
+    writeHour: async () => { throw new Error('not reached'); } };
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'failed');
+  assert.equal((await h.store.getItem(OWNER, due[0]))?.error, 'SPOTIFY_NOT_CONFIGURED');
+  const id = await scheduleShowNow(h.deps, OWNER, 'kuenstler');
+  h.deps.catalog = { find: async pick => pick.title === 'A' ? { uri: 'spotify:track:a', durationMs: 1 } : null };
+  assert.equal(await produceItem(h.deps, OWNER, id!), 'failed');
+  assert.equal((await h.store.getItem(OWNER, id!))?.error, 'TOO_FEW_TRACKS: 1 von 2 Songs auf Spotify gefunden');
+  assert.equal(await scheduleShowNow(h.deps, OWNER, 'gibt-es-nicht'), null);
 });

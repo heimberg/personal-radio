@@ -185,6 +185,12 @@ test('server program: import device settings, show timeline, play ready segments
   const timeline = page.getByRole('list', { name: 'Programmablauf' });
   await expect(page.getByText(/⚠ 1 fehlgeschlagen · zuletzt \d\d:\d\d: Keine neuen Artikel in den Feeds dieser Sendung\./)).toBeVisible();
   await expect(timeline.getByRole('listitem')).toHaveCount(1);
+  let produced = '';
+  await page.route('**/api/shows/*/produce', route => { produced = route.request().url(); return route.fulfill({ contentType: 'application/json', body: '{"itemId":"x"}' }); });
+  await page.getByLabel('Sendung sofort produzieren').selectOption('kuenstler');
+  await page.getByRole('button', { name: 'Jetzt produzieren' }).click();
+  await expect(page.getByText('«Künstler-Stunde» wird produziert.')).toBeVisible();
+  expect(produced).toMatch(/\/api\/shows\/kuenstler\/produce$/);
   let cleaned = 0;
   await page.route('**/api/timeline/cleanup', route => { cleaned++; return route.fulfill({ contentType: 'application/json', body: '{"removed":1}' }); });
   await page.getByRole('button', { name: 'Aufräumen' }).click();

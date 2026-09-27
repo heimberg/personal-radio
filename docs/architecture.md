@@ -93,7 +93,7 @@ The two steps keep the script call independent of whether a model supports searc
 
 **Topic memory:** every draft and every research request receive the titles of the last 15 produced segments with the instruction not to repeat them.
 
-## Artist hour (next)
+## Artist hour (server side implemented; playback in the app next)
 
 A show format `artist_hour` for one hour about one artist or band: individual tracks, and between them generated background on the artist, the band and the songs, grounded in web search.
 
@@ -116,7 +116,7 @@ Production, entirely ahead of time:
 4. **Check and voice:** claims are checked against the dossier sources; unsupported sentences are rewritten or dropped. Moderations are voiced to R2.
 5. **Timeline:** opening → moderation → Spotify track → moderation → … → closing. About 45 minutes of music and 12–15 minutes of AI speech per hour, which satisfies the speech requirement by construction. One hour needs roughly 10,000–12,000 TTS characters; raise `DAILY_TTS_CHARACTERS` accordingly.
 
-Timeline items gain the kind `spotify-track`. Spotify tracks play on the phone only with the Android app (milestone 3); the hour can be produced and inspected in the cockpit before, and previewed on desktop with the Web Playback SDK.
+Implementation: an artist hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks; the web player and the current app skip it, because the music needs the App Remote handoff (next step).
 
 ## Music curation (AI → Spotify only)
 

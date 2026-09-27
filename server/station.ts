@@ -8,7 +8,9 @@ import { ProviderError } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
+import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
+import type { MusicCatalog, MusicWriter, TrackPick } from './music.ts';
 
 export interface AudioBucket {
   put(key: string, value: Uint8Array, options: { httpMetadata: { contentType: string } }): Promise<unknown>;
@@ -26,6 +28,9 @@ export interface StationDeps {
   generator?(provider: TextProvider, format: ShowConfig['format']): TextGenerator | undefined;
   /** Google-Search-grounded research for `web` shows; undefined without Gemini. */
   researcher?: Researcher;
+  /** Artist hours: Gemini picks and writes, Spotify resolves picks to tracks. */
+  musicWriter?: MusicWriter;
+  catalog?: MusicCatalog;
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -76,8 +81,9 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   if (!config) return { planned: 0, due: [], expired: 0 };
   const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now);
   for (const row of [...expired, ...await deps.store.audioToRelease(owner, minutes(now, -AUDIO_RETENTION_DAYS * 24 * 60))]) {
-    if (!row.audio_key) continue;
-    await deps.audio.delete(row.audio_key);
+    const keys = audioKeysOf(row);
+    if (!keys.length) continue;
+    for (const key of keys) await deps.audio.delete(key);
     await deps.store.update(owner, row.id, { audio_key: null }, now);
   }
   // Failed and expired items are only kept for a day, so the timeline does not fill up.
@@ -145,6 +151,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const show = config.shows.find(item => item.id === row.show_id);
   if (!show) return fail('SHOW_REMOVED');
   try {
+    if (show.format === 'artist_hour') return await produceArtistHour(deps, owner, config, show, row, fail);
     let current = row;
     if (current.state === 'planned') {
       if (show.format === 'podcast' && !deps.podcastAvailable) return fail('PODCAST_PROVIDER_NOT_CONFIGURED');
@@ -201,6 +208,110 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   }
 }
 
+/** Stored in script_json: the hour's speech and tracks in playing order. */
+interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
+interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string }
+interface HourPackage { kind: 'artist_hour'; title: string; artist: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
+
+/** Mistral speaks at most about 280 words per request; longer moderations become consecutive parts. */
+export function splitSpeech(text: string, maxWords = 250): string[] {
+  const chunks: string[] = [];
+  let current: string[] = [];
+  for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
+    const words = sentence.split(/\s+/).filter(Boolean);
+    if (current.length && current.length + words.length > maxWords) { chunks.push(current.join(' ')); current = []; }
+    current.push(...words);
+    while (current.length > maxWords) { chunks.push(current.slice(0, maxWords).join(' ')); current = current.slice(maxWords); }
+  }
+  if (current.length) chunks.push(current.join(' '));
+  return chunks;
+}
+
+async function recentArtists(deps: StationDeps, owner: string): Promise<string[]> {
+  const artists: string[] = [];
+  for (const row of await deps.store.recentItems(owner, 60)) {
+    try { const pkg = JSON.parse(row.script_json ?? '{}') as Partial<HourPackage>; if (pkg.kind === 'artist_hour' && pkg.artist) artists.push(pkg.artist); } catch { /* Skip. */ }
+  }
+  return [...new Set(artists)];
+}
+
+/**
+ * One hour about one artist: grounded dossier → AI track picks → Spotify search (code only) →
+ * moderations for resolved tracks → verification → voicing part by part. Progress is stored after every
+ * spoken part, so a retry never pays twice.
+ */
+async function produceArtistHour(deps: StationDeps, owner: string, config: StationConfig, show: ShowConfig, row: TimelineRow,
+  fail: (error: string) => Promise<'failed'>): Promise<ProduceOutcome> {
+  const now = deps.now();
+  let pkg: HourPackage;
+  if (row.state === 'planned') {
+    if (!deps.researcher || !deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
+    if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
+    await deps.reserveGeneration(owner);
+    const interests = [...config.profile.topics, ...config.profile.interests];
+    const artist = show.artist ?? (await deps.musicWriter.pickArtist({ interests, avoid: await recentArtists(deps, owner), instructions: show.instructions })).artist;
+    const { sources, queries } = await deps.researcher.research({
+      brief: `Künstler-Stunde über ${artist}: Biografie, Schaffensphasen, Alben, Entstehung einzelner Songs, Einflüsse, Anekdoten. ${show.researchPrompt}`,
+      interests: [artist], avoidTopics: [], now,
+    });
+    if (!sources.length) return fail('NO_SOURCES');
+    const picks = await deps.musicWriter.pickTracks({ artist, count: show.tracks ?? 10, sources, instructions: show.instructions });
+    const resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }> = [];
+    for (const pick of picks) {
+      if (resolved.length >= (show.tracks ?? 10)) break;
+      const track = await deps.catalog.find(pick);
+      if (track && !resolved.some(item => item.uri === track.uri)) resolved.push({ pick, ...track });
+    }
+    if (resolved.length < 3) return fail(`TOO_FEW_TRACKS: ${resolved.length} von ${picks.length} Songs auf Spotify gefunden`);
+    const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner) };
+    const hour = await deps.musicWriter.writeHour({ artist, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
+    const spoken = [hour.intro, ...hour.tracks, hour.outro];
+    const sourceIds = [...new Set(spoken.flatMap(part => part.sourceIds))];
+    const text = spoken.map(part => part.text).join(' ');
+    await deps.pipeline.review({ title: hour.title, text, sourceIds }, sources, show.verification);
+    const speech = (part: { text: string; sourceIds: string[] }): SpeechPart[] => splitSpeech(part.text).map(chunk => ({ kind: 'speech', text: chunk, sourceIds: part.sourceIds }));
+    const parts: Array<SpeechPart | TrackPart> = [...speech(hour.intro)];
+    resolved.forEach((item, index) => {
+      const moderation = hour.tracks.find(track => track.index === index);
+      if (moderation) parts.push(...speech(moderation));
+      parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, reason: item.pick.reason });
+    });
+    parts.push(...speech(hour.outro));
+    pkg = { kind: 'artist_hour', title: hour.title, artist, text, sourceIds, parts };
+    await deps.store.markCovered(owner, sources.map(source => source.url), now);
+    await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), sources_json: JSON.stringify(sources),
+      verification: show.verification, research_json: queries.length ? JSON.stringify({ queries }) : null }, deps.now());
+  } else {
+    pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
+  }
+  const voiceId = show.voiceId ?? config.host.voiceId;
+  for (const [index, part] of pkg.parts.entries()) {
+    if (part.kind !== 'speech' || part.audioKey) continue;
+    const voiced = await deps.pipeline.voice(owner, { title: pkg.title, text: part.text, sourceIds: part.sourceIds.length ? part.sourceIds : pkg.sourceIds }, 'brief', voiceId);
+    const key = `segments/${row.id}-${index}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
+    await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+    part.audioKey = key; part.contentType = voiced.contentType;
+    // The first key marks the row as holding audio, so retention and cleanup find it.
+    await deps.store.update(owner, row.id, { script_json: JSON.stringify(pkg), audio_key: row.audio_key ?? key }, deps.now());
+    row = { ...row, audio_key: row.audio_key ?? key };
+  }
+  await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, error: null }, deps.now());
+  return 'ready';
+}
+
+/** Plans one item of a show right away, outside the program clock ("Jetzt produzieren"). */
+export async function scheduleShowNow(deps: StationDeps, owner: string, showId: string): Promise<string | null> {
+  const config = await deps.store.getConfig(owner);
+  const show = config?.shows.find(item => item.id === showId);
+  if (!show) return null;
+  const now = deps.now();
+  const ahead = (await deps.store.openItems(owner)).reduce((sum, item) => sum + item.estimated_minutes, 0);
+  const last = await deps.store.lastItem(owner);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: show.id, plannedAt: minutes(now, ahead).toISOString(), estimatedMinutes: show.targetMinutes }, now);
+  return id;
+}
+
 export function toView(row: TimelineRow, config: StationConfig | null): TimelineItemView {
   let script: Partial<Script> = {}, sources: Source[] = [];
   try { script = JSON.parse(row.script_json ?? '{}'); } catch { /* Keep the item visible without details. */ }
@@ -216,6 +327,17 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     ...(row.verification ? { verification: row.verification as VerificationPolicy } : {}),
     ...(queries.length ? { searchQueries: queries } : {}),
     ...(row.error ? { error: row.error } : {}),
-    ...(row.audio_key && row.state !== 'expired' ? { audioUrl: `api/timeline/${row.id}/audio` } : {}),
+    ...(hourView(row, script as Partial<HourPackage>) ?? (row.audio_key && row.state !== 'expired' ? { audioUrl: `api/timeline/${row.id}/audio` } : {})),
+  };
+}
+
+function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'artist'> | null {
+  if (pkg.kind !== 'artist_hour' || !Array.isArray(pkg.parts)) return null;
+  const playable = row.state !== 'expired';
+  return {
+    artist: pkg.artist ?? '',
+    parts: pkg.parts.map((part, index) => part.kind === 'track'
+      ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
+      : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),
   };
 }

@@ -187,3 +187,61 @@ test('the Android app authenticates with an Access service token and acts as the
     assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), withoutConfiguredToken as never)).status, 401);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('artist hour through the Worker: produce now, queue, parts in the timeline and audio per spoken part', async () => {
+  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const jwk = await exportJWK(publicKey); Object.assign(jwk, { kid: 'k4', alg: 'RS256', use: 'sig' });
+  const team = 'hour-test.cloudflareaccess.com', aud = 'hour-aud';
+  const token = await new SignJWT({ email: 'owner@example.test', type: 'app' }).setProtectedHeader({ alg: 'RS256', kid: 'k4' })
+    .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
+  const originalFetch = globalThis.fetch;
+  const spotifySeen: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
+    const reply = (value: unknown, groundingMetadata?: unknown) => Response.json({ candidates: [{ content: { parts: [{ text: typeof value === 'string' ? value : JSON.stringify(value) }] }, ...(groundingMetadata ? { groundingMetadata } : {}) }] });
+    if (url.includes('generativelanguage.googleapis.com')) {
+      const body = JSON.parse(String(init?.body));
+      const system = body.systemInstruction.parts[0].text as string;
+      if (body.tools) return reply('Dummy erschien 1994.', { webSearchQueries: ['portishead'], groundingChunks: [{ web: { uri: 'https://example.org/p', title: 'example.org' } }],
+        groundingSupports: [{ segment: { text: 'Dummy erschien 1994.' }, groundingChunkIndices: [0] }] });
+      if (system.includes('Moderationen')) return reply({ title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
+        tracks: [0, 1, 2].map(index => ({ index, text: `Song ${index}.`, sourceIds: ['w1'] })), outro: { text: 'Danke.', sourceIds: [] } });
+      if (system.startsWith('Du stellst die Songliste')) return reply({ tracks: ['Glory Box', 'Roads', 'Sour Times'].map(title => ({ title, artist: 'Portishead', reason: 'r' })) });
+      throw new Error(`Unexpected Gemini call: ${system.slice(0, 40)}`);
+    }
+    if (url === 'https://accounts.spotify.com/api/token') return Response.json({ access_token: 'app', expires_in: 3600 });
+    if (url.startsWith('https://api.spotify.com/v1/search')) {
+      const q = new URL(url).searchParams.get('q')!; spotifySeen.push(q);
+      const title = /^track:(.+) artist:/.exec(q)![1];
+      return Response.json({ tracks: { items: [{ uri: `spotify:track:${title.replace(/\W/g, '')}`, name: title, duration_ms: 200000, artists: [{ name: 'Portishead' }] }] } });
+    }
+    if (url.endsWith('/v1/audio/speech')) return Response.json({ audio_data: 'SUQz' });
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const sent: Array<{ owner: string; itemId: string }> = [];
+  const env = { DB: sqliteD1(), AUDIO: memoryBucket(), PRODUCTION: { send: async (message: { owner: string; itemId: string }) => { sent.push(message); } },
+    ASSETS: { fetch: async () => new Response('app') }, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud, ALLOWED_EMAIL: 'owner@example.test',
+    GEMINI_API_KEY: 'gemini', MISTRAL_API_KEY: 'mistral', SPOTIFY_CLIENT_ID: 'id', SPOTIFY_CLIENT_SECRET: 'secret' };
+  const call = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, {
+    ...init, headers: { 'Cf-Access-Jwt-Assertion': token, Origin: ORIGIN, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+  }), env as never);
+  try {
+    const station = defaultStationConfig({ voiceId: 'voice-test' });
+    station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, artist: 'Portishead', tracks: 3 } : show);
+    assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
+    assert.equal((await call('/api/shows/gibt-es-nicht/produce', { method: 'POST' })).status, 404);
+    const { itemId } = await (await call('/api/shows/kuenstler/produce', { method: 'POST' })).json() as { itemId: string };
+    assert.deepEqual(sent.map(message => message.itemId), [itemId]);
+    await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
+    const { items } = await (await call('/api/timeline')).json() as { items: Array<{ id: string; state: string; artist?: string; parts?: Array<{ kind: string; audioUrl?: string; spotifyUri?: string }> }> };
+    const hour = items.find(item => item.id === itemId)!;
+    assert.equal(hour.state, 'ready', JSON.stringify(hour)); assert.equal(hour.artist, 'Portishead');
+    assert.equal(spotifySeen.length, 3);
+    assert.deepEqual(hour.parts!.map(part => part.kind), ['speech', 'speech', 'track', 'speech', 'track', 'speech', 'track', 'speech']);
+    assert.equal(hour.parts![2].spotifyUri, 'spotify:track:GloryBox');
+    const audio = await call(`/${hour.parts![0].audioUrl}`);
+    assert.equal(audio.status, 200); assert.equal(await audio.text(), 'ID3');
+    assert.equal((await call(`/api/timeline/${itemId}/audio?part=2`)).status, 404); // a track has no audio of ours
+  } finally { globalThis.fetch = originalFetch; }
+});

@@ -18,15 +18,18 @@ const ERROR_LABELS: Record<string, string> = {
   SHOW_REMOVED: 'Die Sendung existiert nicht mehr.',
   GEMINI_NOT_CONFIGURED: 'Gemini ist nicht konfiguriert (GEMINI_API_KEY).',
   ASK_NOT_CONFIGURED: 'ASK ist nicht konfiguriert; stelle die Sendung auf textProvider: gemini.',
+  SPOTIFY_NOT_CONFIGURED: 'Spotify-Suche ist nicht konfiguriert (SPOTIFY_CLIENT_ID und SPOTIFY_CLIENT_SECRET im Worker).',
 };
 const EDITOR_HELP = [
   '# host: Moderations-Persona – name, tone, style, instructions, voiceId (Mistral-Stimme, z. B. de_kerstin_cc0); cohostName spricht in Dialog-Sendungen mit',
   '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
   '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
+  '#        format artist_hour (20–90 Min.): artist (leer = KI wählt), tracks 3–15, talkSeconds 20–120 – Musik über Spotify',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');
 function errorLabel(error: string): string {
   if (error.startsWith('REJECTED: ')) return `Quellenprüfung nicht bestanden – ${error.slice('REJECTED: '.length)}`;
+  if (error.startsWith('TOO_FEW_TRACKS: ')) return `Zu wenige Songs gefunden – ${error.slice('TOO_FEW_TRACKS: '.length)}`;
   return ERROR_LABELS[error] ?? error;
 }
 const VERIFICATION_LABELS = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' } as const;
@@ -61,6 +64,7 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
   const [editor, setEditor] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [produceShow, setProduceShow] = useState('');
   const programActive = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -102,6 +106,19 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
       setMessage(`${result.planned ?? 0} neue Beiträge geplant, ${result.queued ?? 0} in Produktion.`);
       await refresh();
     } catch { setMessage('Planung fehlgeschlagen. Prüfe Anmeldung und Server.'); }
+    finally { setBusy(false); }
+  }
+
+  /** Produces one item of the chosen show now, outside the program clock. */
+  async function produceNow(showId: string) {
+    setBusy(true);
+    try {
+      const response = await fetch(api(`api/shows/${encodeURIComponent(showId)}/produce`), { method: 'POST', credentials: 'same-origin' });
+      await readJson<{ itemId?: string }>(response);
+      if (!response.ok) throw new Error();
+      setMessage(`«${config?.shows.find(show => show.id === showId)?.name ?? showId}» wird produziert.`);
+      await refresh();
+    } catch { setMessage('Produktion konnte nicht gestartet werden. Prüfe Anmeldung und Server.'); }
     finally { setBusy(false); }
   }
 
@@ -185,6 +202,15 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
         <button className="secondary" disabled={busy} onClick={() => void retry()}>Erneut versuchen</button>}
       <button className="secondary" onClick={() => void toggleEditor()}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
     </div>
+    <div className="produce-now">
+      <label htmlFor="produce-show">Sendung sofort produzieren</label>
+      <div className="feed-load-row">
+        <select id="produce-show" value={produceShow || config.shows[0]?.id} onChange={event => setProduceShow(event.target.value)}>
+          {config.shows.map(show => <option key={show.id} value={show.id}>{show.name}{show.enabled ? '' : ' (nicht in der Sendeuhr)'}</option>)}
+        </select>
+        <button className="secondary" disabled={busy || !config.shows.length} onClick={() => void produceNow(produceShow || config.shows[0].id)}>Jetzt produzieren</button>
+      </div>
+    </div>
     {editor !== null && <div className="config-editor">
       <label htmlFor="station-config">Moderation, Sendungen, Feeds, Sendeuhr und Prompts (YAML)</label>
       <textarea id="station-config" rows={20} spellCheck={false} value={editor} onChange={event => setEditor(event.target.value)} />
@@ -202,6 +228,8 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
         {item.error && item.state !== 'ready' && <small className="timeline-error">
           {item.updatedAt ? `${new Date(item.updatedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} · ` : ''}
           {errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</small>}
+        {item.parts && <small className="timeline-tracks">{item.artist ? `${item.artist}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
+          {' '}– Moderation hier, Musik über Spotify in der App.</small>}
         {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
         {item.searchQueries?.length ? <small className="timeline-search">Google-Suche: {item.searchQueries.map((query, index) => <span key={query}>{index ? ' · ' : ''}
           <a href={`https://www.google.com/search?q=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer">{query}</a></span>)}</small> : null}
