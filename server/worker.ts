@@ -3,6 +3,7 @@ import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './seg
 import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from './providers.ts';
 import type { Profile, Source } from '../src/domain/program.ts';
 import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
+import { listMistralVoices } from './mistral-voices.ts';
 
 interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null> }
 interface D1Database { prepare(query: string): D1Statement }
@@ -20,7 +21,7 @@ interface Environment {
   ASK_API_KEY: string;
   ASK_MODEL: string;
   MISTRAL_API_KEY: string;
-  MISTRAL_VOICE_ID: string;
+  MISTRAL_VOICE_ID?: string;
   GEMINI_API_KEY?: string;
   GEMINI_TEXT_MODEL?: string;
   GEMINI_TTS_MODEL?: string;
@@ -107,6 +108,12 @@ export default {
     const owner = await authenticate(request, env);
     if (!owner) return json({ error: 'unauthorized' }, 401);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (url.pathname === '/api/mistral-voices') {
+      if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+      try { return json({ voices: await listMistralVoices(env.MISTRAL_API_KEY) }, 200); }
+      catch { return json({ error: 'voice_catalog_unavailable' }, 502); }
+    }
     if (url.pathname === '/api/feed-items') {
       if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
       if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
