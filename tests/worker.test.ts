@@ -63,7 +63,7 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
       headers: { 'Cf-Access-Jwt-Assertion': token },
     }), env as never);
     assert.equal(voicesResponse.status, 200);
-    assert.deepEqual((await voicesResponse.json() as { voices: Array<{ id: string }> }).voices.map(voice => voice.id), ['en_paul_neutral', 'gb_oliver_neutral', 'gb_jane_neutral', 'fr_marie_neutral']);
+    assert.deepEqual((await voicesResponse.json() as { voices: Array<{ id: string }> }).voices.map(voice => voice.id), ['de_kerstin_cc0', 'en_paul_neutral', 'gb_oliver_neutral', 'gb_jane_neutral', 'fr_marie_neutral']);
     const response = await worker.fetch(makeRequest('request-key-0001'), env as never);
     assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'audio/mpeg');
     assert.equal(new TextDecoder().decode(await response.arrayBuffer()), 'ID3');
