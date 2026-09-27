@@ -129,3 +129,13 @@ class ArtistHourTest {
         assertEquals("Spotify ist auf dem Server nicht eingerichtet.", Labels.error("SPOTIFY_NOT_CONFIGURED"))
     }
 }
+
+class AccessDiagnosisTest {
+    @Test fun namesTheLayerThatRefused() {
+        assertEquals(AccessDiagnosis.ACCESS_REFUSED, AccessDiagnosis.message(302, "https://team.cloudflareaccess.com/cdn-cgi/access/login/radio", ""))
+        assertEquals(AccessDiagnosis.ACCESS_REFUSED, AccessDiagnosis.message(403, null, "<html>Forbidden</html>"))
+        assertTrue(AccessDiagnosis.message(401, null, """{"error":"unauthorized","reason":"service_token_not_allowed"}""").contains("ACCESS_SERVICE_TOKEN_ID"))
+        assertTrue(AccessDiagnosis.message(403, null, """{"error":"origin_rejected"}""").contains("Origin"))
+        assertEquals("Tageslimit erreicht.", AccessDiagnosis.message(429, null, ""))
+    }
+}
