@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Profile, Source } from '../domain/program.ts';
 import type { Track } from '../audio/player.ts';
@@ -7,6 +7,7 @@ import { rankCandidates } from '../domain/recommendation.ts';
 
 interface Props { profile: Profile; onReady(track: Track): void }
 interface SavedFeed { id: string; name: string; url: string }
+interface MistralVoiceOption { id: string; name: string; type: 'preset' | 'custom'; languages: string[]; gender?: string }
 
 function readSavedFeeds(): SavedFeed[] {
   try {
@@ -32,6 +33,35 @@ export function SegmentGenerator({ profile, onReady }: Props) {
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [voices, setVoices] = useState<MistralVoiceOption[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => localStorage.getItem('radio.mistral.voice.v1') ?? '');
+  const [voicesLoading, setVoicesLoading] = useState(true);
+  const [voiceMessage, setVoiceMessage] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(new URL('api/mistral-voices', window.location.href), {
+      credentials: 'same-origin', headers: { Accept: 'application/json' },
+    }).then(async response => {
+      const result = await response.json().catch(() => ({})) as { voices?: MistralVoiceOption[] };
+      if (!response.ok || !Array.isArray(result.voices)) throw new Error('Stimmenliste nicht verfügbar.');
+      const available = result.voices.filter(voice => voice && typeof voice.id === 'string' && typeof voice.name === 'string');
+      if (cancelled) return;
+      setVoices(available);
+      const saved = localStorage.getItem('radio.mistral.voice.v1');
+      const selected = available.find(voice => voice.id === saved) ??
+        available.find(voice => voice.languages.some(language => language.toLowerCase().startsWith('de'))) ?? available[0];
+      if (selected) {
+        setSelectedVoiceId(selected.id);
+        try { localStorage.setItem('radio.mistral.voice.v1', selected.id); } catch { /* Session selection still works. */ }
+      }
+      if (available.length && !available.some(voice => voice.languages.some(language => language.toLowerCase().startsWith('de')))) {
+        setVoiceMessage('Keine Stimme ist als Deutsch markiert. Die TTS-API unterstützt Deutsch; teste die Aussprache der verfügbaren Stimmen.');
+      } else if (!available.length) setVoiceMessage('Mistral hat keine Stimmen für diesen API-Key zurückgegeben.');
+    }).catch(() => { if (!cancelled) setVoiceMessage('Stimmenliste konnte nicht geladen werden. Prüfe Mistral-API-Key und private Anmeldung.'); })
+      .finally(() => { if (!cancelled) setVoicesLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function loadFeed() {
     setLoadingFeed(true); setMessage('Feed wird abgerufen …'); setFeedItems([]);
@@ -131,7 +161,7 @@ export function SegmentGenerator({ profile, onReady }: Props) {
       const response = await fetch(new URL('api/segments', window.location.href), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify({ profile, sources: [source], mode }),
+        body: JSON.stringify({ profile, sources: [source], mode, ...(mode === 'brief' && selectedVoiceId ? { voiceId: selectedVoiceId } : {}) }),
       });
       if (!response.ok) {
         const details = await response.json().catch(() => ({})) as { error?: string };
@@ -189,6 +219,20 @@ export function SegmentGenerator({ profile, onReady }: Props) {
         <option value="brief">Kurzer Radiobeitrag · ASK / Mistral</option>
         <option value="podcast">Podcastdialog mit zwei Hosts · Gemini</option>
       </select>
+      {mode === 'brief' && <>
+        <label htmlFor="mistral-voice">Mistral-Stimme</label>
+        <select id="mistral-voice" value={selectedVoiceId} disabled={voicesLoading || voices.length === 0} onChange={event => {
+          setSelectedVoiceId(event.target.value);
+          try { localStorage.setItem('radio.mistral.voice.v1', event.target.value); } catch { /* Session selection still works. */ }
+        }}>
+          {voicesLoading && <option value="">Stimmen werden geladen …</option>}
+          {!voicesLoading && voices.length === 0 && <option value="">Keine Stimmen verfügbar</option>}
+          {voices.map(voice => <option key={voice.id} value={voice.id}>
+            {voice.name}{voice.languages.length ? ` (${voice.languages.join(', ')})` : ''}
+          </option>)}
+        </select>
+        <p className="privacy-note" role="status">{voiceMessage || 'Die Auswahl bleibt auf diesem Gerät. Der API-Key bleibt im Worker.'}</p>
+      </>}
       <label htmlFor="source-title">Titel</label>
       <input id="source-title" required maxLength={300} value={title} onChange={event => setTitle(event.target.value)} placeholder="Titel des Artikels" />
       <label htmlFor="source-url">HTTPS-Link zur Quelle</label>
