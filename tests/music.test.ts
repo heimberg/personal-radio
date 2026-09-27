@@ -84,6 +84,21 @@ test('genre and theme hours ask for songs by different artists and drop picks wi
   assert.match(systems[2], /inhaltlich zum Thema «Der Mond» passen/);
 });
 
+test('music providers call fetch as a plain function, as Workers require', async () => {
+  // Workers throw "Illegal invocation" when fetch runs with a foreign `this`; simulate that.
+  function workerFetch(this: unknown, input: RequestInfo | URL): Promise<Response> {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    return Promise.resolve(String(input).includes('accounts.spotify.com')
+      ? Response.json({ access_token: 't', expires_in: 3600 })
+      : String(input).includes('api.spotify.com') ? Response.json({ tracks: { items: [] } })
+      : Response.json({ candidates: [{ content: { parts: [{ text: '{"subject":"Krautrock","reason":"r"}' }] } }] }));
+  }
+  const writer = new GeminiMusicWriter({ key: 'g' }, workerFetch as typeof fetch);
+  assert.equal((await writer.pickSubject({ focus: 'genre', interests: [], avoid: [], instructions: '' })).subject, 'Krautrock');
+  const catalog = new SpotifyCatalog({ clientId: 'id', clientSecret: 'secret' }, workerFetch as typeof fetch);
+  assert.equal(await catalog.find({ title: 'Hallogallo', artist: 'Neu!' }), null);
+});
+
 test('long moderations are split into parts Mistral can speak', () => {
   const sentence = 'Das ist ein Satz mit genau zehn Wörtern für den Test. ';
   const chunks = splitSpeech(sentence.repeat(60).trim(), 250);

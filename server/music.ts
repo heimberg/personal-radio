@@ -53,7 +53,8 @@ export class GeminiMusicWriter implements MusicWriter {
   private fetcher: Fetch;
   constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Gemini configuration incomplete');
-    this.key = config.key; this.model = config.model || 'gemini-3.8-flash'; this.fetcher = fetcher;
+    // Workers reject fetch called as a method ("Illegal invocation"), so keep a plain function.
+    this.key = config.key; this.model = config.model || 'gemini-3.8-flash'; this.fetcher = (input, init) => fetcher(input, init);
     if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model)) throw new Error('Gemini model configuration invalid');
   }
 
@@ -155,7 +156,7 @@ export class SpotifyCatalog implements MusicCatalog {
   private token?: { value: string; expiresAt: number };
   constructor(config: { clientId: string; clientSecret: string; market?: string }, fetcher: Fetch = fetch) {
     if (!config.clientId || !config.clientSecret) throw new Error('Spotify configuration incomplete');
-    this.clientId = config.clientId; this.clientSecret = config.clientSecret; this.fetcher = fetcher;
+    this.clientId = config.clientId; this.clientSecret = config.clientSecret; this.fetcher = (input, init) => fetcher(input, init);
     this.market = /^[A-Z]{2}$/.test(config.market ?? '') ? config.market! : 'CH';
   }
 
