@@ -1,77 +1,129 @@
 # Architecture and implementation plan
 
+Decisions revised 2026-09-27. This replaces the earlier local-first, browser-player plan.
+
+## Goal
+
+A private, single-user radio: tune in and hear a continuous program of AI-generated spoken segments and music that match one person's niche interests. Everything that shapes the program — shows, prompts, sources, voices, schedule, music rules and verification strictness — is user-editable configuration, not code.
+
 ## Decisions
 
-Start with a modular monolith in TypeScript and one server-side worker, not independent microservices. Keep domain contracts independent of React and provider SDKs. UI and playback are separate: rerenders must never recreate the audio element. Text generation and TTS run on the server; browser controls playback and displays verified results.
+1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
+2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
+3. **Native Android app as the primary player.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. The Spotify Web Playback SDK does not support mobile browsers; it stays a desktop-only option in the web app.
+4. **Web app becomes the cockpit.** Configure shows, sources, schedule and music rules, inspect the timeline and sources per segment, and preview segments on desktop.
+5. **Server-side configuration.** A backend that produces without an open browser must know the configuration, so shows, sources, schedule, feedback and memory move from `localStorage` to D1. The device keeps only UI preferences and a playback cache. Export and delete remain available.
+6. **Providers are replaceable adapters.** Text through an OpenAI-compatible chat API (ASK by default, owner-controlled; model per show) and Gemini for dialogs. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded.
+7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
+8. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit and production needs Workflows. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
 
-Current directories: `src/domain` holds contracts/validation, `src/audio` holds playback, `src/main.tsx` is the initial UI, `server/providers.ts` holds server-only integrations, and `server/worker.ts` is the private Cloudflare Worker entry point. The Worker serves its own frontend assets and `/api/segments`; the separately hosted GitHub Pages prototype remains public and does not call it.
+## System overview
 
-## Planned bounded modules
+```
+Cloudflare
+  Cron Trigger (every ~10 min) ── keeps the timeline filled ~45 min ahead of the playhead
+        │
+        ▼
+  Planner (Worker) ── reads schedule, shows, music rules, memory, feedback from D1
+        │ creates timeline items (planned)
+        ▼
+  Workflows (one run per item, durable steps, per-step retries)
+        segment:     collect sources → draft (ASK/Gemini) → verify per show policy
+                     → reserve budget → TTS → store in R2 → ready
+        music block: LLM picks tracks → resolve via Spotify search (code, no AI)
+                     → moderation for resolved tracks only → TTS → R2 → ready
+        │
+        ▼
+  D1: configuration, timeline, jobs, usage, feedback, memory      R2: audio segments
+        │
+        ▼  Timeline API (Access: browser login or service token)
+┌───────────────────────────────┬───────────────────────────────┐
+Android app (primary)             Web cockpit (desktop)
+· Media3 plays our segments       · edit shows, prompts, sources,
+· App Remote plays Spotify URIs     schedule, music rules
+· hands over at track end         · timeline with sources per segment
+· prefetches ready segments       · desktop preview (Web Playback SDK optional)
+· reports played/skipped/feedback
+```
 
-Profile, sources, editorial generation, verification, speech, program scheduling, playback, feedback and operations. Adapters implement `TextGenerator` and `SpeechSynthesizer`. The short format is ASK → ASK evidence review → Mistral speech. The two-host podcast format is Gemini text generation → ASK evidence review → Gemini multi-speaker TTS. Keep credentials server-side and provider selection behind those interfaces. Later add `SourceProvider`, `MusicProvider`, repository and job-store ports only when used.
+## Domain model
 
-## Editorial pipeline
+| Entity | Purpose |
+| --- | --- |
+| `Show` | A format: name, prompt template (editable), source selection, text provider/model, voice(s), target length, language/style, verification policy, enabled flag. |
+| `Source` | Feed URL, web page or manual note/topic list; weight, blocked terms, fetch interval, owner's rights check. |
+| `Schedule` | The program clock: per weekday and time window an ordered list of slots — a show, a music block (n tracks + music rule) or a moderation — plus a speech/music ratio. |
+| `MusicRule` | Free-text taste description, genres, eras, seed artists, exclusions, no-repeat window, discovery share. |
+| `TimelineItem` | Position, kind (`segment`, `spotify-track`, `moderation`), references, planned time, state `planned → producing → ready → played / skipped / failed / expired`. |
+| `Segment` | Script, cited sources, R2 audio key, measured duration, cost, provider/model/prompt versions, verification result. |
+| `FeedbackEvent` | like, dislike, skip (with listened ratio), complete, "already known", "go deeper". |
+| `Memory` | What was played, covered-story fingerprints for deduplication, series state ("part 3 of …"). |
 
-Fetch allowlisted RSS/API sources → deduplicate/date → select diverse candidates → construct cited fact records → ASK drafts script → deterministic schema/citation checks and editorial verification → TTS → measure actual duration → publish prepared segment to queue.
+Explicit configuration always wins over learned weights. The existing learning rules stay: thumbs are strong signals, completion is weakly positive, a skip before 20 % is ignored and a later skip is weakly negative, with a 45-day half-life.
 
-Citation existence is NOT factual verification. `parseScript` checks structure/source IDs only. `AskEditorialVerifier` additionally asks ASK for per-claim supporting quotes and requires each quote to be an exact substring of a cited source excerpt. This catches invented quotations but cannot prove that the model listed every claim or that the source itself is true. Add stale-source rejection, contradiction handling, source-quality policy and a golden evaluation set before relying on live news. Sources are untrusted data and cannot authorize tool calls. Restrict network egress; validate redirects, private IP ranges and response sizes when source fetching is implemented. No arbitrary user-controlled fetch URLs or model-selected executable actions.
+## Music curation (AI → Spotify only)
 
-Store source provenance, retrieval time, prompt/model version, verification state, script revision, audio revision and measured costs. State transitions are explicit: queued → drafting → verifying → voicing → ready, or failed. Jobs need idempotency keys, leases, bounded retries/backoff and a dead-letter state. App budget must reserve estimated TTS costs before submission; a retry cannot create duplicate paid generation. Cache by script + voice + model + settings hash.
+No Spotify audio, metadata, search results or listening behaviour are ever sent to an AI provider or used for learning. The data flow goes one way:
 
-Prefetch only a bounded amount of audio. Expire news by freshness policy, not just cache age. If ASK/TTS fail, use still-valid prepared content with a clear status. Never invent replacement news. Each provider adapter makes one bounded request per call. `server/segment-pipeline.ts` orchestrates bounded source inputs, ASK script generation, structural citation checks, an editorial-verifier port, per-owner/day character reservation before TTS, output-size checks, concurrency bounds and in-flight idempotency. The mobile UI accepts a user-entered source or lets the user load and select one entry from an RSS/Atom feed. The verifier requires exact source quotes but cannot prove every claim is captured or that sources are truthful; automated scheduling, deduplication and preference-based feed selection remain out of scope for this slice.
+1. The LLM picks tracks (artist, title, short reason) from its own knowledge, guided by `MusicRule` and the recent playlist memory (our own records of the LLM's earlier picks).
+2. The backend resolves each pick through the Spotify Search API with an app token (client credentials) and accepts it only if a normalized artist/title comparison matches. This comparison is deterministic code. Unmatched picks are dropped.
+3. Only then does the LLM write moderation, for resolved picks only, based solely on its own selection. The only information passed forward is which picks resolved.
 
-The current in-flight coalescing is process-local. It resets on restart, does not coordinate across instances and only coalesces concurrent requests (not retries after completion). Treat this as a testable foundation, not an exactly-once guarantee. Persist budgets/jobs transactionally and authenticate owners before exposing a route. The private Worker can fetch a user-entered HTTPS RSS/Atom URL for a bounded list of entries: redirects are rejected, the response is capped at 500 KB, and the selected entry is only sent to ASK after an explicit generation action. Feed URL checks reject credentials, IP literals, localhost and common private hostnames; Cloudflare Worker outbound fetches are restricted to public internet services; provider terms and rights still need review per feed. D1 enforces a separate 60-feed-request daily quota per owner.
+The planner stores the Spotify URI in the timeline; the app plays it through App Remote.
 
-## Profile storage
+## Playback handoff (Android)
 
-Use a local-first profile. The PWA stores explicit interests, feedback events, learned weights, feed preferences and playback position in IndexedDB so that personalization works offline and remains on the user's device. The public demo remains client-only. Treat browser storage as persistent application storage, not a secure vault: do not put provider credentials or access tokens there.
+- Our segment ends → start the Spotify URI via App Remote → subscribe to player state.
+- The Spotify track ends or changes → pause Spotify immediately → play the next segment through Media3.
+- Spotify may briefly start the following track or autoplay before the pause takes effect; measure this and minimize it (single-track playback, pause on track change).
+- Our segments are prefetched from R2, so short network loss does not stop the program. News items carry an expiry and are skipped when stale.
+- Acceptance test: 60 minutes screen-off with at least 10 handoffs, lock-screen/Bluetooth controls, an incoming call and a network change. The existing [Android test](android-test.md) covers our own audio only.
 
-Keep the profile model relational and explainable. Separate explicit interests from append-only feedback events (like, dislike, completion, skip, listening progress) and from derived topic weights. Store event timestamps and content/source identifiers so ranking changes can be replayed; allow the user to inspect, reset, export and delete this data. Keep only the minimum location-derived context needed for personalization; do not create a precise long-term location trail by default.
+## Content quality and safety
 
-Add optional cross-device sync later through an authenticated Worker repository backed by D1. Sync only after the user enables an account/sync feature. Model core entities with SQL tables and use JSON only for provider-specific or evolving metadata. Do not add a graph database or vector database at MVP: use ordinary relational links for topic/place/source relationships. Reconsider graph storage only if multi-hop relationship queries become a core feature; reconsider vector search when semantic retrieval over a substantial content library is demonstrably useful. D1 is the planned low-cost managed SQL option, not a requirement for local-only use.
+- Sources are untrusted data, never instructions. Feed fetching keeps its limits: HTTPS only, no redirects, no IP literals or local hosts, 500 KB, 20 entries.
+- Each segment exposes its sources in the cockpit. Segments without `strict` verification are never presented as verified news.
+- Deduplicate against memory so the same story is not retold. Never invent replacement news when production fails; play prepared content or music instead.
+- Cost control: D1 quotas per day (requests, TTS characters, feed fetches), budget reserved before TTS, horizon capped, audio cached by script + voice + model + settings hash.
 
-## Learning
+## Security
 
-Keep explicit preferences separate from session intent and inferred preferences. Explicit choices seed the content model. Strong signals: thumbs up/down. Weak signals: completing a segment is slightly positive; skipping after 20% is weak negative; a skip before 20% is ignored as likely interruption. Use a neutral prior and 45-day half-life so sparse/old evidence moves back towards neutral. Rank feed items by interest match and learned weight; epsilon-greedy exploration keeps the user-selected exploration share for alternatives. Keep this one-user system content-based and explainable; collaborative filtering has no useful population signal in a private single-user installation. Feedback history and learned weights stay on-device and can be reset. Do not infer sensitive traits. No model training at MVP stage. Do not feed Spotify data into ASK or infer profiles from Spotify listening.
+Public repository, private application. Cloudflare Access protects the Worker. Browsers authenticate with an Access login (existing JWT check with email allowlist). The Android app authenticates with an Access service token; the Worker's JWT check must additionally accept that token's identity. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
 
-The feed matcher currently uses text overlap between explicit interests and each entry's title/excerpt. It then preselects the highest-ranked entry; it does not yet autonomously poll feeds or generate a continuous queue. Add semantic tagging, deduplication and freshness/diversity policy before unattended generation. Spotify and background location are separate permission-gated features.
+## Current state and gaps
 
-## Android decision gate
+Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning.
 
-PWA installation and a service worker do not guarantee uninterrupted background execution. Measure real screen-locked playback, transitions, external controls and interruptions. A failed mandatory Android test triggers a native playback decision: reuse the web UI but implement an actual Android Media3 foreground media service. A plain WebView wrapper is not the solution. Native Spotify App Remote would be a separate integration and does not remove Spotify policy constraints.
+Gaps against this plan:
 
-## Music integration
+- Production runs inside one synchronous `POST /api/segments` request (up to several minutes). A locked screen or a dropped connection loses already-paid audio. Move production to Workflows and R2.
+- Profile, feeds, feedback and voice are in `localStorage`; move them to D1 (one-time import from the device).
+- Topics are still a fixed list of three; replace them with shows and free interests.
+- The Mistral TTS model is hard-coded; make it configuration.
+- The JWKS for the Access check is recreated on every request; cache it at module scope.
+- Frontend error messages are derived from substring matches on provider error details; return stable error codes.
+- `speechMinutes` allows 10 minutes, while the brief prompt asks for at most 250 words and Mistral TTS caps at 280 words.
 
-The user states that Spotify has granted permission for this private integrated use. Proceed with a single-user Spotify integration on that basis. Limit the initial implementation to playback from a user-selected Spotify playlist/context and its basic transport controls. Do not send Spotify audio, metadata, or listening behaviour to ASK, Mistral or Gemini or use it for profile learning; those uses are outside the scope currently established for the permission.
+## Milestones
 
-Use Spotify Authorization Code with PKCE in the browser (no client secret in the app), and the Web Playback SDK for the private PWA. Keep OAuth access/refresh tokens in memory; use session storage only for the short-lived PKCE verifier/state during redirect. The Client ID is public configuration and belongs only in the private build configuration. The public GitHub Pages demo must not load the Spotify SDK or expose a connect flow. Playback requires Spotify Premium, and Development Mode is limited to one Client ID and up to five authorized users. Test screen-locked playback on the target Android device; Web SDK support in mobile browsers does not guarantee reliable PWA background playback.
-
-Keep the adapter behind a `MusicProvider` port so playlist playback, AI interludes, and future sources are not coupled to React or Spotify SDK types. Implement serialized transitions: pause Spotify before the radio audio element plays, then resume Spotify after the segment ends. Never overlap the two players. If Spotify's written permission has narrower conditions, configure the implementation to those conditions before enabling the affected feature. See the official policy, which prohibits mixing Spotify audio with other audio absent an applicable authorization: https://developer.spotify.com/policy.
-
-## Security and deployment
-
-Public repository, private application. The Worker validates Cloudflare Access JWT signature, issuer, audience and an exact email allowlist. D1 atomically enforces per-day request and TTS-character quotas across instances. The private application will only become reachable once Access is enabled; the Worker itself fails closed without a valid Access token. Never add secrets to the frontend. ASK's organizational hosting is not automatically authorized for private use: confirm both authorization and connectivity from Cloudflare Workers. Log sanitized errors, not provider response bodies, secrets or full prompts. Define data retention, deletion and backups before persistent personal data is introduced. See [Cloudflare deployment](cloudflare-deployment.md).
-
-## Milestones and acceptance
-
-0. Feasibility: real Android 60-minute result; ASK endpoint/permission test; Mistral voice test; music policy decision.
-1. Foundation: responsive UI, deterministic tests/CI, private deployment with no provider secrets in browser.
-2. Vertical slice: one allowed feed → cited ASK short draft or Gemini two-host podcast → ASK evidence review → provider-specific speech → playback → local feedback learning, with a cost ceiling.
-3. Program: topics, variety, licensed music provider, persisted resume, buffering and job recovery.
-4. Learning: explainable feedback weights, profile review/reset, replayable evaluation set.
-5. PWA: installability, cache only authorized own audio, safe update during playback and offline messages; native fallback if required.
+1. **Program on the server:** D1 tables for the domain model, import of device settings, R2 audio, Workflows production, Cron horizon, timeline API, cockpit timeline with desktop preview.
+2. **Android player with our segments:** Media3 service, timeline sync, prefetch, feedback, service-token auth, 60-minute screen-off test.
+3. **Spotify in the app:** App Remote, music-block workflow (AI → Spotify), handoff test.
+4. **Full customization:** show editor with prompt templates and voices, program-clock editor, music rules, verification policy per show.
+5. **Learning and memory:** feedback weights in the planner, deduplication, series.
+6. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
 
 ## References
 
 - https://developer.spotify.com/policy
-- https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
+- https://developer.spotify.com/documentation/android (App Remote SDK)
+- https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow
 - https://developer.spotify.com/documentation/web-playback-sdk
 - https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide
 - https://developer.android.com/media/media3/session/background-playback
-- https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation
+- https://developers.cloudflare.com/workflows/
+- https://developers.cloudflare.com/r2/
+- https://developers.cloudflare.com/workers/configuration/cron-triggers/
+- https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/
 - https://docs.mistral.ai/studio/audio/text_to_speech/speech
-- https://ai.google.dev/gemini-api/docs/text-generation
 - https://ai.google.dev/gemini-api/docs/speech-generation
-- https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/podcast-api (deprecated; not used)
-
-Plan checked 2026-09-25. ASK's actual deployment contract still needs verification.

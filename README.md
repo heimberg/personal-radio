@@ -2,7 +2,7 @@
 
 Mobile-first personal radio prototype with ASK/Mistral short segments and an optional Gemini two-host podcast pipeline.
 
-**Status: feasibility prototype, not a working AI radio station.** The public Pages demo plays generated test tones or user-selected local audio and includes a local simulation of interest-based topic ranking and thumbs feedback. It calls no paid API and contains no live news. Screen-off playback was confirmed on the tested Android device; the broader device/headset/network acceptance matrix is not recorded. Spotify is deliberately not connected.
+**Status: feasibility prototype, not a working AI radio station.** The public Pages demo plays generated test tones or user-selected local audio and includes a local simulation of interest-based topic ranking and thumbs feedback. It calls no paid API and contains no live news. Screen-off playback was confirmed on the tested Android device; the broader device/headset/network acceptance matrix is not recorded. Spotify playback is prepared for desktop only; the planned Android app will conduct Spotify and AI segments (see [architecture](docs/architecture.md)).
 
 ## Run
 

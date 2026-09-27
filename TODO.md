@@ -24,22 +24,24 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - [ ] **Live-KI-Test durchführen:** Einen kurzen ASK/Mistral-Beitrag und einen Gemini-Zwei-Stimmen-Podcast mit echten Quellen testen; Audio, Latenz, Fehlerfälle und Kostenobergrenzen prüfen.
 - [ ] **Android-Test mit dem echten Backend begleiten:** Wiedergabe bei gesperrtem Bildschirm und Verhalten bei Verbindungsabbrüchen prüfen; nötige Korrekturen umsetzen.
 
-## Später gemeinsam entscheiden
+## Nächste Meilensteine
 
-- [ ] Profilpersistenz implementieren: IndexedDB als lokale Quelle der Wahrheit; Interessen, Feedback-Ereignisse und berechnete Gewichte getrennt speichern; Profil prüfen, zurücksetzen, exportieren und löschen können.
-- [ ] Optionalen Konten-/Sync-Bedarf entscheiden. Falls gewünscht: authentifizierter Worker + D1, nur mit aktivierter Synchronisierung. Graph- und Vektordatenbank bleiben bis zu einem belegten Bedarf ausserhalb des MVP.
-- [ ] Spotify-Verbindung für das private PWA implementieren: Authorization Code mit PKCE, Spotify Web Playback SDK, vom Nutzer gewählter Playlist-/Kontext und sichere Token-Lebensdauer.
-- [ ] Spotify-Wiedergabe mit KI-Sprechbeiträgen auf Android erproben: Spotify vor dem Sprachbeitrag pausieren, danach fortsetzen; nie Audio überlappen. Die öffentliche Pages-Demo darf den Spotify-SDK nicht laden.
-- [ ] Spotify-Berechtigungsumfang laut Nutzer: private integrierte Nutzung ist freigegeben. Spotify-Audio, Metadaten und Hörverhalten zunächst nicht an KI-Anbieter senden und nicht fürs Profil-Lernen verwenden.
-- [ ] Dauerhafte Audio-/Job-Warteschlange und automatische, zeitgesteuerte Beitragsproduktion planen.
-- [ ] PWA-Installation und Offline-Verhalten auf dem echten privaten Deployment abnehmen.
+- [ ] Meilenstein 1 – Programm auf dem Server: Sendungen, Quellen, Sendeuhr, Feedback und Gedächtnis in D1 (einmaliger Import der Geräteeinstellungen); Produktion über Cloudflare Workflows statt im Browser-Request; Audio in R2; Cron Trigger hält das Programm ~45 Min. im Voraus gefüllt; Timeline-API.
+- [ ] Meilenstein 2 – Native Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Zugang per Cloudflare Access Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
+- [ ] Meilenstein 3 – Spotify in der Android-App über App Remote SDK; Musikblöcke: KI wählt Titel, Backend löst sie per Spotify-Suche auf, Moderation nur für gefundene Titel; harte Übergaben ohne Überlappung.
+- [ ] Meilenstein 4 – Editoren für Sendungen (Prompt-Vorlage, Stimme, Länge, Prüfstrenge), Sendeuhr und Musikregeln.
+- [ ] Workers-Paid-Plan (5 USD/Monat) aktivieren, sobald Workflows gebraucht werden oder CPU-Limits auftreten.
+- [ ] Später: durchgehender Stream-Modus ohne Spotify (Auto, Lautsprecher).
 
-## Architekturentscheidungen übernommen
+## Architekturentscheidungen übernommen (Stand 27.09.2026, Details in docs/architecture.md)
 
-- Profil lokal zuerst in IndexedDB; Feedback-Rohereignisse getrennt von erklärbaren, daraus berechneten Themengewichten.
-- D1 als mögliche spätere SQL-Synchronisierung, nicht als Voraussetzung für lokalen Betrieb.
-- Keine Graph- oder Vektordatenbank zum Start.
-- Spotify ist die vorgesehene Musikquelle für den privaten integrierten Prototyp; Integration bleibt auf den vom Nutzer bestätigten Freigabeumfang begrenzt.
+- KI-generierte Beiträge sind der Kern; volle Personalisierung über editierbare Sendungen, Sendeuhr und Musikregeln.
+- Dirigent statt Mischpult: Backend plant und produziert eine Timeline, das Gerät spielt eigene Segmente und Spotify strikt abwechselnd.
+- Native Android-App als Hauptplayer; das Spotify Web Playback SDK läuft nicht in mobilen Browsern und bleibt Desktop-Option.
+- Konfiguration serverseitig in D1 statt local-first, weil das Backend ohne offenen Browser produziert.
+- Spotify-Daten fliessen nie zur KI: KI → Spotify-Suche, nicht umgekehrt.
+- Prüfstrenge pro Sendung: streng (Zitatprüfung), leicht oder aus.
+- Hosting bleibt Cloudflare (Worker, D1, R2, Workflows, Cron, Access). Keine Graph- oder Vektordatenbank zum Start.
 
 ## Bereits geprüft
 
