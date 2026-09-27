@@ -90,6 +90,20 @@ export class StationStore {
     return this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? AND id = ?').bind(owner, id).first<TimelineRow>();
   }
 
+  /**
+   * Puts open items into the given order: fresh sequence numbers after every existing one (so no
+   * uniqueness clash) and planned times one after another from [start].
+   */
+  async arrange(owner: string, ordered: Array<Pick<TimelineRow, 'id' | 'estimated_minutes'>>, start: Date, now: Date) {
+    const max = await this.db.prepare('SELECT MAX(seq) AS seq FROM timeline_items WHERE owner_id = ?').bind(owner).first<{ seq: number | null }>();
+    let seq = (max?.seq ?? 0) + 1, at = start.getTime();
+    for (const item of ordered) {
+      await this.db.prepare(`UPDATE timeline_items SET seq = ?, planned_at = ?, updated_at = ? WHERE owner_id = ? AND id = ? AND state IN ('planned', 'voicing', 'ready')`)
+        .bind(seq++, new Date(at).toISOString(), now.toISOString(), owner, item.id).run();
+      at += item.estimated_minutes * 60_000;
+    }
+  }
+
   async insertItem(owner: string, item: { id: string; seq: number; showId: string; plannedAt: string; estimatedMinutes: number }, now: Date) {
     const at = now.toISOString();
     await this.db.prepare(`INSERT INTO timeline_items (id, owner_id, seq, show_id, planned_at, estimated_minutes, state, attempts, created_at, updated_at)

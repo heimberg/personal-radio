@@ -121,7 +121,11 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    /** Fetches the timeline and appends newly ready segments; asks the server to plan if nothing is open. */
+    /**
+     * Fetches the timeline and makes the playlist after the current item follow the program order: newly
+     * produced items are added, and items moved, removed or shuffled in the cockpit are rearranged. The
+     * item that is playing is never touched. Asks the server to plan if nothing is open.
+     */
     private suspend fun sync() {
         val api = api ?: return
         val timeline = runCatching { api.response() }.getOrElse { return }
@@ -129,13 +133,20 @@ class PlaybackService : MediaSessionService() {
         spotifyClientId = timeline.spotify?.clientId
         if (items.none { it.isOpen }) runCatching { api.plan() }
         if (items.any { it.isPlayable && it.hasMusic }) connectSpotify()
-        val fresh = queue.takeNew(items, musicAvailable = spotify.connected)
-        if (fresh.isEmpty()) return
-        val newSteps = fresh.flatMap(Program::steps)
+        val currentItem = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)
+        val wanted = queue.upcoming(items, musicAvailable = spotify.connected, current = currentItem)
+        // The playlist after the current item's own parts.
+        var firstUpcoming = if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
+        while (firstUpcoming < player.mediaItemCount && Program.itemIdOf(player.getMediaItemAt(firstUpcoming).mediaId) == currentItem) firstUpcoming++
+        val present = (firstUpcoming until player.mediaItemCount).map { Program.itemIdOf(player.getMediaItemAt(it).mediaId) }.distinct()
+        if (queue.matches(present, wanted)) return
+        val newSteps = wanted.flatMap(Program::steps)
         newSteps.forEach { steps[it.mediaId] = it }
         val ranOut = player.playbackState == Player.STATE_ENDED
+        if (firstUpcoming < player.mediaItemCount) player.removeMediaItems(firstUpcoming, player.mediaItemCount)
         val firstNew = player.mediaItemCount
         player.addMediaItems(newSteps.map(::mediaItemFor))
+        if (newSteps.isEmpty()) return
         if (ranOut && player.playWhenReady) {
             // The program had run out while listening: continue with the new segment.
             player.seekTo(firstNew, 0)
@@ -271,6 +282,8 @@ class PlaybackService : MediaSessionService() {
             if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex) return
             val natural = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION || handingBack
             reportLeaving(left.mediaId, natural, oldPosition.positionMs)
+            val leftItem = Program.itemIdOf(left.mediaId)
+            if (leftItem != newPosition.mediaItem?.mediaId?.let(Program::itemIdOf)) queue.markPassed(leftItem)
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = follow()
@@ -285,7 +298,10 @@ class PlaybackService : MediaSessionService() {
                 Player.STATE_ENDED -> {
                     // The last segment ended on its own; look for the next one right away.
                     stopTrack()
-                    player.currentMediaItem?.let { reportLeaving(it.mediaId, true, 0) }
+                    player.currentMediaItem?.let {
+                        reportLeaving(it.mediaId, true, 0)
+                        queue.markPassed(Program.itemIdOf(it.mediaId))
+                    }
                     scope.launch { sync() }
                 }
                 else -> Unit

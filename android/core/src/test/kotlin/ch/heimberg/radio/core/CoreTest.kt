@@ -51,13 +51,20 @@ class TimelineTest {
         assertEquals("Quellenprüfung nicht bestanden.", Labels.error("REJECTED"))
     }
 
-    @Test fun queueHandsOutEachReadySegmentOnceInProgramOrder() {
+    @Test fun queueFollowsTheProgramOrderAndSkipsWhatWasPlayed() {
         val queue = ProgramQueue()
         val items = TimelineJson.parse(body)
-        assertEquals(listOf("a"), queue.takeNew(items).map { it.id })
-        assertEquals(emptyList(), queue.takeNew(items).map { it.id })
+        assertEquals(listOf("a"), queue.upcoming(items, false, null).map { it.id })
         val later = items.map { if (it.id == "b") it.copy(state = "ready", audioUrl = "api/timeline/b/audio") else it }
-        assertEquals(listOf("b"), queue.takeNew(later).map { it.id })
+        assertEquals(listOf("a", "b"), queue.upcoming(later, false, null).map { it.id })
+        // Reordered in the cockpit: the new order wins.
+        val reordered = later.map { if (it.id == "b") it.copy(seq = 0) else it }
+        assertEquals(listOf("b", "a"), queue.upcoming(reordered, false, null).map { it.id })
+        // The current item and those already left are not queued again.
+        assertEquals(listOf("b"), queue.upcoming(later, false, "a").map { it.id })
+        queue.markPassed("a")
+        assertEquals(listOf("b"), queue.upcoming(later, false, null).map { it.id })
+        assertTrue(queue.matches(listOf("b"), queue.upcoming(later, false, null)))
     }
 }
 
@@ -106,8 +113,8 @@ class ArtistHourTest {
     @Test fun hoursWaitUntilSpotifyIsConnected() {
         val queue = ProgramQueue()
         val items = TimelineJson.parse(body)
-        assertEquals(listOf("a"), queue.takeNew(items, musicAvailable = false).map { it.id })
-        assertEquals(listOf("h"), queue.takeNew(items, musicAvailable = true).map { it.id })
+        assertEquals(listOf("a"), queue.upcoming(items, musicAvailable = false, current = null).map { it.id })
+        assertEquals(listOf("a", "h"), queue.upcoming(items, musicAvailable = true, current = null).map { it.id })
     }
 
     @Test fun theTrackWatchHandsBackAtTheEndOrWhenSpotifyMovesOn() {

@@ -387,17 +387,67 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
   return voiceParts(deps, owner, config, config.host.voiceId, row, pkg);
 }
 
-/** Plans one item of a show right away, outside the program clock ("Jetzt produzieren"). */
+/** Plans one item of a show (or a song) right away, outside the program clock ("Jetzt produzieren"). */
 export async function scheduleShowNow(deps: StationDeps, owner: string, showId: string): Promise<string | null> {
   const config = await deps.store.getConfig(owner);
-  const show = config?.shows.find(item => item.id === showId);
-  if (!show) return null;
+  const show = showId === MUSIC_SHOW_ID ? { id: MUSIC_SHOW_ID, targetMinutes: SONG_MINUTES } : config?.shows.find(item => item.id === showId);
+  if (!config || !show) return null;
   const now = deps.now();
   const ahead = (await deps.store.openItems(owner)).reduce((sum, item) => sum + item.estimated_minutes, 0);
   const last = await deps.store.lastItem(owner);
   const id = (deps.newId ?? (() => crypto.randomUUID()))();
   await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: show.id, plannedAt: minutes(now, ahead).toISOString(), estimatedMinutes: show.targetMinutes }, now);
   return id;
+}
+
+/** Puts the open items into the owner's order; unknown or missing IDs leave the program as it is. */
+export async function arrangeTimeline(deps: StationDeps, owner: string, order: string[]): Promise<boolean> {
+  const open = await deps.store.openItems(owner);
+  if (order.length !== open.length || new Set(order).size !== order.length || !order.every(id => open.some(item => item.id === id))) return false;
+  const start = open.reduce((earliest, item) => Math.min(earliest, Date.parse(item.planned_at)), Date.parse(open[0]?.planned_at ?? deps.now().toISOString()));
+  await deps.store.arrange(owner, order.map(id => open.find(item => item.id === id)!), new Date(start), deps.now());
+  return true;
+}
+
+/** Takes an item out of the program and releases its audio. */
+export async function removeItem(deps: StationDeps, owner: string, id: string): Promise<boolean> {
+  const row = await deps.store.getItem(owner, id);
+  if (!row || !['planned', 'voicing', 'ready'].includes(row.state)) return false;
+  await deps.store.update(owner, id, { state: 'expired', lease_until: null, error: null }, deps.now());
+  for (const key of audioKeysOf(row)) await deps.audio.delete(key);
+  await deps.store.update(owner, id, { audio_key: null }, deps.now());
+  return true;
+}
+
+/**
+ * Shuffles the open items and spreads the songs so that at least `max(1, music.between)` songs sit
+ * between two spoken items; missing songs are added. Returns the IDs of new items to produce.
+ */
+export async function shuffleTimeline(deps: StationDeps, owner: string): Promise<string[] | null> {
+  const config = await deps.store.getConfig(owner);
+  if (!config) return null;
+  const random = deps.random ?? Math.random;
+  const shuffle = <T>(list: T[]) => { for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; } return list; };
+  const open = await deps.store.openItems(owner);
+  const spoken = shuffle(open.filter(item => item.show_id !== MUSIC_SHOW_ID));
+  const songs = shuffle(open.filter(item => item.show_id === MUSIC_SHOW_ID));
+  const perGap = Math.max(1, config.music.between);
+  const added: string[] = [];
+  const now = deps.now(), newId = deps.newId ?? (() => crypto.randomUUID());
+  const last = await deps.store.lastItem(owner);
+  let seq = (last?.seq ?? 0) + 1;
+  while (songs.length < Math.max(0, spoken.length - 1) * perGap) {
+    const id = newId();
+    await deps.store.insertItem(owner, { id, seq: seq++, showId: MUSIC_SHOW_ID, plannedAt: now.toISOString(), estimatedMinutes: SONG_MINUTES }, now);
+    songs.push({ id, estimated_minutes: SONG_MINUTES } as TimelineRow); added.push(id);
+  }
+  // Every gap between two spoken items gets its share; the rest lands in random gaps, start and end included.
+  const gaps: Array<typeof songs> = Array.from({ length: spoken.length + 1 }, (_, index) => index > 0 && index < spoken.length ? songs.splice(0, perGap) : []);
+  for (const song of songs) gaps[Math.floor(random() * gaps.length)].push(song);
+  const ordered = gaps.flatMap((gap, index) => index < spoken.length ? [...gap, spoken[index]] : gap);
+  const start = open.reduce((earliest, item) => Math.min(earliest, Date.parse(item.planned_at)), now.getTime());
+  await deps.store.arrange(owner, ordered, new Date(start), now);
+  return added;
 }
 
 export function toView(row: TimelineRow, config: StationConfig | null): TimelineItemView {

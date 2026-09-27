@@ -36,6 +36,9 @@ async function fakeWorker(page: Page, initial: unknown) {
       title: 'Portishead', focus: 'artist', subject: 'Portishead', parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
         { kind: 'track', spotifyUri: 'spotify:track:1', title: 'Glory Box', artist: 'Portishead', durationMs: 1 }] },
   ] : [], failures: state.stored ? { count: 1, latestError: 'NO_SOURCES', latestAt: '2026-09-27T13:31:00.000Z' } : { count: 0 } }) }));
+  await page.route('**/api/timeline/arrange', route => { state.calls.push(`arrange ${JSON.parse(route.request().postData() ?? '{}').order.join(',')}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+  await page.route('**/api/timeline/shuffle', route => { state.calls.push('shuffle'); return route.fulfill({ contentType: 'application/json', body: '{"added":1}' }); });
+  await page.route('**/api/timeline/*/remove', route => { state.calls.push(`remove ${new URL(route.request().url()).pathname.split('/')[3]}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   for (const action of ['plan', 'retry', 'cleanup']) {
     await page.route(`**/api/timeline/${action}`, route => { state.calls.push(action); return route.fulfill({ contentType: 'application/json',
       body: JSON.stringify(action === 'plan' ? { planned: 2, queued: 2 } : action === 'retry' ? { retired: 1, restarted: 0, planned: 1, queued: 1 } : { removed: 1 }) }); });
@@ -86,6 +89,17 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   await page.getByRole('button', { name: 'Erneut versuchen' }).click();
   await expect(page.getByText('1 Fehlschläge abgeräumt, 0 wartende Beiträge neu gestartet, 1 neu geplant, 1 in Produktion.')).toBeVisible();
   expect(worker.calls).toEqual(['/api/shows/kuenstler/produce', 'cleanup', 'retry']);
+
+  // Arranging the program: move, remove, shuffle, add a song.
+  await page.getByRole('group', { name: 'Sonde gelandet verschieben' }).getByRole('button', { name: 'Nach unten' }).click();
+  await expect(page.getByText('Reihenfolge gespeichert.', { exact: false })).toBeVisible();
+  await page.getByRole('group', { name: 'Portishead verschieben' }).getByRole('button', { name: 'Entfernen' }).click();
+  await expect(page.getByText('«Portishead» entfernt.')).toBeVisible();
+  await page.getByRole('button', { name: '🔀 Mischen' }).click();
+  await expect(page.getByText('Programm gemischt, 1 Songs ergänzt.')).toBeVisible();
+  await page.getByRole('button', { name: '+ Song' }).click();
+  await expect(page.getByText('Ein Song wird ausgewählt und hinten angehängt.')).toBeVisible();
+  expect(worker.calls.slice(3)).toEqual(['arrange h1,t1', 'remove h1', 'shuffle', '/api/shows/_musik/produce']);
 
   // Only the spoken segment plays in the browser.
   await expect(page.getByText('1 Beitrag bereit')).toBeVisible();

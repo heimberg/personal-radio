@@ -5,7 +5,7 @@ The single app for listening: native playback of the server-produced program, lo
 ## What it does
 
 - **Playback** runs in a foreground media service (Media3 `MediaSessionService` with ExoPlayer), so the program continues with the screen off. Headphones unplugged pause playback; audio focus is respected during calls.
-- **Program sync:** every minute (and whenever the program runs out) the app fetches `GET /api/timeline` and appends newly ready segments. If the program had run out while listening, playback continues automatically. If nothing is planned, the app asks the server to plan.
+- **Program sync:** every minute (and whenever the program runs out) the app fetches `GET /api/timeline` and makes its playlist after the current item follow the server order: new items are added, items moved, removed or shuffled in the cockpit are rearranged; the item that is playing is never interrupted. If the program had run out while listening, playback continues automatically. If nothing is planned, the app asks the server to plan.
 - **Offline buffer:** segments are cached on the device (up to 300 MB) and the next four are downloaded ahead, so short network losses do not interrupt listening.
 - **Feedback:** a segment that plays to its end is reported as complete; skipping reports the share heard; 👍/👎 in the app are strong signals. The server learns from them.
 - **Settings:** "Programm einstellen" opens the web cockpit (persona, shows, sources, program clock as YAML, timeline with sources). Inside the app the cockpit hides its own player.
