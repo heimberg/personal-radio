@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.PersonalRadio" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Every text on a brand colour is set explicitly; Material's defaults are violet. -->
         <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/on_brand</item>
         <item name="colorSecondary">@color/brand</item>
+        <item name="colorOnSecondary">@color/on_brand</item>
+        <item name="colorSecondaryContainer">@color/brand_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_brand</item>
     </style>
 </resources>
