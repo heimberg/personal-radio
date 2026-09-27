@@ -143,7 +143,7 @@ export default {
     const length = Number(request.headers.get('Content-Length') ?? 0);
     if (length > 32_768) return json({ error: 'request_too_large' }, 413);
     if (request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') return json({ error: 'json_required' }, 415);
-    let input: { profile?: Profile; sources?: Source[]; mode?: 'brief' | 'podcast' };
+    let input: { profile?: Profile; sources?: Source[]; mode?: 'brief' | 'podcast'; voiceId?: unknown };
     try {
       const raw = await request.text();
       if (new TextEncoder().encode(raw).byteLength > 32_768) return json({ error: 'request_too_large' }, 413);
@@ -151,6 +151,7 @@ export default {
     } catch { return json({ error: 'invalid_json' }, 400); }
     const mode = input.mode ?? 'brief';
     if (mode !== 'brief' && mode !== 'podcast') return json({ error: 'invalid_mode' }, 400);
+    if (input.voiceId !== undefined && (typeof input.voiceId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(input.voiceId))) return json({ error: 'invalid_voice' }, 400);
     if (mode === 'podcast' && !env.GEMINI_API_KEY) return json({ error: 'podcast_provider_not_configured' }, 503);
     try { await new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)); }
     catch (error) {
@@ -174,7 +175,7 @@ export default {
         );
         pipelines.set(env.DB as object, pipeline);
       }
-      const result = await pipeline.prepare(owner, idempotencyKey, input.profile as Profile, input.sources as Source[], mode);
+      const result = await pipeline.prepare(owner, idempotencyKey, input.profile as Profile, input.sources as Source[], mode, input.voiceId as string | undefined);
       const audioBuffer = new ArrayBuffer(result.audio.byteLength);
       new Uint8Array(audioBuffer).set(result.audio);
       return new Response(audioBuffer, { headers: {
