@@ -284,10 +284,12 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     const interests = [...config.profile.topics, ...config.profile.interests, ...listens];
     const subject = hourSubject(show)
       ?? (await deps.musicWriter.pickSubject({ focus, interests, avoid: await recentSubjects(deps, owner, focus), instructions: show.instructions })).subject;
-    const { sources, queries } = await deps.researcher.research({
-      brief: `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim(), interests: [subject], avoidTopics: [], now,
-    });
-    if (!sources.length) return fail('NO_SOURCES');
+    // Search grounding does not trigger every time: one more, more explicit attempt. If both stay empty,
+    // the hour is written from well-known facts, carefully worded and marked as unverified ("frei").
+    const brief = `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim();
+    let { sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now });
+    if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now }));
+    const verification = sources.length ? show.verification : 'off';
     const picks = await deps.musicWriter.pickTracks({ focus, subject, count: show.tracks ?? 10, sources, instructions: show.instructions });
     const resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }> = [];
     for (const pick of picks) {
@@ -301,7 +303,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
     const sourceIds = [...new Set(spoken.flatMap(part => part.sourceIds))];
     const text = spoken.map(part => part.text).join(' ');
-    await deps.pipeline.review({ title: hour.title, text, sourceIds }, sources, show.verification);
+    await deps.pipeline.review({ title: hour.title, text, sourceIds }, sources, verification);
     const speech = (part: { text: string; sourceIds: string[] }): SpeechPart[] => splitSpeech(part.text).map(chunk => ({ kind: 'speech', text: chunk, sourceIds: part.sourceIds }));
     const parts: Array<SpeechPart | TrackPart> = [...speech(hour.intro)];
     resolved.forEach((item, index) => {
@@ -313,7 +315,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts };
     await deps.store.markCovered(owner, sources.map(source => source.url), now);
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), sources_json: JSON.stringify(sources),
-      verification: show.verification, research_json: queries.length ? JSON.stringify({ queries }) : null }, deps.now());
+      verification, research_json: queries.length ? JSON.stringify({ queries }) : null }, deps.now());
   } else {
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
   }

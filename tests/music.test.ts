@@ -61,6 +61,7 @@ test('the Gemini music writer validates picks and scripts and drops unknown sour
     direction: { persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } } });
   assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörtern/);
   assert.match(body.systemInstruction.parts[0].text, /Du sprichst als Mira/);
+  assert.doesNotMatch(body.systemInstruction.parts[0].text, /keine Quellen geliefert/);
   assert.deepEqual(hour.intro, { text: 'Willkommen.', sourceIds: ['w1'] });
   assert.deepEqual(hour.tracks, [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }]);
 });

@@ -550,3 +550,26 @@ test('arranging, removing and shuffling the program keeps it consistent and puts
   // The planner continues after the arranged tail.
   assert.equal((await h.store.lastItem(OWNER))?.show_id, 'kurz');
 });
+
+test('a music hour retries research once and, if search stays empty, is written from general knowledge and marked unverified', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true, artist: 'Portishead', tracks: 3, verification: 'strict' as const } : { ...show, enabled: false });
+  const parsed = parseStationConfig(station);
+  const h = harness({ station: parsed }); await h.setup();
+  const briefs: string[] = [];
+  let writeInput: any, reviewed: string | undefined;
+  h.deps.researcher = { research: async request => { briefs.push(request.brief); return { sources: [], queries: [] }; } };
+  h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title}`, durationMs: 200_000 }) };
+  h.deps.pipeline.review = async (_script, _sources, policy) => { reviewed = policy; return { approved: true, reasons: [] }; };
+  h.deps.musicWriter = {
+    pickSubject: async () => { throw new Error('fixed'); }, pickSongs: async () => [],
+    pickTracks: async () => ['A', 'B', 'C'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
+    writeHour: async input => { writeInput = input; return { title: 'Portishead', intro: { text: 'Hallo.', sourceIds: [] }, tracks: [{ index: 0, text: 'Zu A.', sourceIds: [] }], outro: { text: 'Tschüss.', sourceIds: [] } }; },
+  };
+  const id = (await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  assert.equal(briefs.length, 2); assert.match(briefs[1], /^Suche mit Google nach: Portishead\./);
+  assert.deepEqual(writeInput.sources, []);
+  assert.equal(reviewed, 'off');
+  assert.equal(toView((await h.store.getItem(OWNER, id))!, parsed).verification, 'off');
+});
