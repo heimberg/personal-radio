@@ -1,4 +1,4 @@
-export interface Track { id: string; title: string; url: string; kind: string; interests?: string[]; feedbackId?: string }
+export interface Track { id: string; title: string; url: string; kind: string; interests?: string[]; feedbackId?: string; timelineId?: string }
 export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'ended' | 'error';
 export interface PlayerState {
   status: PlayerStatus; index: number; position: number; duration: number;
@@ -21,6 +21,8 @@ export class RadioPlayer {
   private signalListeners = new Set<(signal: PlaybackSignal) => void>();
   private generation = 0;
   private wantsPlayback = false;
+  // audio.src reads back as an absolute URL, so compare against what was assigned, not against the element.
+  private loadedUrl = '';
   beforeStart?: () => void;
 
   constructor(audio: AudioPort) {
@@ -68,17 +70,28 @@ export class RadioPlayer {
   }
   setTracks(tracks: Track[]) {
     this.pause(); this.tracks = tracks;
-    this.audio.removeAttribute('src'); this.audio.load();
+    this.audio.removeAttribute('src'); this.audio.load(); this.loadedUrl = '';
     this.update({ index: 0, position: 0, duration: 0, completed: 0, status: 'idle', error: '' });
     this.log('queue-loaded', `${tracks.length} tracks`);
+  }
+  /** Adds program items to the running queue; continues automatically if the queue had run out. */
+  appendTracks(tracks: Track[]) {
+    const known = new Set(this.tracks.map(track => track.id));
+    const added = tracks.filter(track => !known.has(track.id));
+    if (!added.length) return;
+    const resume = this.state.status === 'ended';
+    this.tracks = [...this.tracks, ...added];
+    this.update({});
+    this.log('queue-extended', `${added.length} tracks`);
+    if (resume) void this.start(this.state.index + 1);
   }
   async start(index = this.state.index) {
     const track = this.tracks[index]; if (!track) return;
     this.beforeStart?.();
     const generation = ++this.generation;
     this.wantsPlayback = false; this.audio.pause();
-    if (this.audio.src !== track.url) {
-      this.audio.src = track.url; this.audio.load();
+    if (this.loadedUrl !== track.url) {
+      this.audio.src = track.url; this.loadedUrl = track.url; this.audio.load();
       this.update({ position: 0, duration: 0 });
     }
     this.update({ index, status: 'loading', error: '' });

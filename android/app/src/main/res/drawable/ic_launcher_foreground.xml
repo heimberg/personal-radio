@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A record with a signal arc, echoing the web app's mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/icon_foreground"
+        android:pathData="M54,32a22,22 0,1 1,0 44a22,22 0,1 1,0 -44zM54,48a6,6 0,1 0,0 12a6,6 0,1 0,0 -12z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/brand"
+        android:strokeWidth="3"
+        android:pathData="M40,54a14,14 0,0 1,14 -14" />
+</vector>

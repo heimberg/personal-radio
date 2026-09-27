@@ -1,19 +1,36 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer, ProviderError } from './providers.ts';
+import type { Researcher } from './providers.ts';
+import type { EditorialVerifier } from './segment-pipeline.ts';
+import type { TextGenerator } from '../src/domain/program.ts';
 import type { Profile, Source } from '../src/domain/program.ts';
 import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
+import { StationStore } from './station-store.ts';
+import type { D1Database } from './station-store.ts';
+import { produceItem, tick, toView } from './station.ts';
+import type { AudioBucket, StationDeps } from './station.ts';
+import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
+import type { FeedbackAction } from '../src/domain/recommendation.ts';
 
-interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null>; run(): Promise<unknown> }
-interface D1Database { prepare(query: string): D1Statement }
+interface StoredAudio { body: ReadableStream; size: number; httpEtag: string; range?: { offset?: number; length?: number; suffix?: number } }
+interface AudioStore extends AudioBucket { get(key: string, options?: { range?: Headers }): Promise<StoredAudio | null> }
+interface ProductionQueue { send(message: ProductionMessage): Promise<void> }
+interface ProductionMessage { owner: string; itemId: string }
+interface QueueBatch { messages: Array<{ body: unknown; ack(): void }> }
+interface ExecutionContext { waitUntil(promise: Promise<unknown>): void }
 interface DailyCounter { reserve(ownerId: string, limit: number): Promise<void> }
 interface Environment {
   DB: D1Database;
   ASSETS: { fetch(request: Request): Promise<Response> };
+  AUDIO: AudioStore;
+  PRODUCTION: ProductionQueue;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   ALLOWED_EMAIL: string;
+  /** Client ID of the Access service token used by the Android app; its requests act as the owner. */
+  ACCESS_SERVICE_TOKEN_ID?: string;
   DAILY_TTS_CHARACTERS?: string;
   DAILY_GENERATIONS?: string;
   DAILY_FEED_REQUESTS?: string;
@@ -22,8 +39,10 @@ interface Environment {
   ASK_MODEL: string;
   MISTRAL_API_KEY: string;
   MISTRAL_VOICE_ID?: string;
+  MISTRAL_TTS_MODEL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_TEXT_MODEL?: string;
+  GEMINI_RESEARCH_MODEL?: string;
   GEMINI_TTS_MODEL?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
@@ -79,16 +98,24 @@ function json(body: unknown, status: number) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
+// Reused per isolate so the Access signing keys are not fetched on every request.
+const jwksByIssuer = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
 async function authenticate(request: Request, env: Environment): Promise<string | null> {
   const assertion = request.headers.get('Cf-Access-Jwt-Assertion');
   if (!assertion || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD || !env.ALLOWED_EMAIL) return null;
   try {
     const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
-    const jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
+    let jwks = jwksByIssuer.get(issuer);
+    if (!jwks) { jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)); jwksByIssuer.set(issuer, jwks); }
     const { payload } = await jwtVerify(assertion, jwks, { issuer, audience: env.ACCESS_AUD });
+    if (payload.type !== 'app') return null;
     const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
-    if (!email || email !== env.ALLOWED_EMAIL.toLowerCase() || payload.type !== 'app') return null;
-    return email;
+    if (email) return email === env.ALLOWED_EMAIL.toLowerCase() ? email : null;
+    // Service tokens carry no email; Access puts the token's client ID into common_name.
+    const serviceToken = typeof payload.common_name === 'string' ? payload.common_name : '';
+    if (serviceToken && env.ACCESS_SERVICE_TOKEN_ID && serviceToken === env.ACCESS_SERVICE_TOKEN_ID) return env.ALLOWED_EMAIL.toLowerCase();
+    return null;
   } catch { return null; }
 }
 
@@ -100,6 +127,160 @@ function statusFor(error: unknown) {
     if (error.code === 'IDEMPOTENCY_CONFLICT') return 409;
   }
   return 502;
+}
+
+interface Providers { ask?: TextGenerator; geminiBrief?: TextGenerator; geminiDialog?: TextGenerator; researcher?: Researcher; verifier: EditorialVerifier }
+const providerCache = new WeakMap<object, Providers>();
+
+/** ASK is optional: Gemini writes by default; ASK, when configured, is the independent second model that verifies. */
+function providersFor(env: Environment): Providers {
+  let providers = providerCache.get(env.DB as object);
+  if (!providers) {
+    const askConfig = { baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL };
+    const askReady = Boolean(env.ASK_BASE_URL && env.ASK_API_KEY && env.ASK_MODEL);
+    const gemini = env.GEMINI_API_KEY ? { key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL } : undefined;
+    const unavailable: EditorialVerifier = { verify: async () => { throw new ProviderError('No verifier configured'); } };
+    providers = {
+      ...(askReady ? { ask: new AskTextGenerator(askConfig) } : {}),
+      ...(gemini ? {
+        geminiBrief: new GeminiBriefGenerator(gemini), geminiDialog: new GeminiPodcastGenerator(gemini),
+        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }),
+      } : {}),
+      verifier: askReady ? new AskEditorialVerifier(askConfig) : gemini ? new GeminiEditorialVerifier(gemini) : unavailable,
+    };
+    providerCache.set(env.DB as object, providers);
+  }
+  return providers;
+}
+
+function pipelineFor(env: Environment): SegmentPipeline {
+  let pipeline = pipelines.get(env.DB as object);
+  if (!pipeline) {
+    const providers = providersFor(env);
+    const missing: TextGenerator = { generate: async () => { throw new ProviderError('No text provider configured'); } };
+    pipeline = new SegmentPipeline(
+      // The manual single-segment tool keeps ASK when present and otherwise uses Gemini.
+      providers.ask ?? providers.geminiBrief ?? missing,
+      new MistralSpeechSynthesizer({
+        key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID, model: env.MISTRAL_TTS_MODEL,
+        referenceAudio: async () => {
+          const response = await env.ASSETS.fetch(new Request('https://assets.local/audio/kerstin-reference.flac'));
+          if (!response.ok) throw new Error('German reference audio unavailable');
+          return new Uint8Array(await response.arrayBuffer());
+        },
+      }),
+      providers.verifier,
+      new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
+      4,
+      env.GEMINI_API_KEY ? {
+        text: providers.geminiDialog!,
+        speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }),
+      } : undefined,
+    );
+    pipelines.set(env.DB as object, pipeline);
+  }
+  return pipeline;
+}
+
+function stationDeps(env: Environment): StationDeps {
+  return {
+    store: new StationStore(env.DB), pipeline: pipelineFor(env), audio: env.AUDIO,
+    fetchFeed: url => fetchFeed(url),
+    reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
+    reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
+    podcastAvailable: Boolean(env.GEMINI_API_KEY), now: () => new Date(),
+    generator: (provider, format) => {
+      const providers = providersFor(env);
+      if (provider === 'ask') return format === 'brief' ? providers.ask : undefined;
+      return format === 'podcast' ? providers.geminiDialog : providers.geminiBrief;
+    },
+    researcher: providersFor(env).researcher,
+  };
+}
+
+/** Plans the program and hands due items to the production queue. */
+async function refreshProgram(env: Environment, owner: string, requireListener: boolean) {
+  const result = await tick(stationDeps(env), owner, { requireListener });
+  for (const itemId of result.due) await env.PRODUCTION.send({ owner, itemId });
+  return result;
+}
+
+async function readJson(request: Request, maxBytes: number): Promise<{ value?: unknown; error?: Response }> {
+  if (Number(request.headers.get('Content-Length') ?? 0) > maxBytes) return { error: json({ error: 'request_too_large' }, 413) };
+  if (request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') return { error: json({ error: 'json_required' }, 415) };
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) return { error: json({ error: 'request_too_large' }, 413) };
+  try { return { value: JSON.parse(raw) }; } catch { return { error: json({ error: 'invalid_json' }, 400) }; }
+}
+
+async function stationRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
+  const store = new StationStore(env.DB);
+  const sameOrigin = request.headers.get('Origin') === url.origin;
+  if (url.pathname === '/api/station') {
+    if (request.method === 'GET') return json({ config: await store.getConfig(owner) }, 200);
+    if (request.method !== 'PUT') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 65_536);
+    if (body.error) return body.error;
+    try {
+      const config = parseStationConfig(body.value);
+      await store.saveConfig(owner, config, new Date());
+      return json({ config }, 200);
+    } catch (error) {
+      if (error instanceof ConfigError) return json({ error: 'invalid_config', detail: error.message }, 400);
+      throw error;
+    }
+  }
+  if (url.pathname === '/api/timeline') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const config = await store.getConfig(owner);
+    await store.touch(owner, new Date());
+    return json({ items: (await store.recentItems(owner, 40)).map(row => toView(row, config)) }, 200);
+  }
+  if (url.pathname === '/api/timeline/plan') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    await store.touch(owner, new Date());
+    const result = await refreshProgram(env, owner, false);
+    return json({ planned: result.planned, queued: result.due.length, expired: result.expired }, 200);
+  }
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback)$/);
+  if (!match) return null;
+  const row = await store.getItem(owner, match[1]);
+  if (!row) return json({ error: 'not_found' }, 404);
+  if (match[2] === 'audio') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    if (!row.audio_key || row.state === 'expired') return json({ error: 'audio_unavailable' }, 404);
+    const wantsRange = request.headers.has('Range');
+    let object: StoredAudio | null;
+    try { object = await env.AUDIO.get(row.audio_key, wantsRange ? { range: request.headers } : undefined); }
+    catch { return new Response(null, { status: 416 }); }
+    if (!object) return json({ error: 'audio_unavailable' }, 404);
+    const headers = new Headers({ 'Content-Type': row.content_type ?? 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=86400', ETag: object.httpEtag });
+    if (wantsRange && object.range) {
+      const { offset, length, suffix } = object.range;
+      const start = suffix !== undefined ? object.size - suffix : offset ?? 0;
+      const size = suffix !== undefined ? suffix : length ?? object.size - start;
+      headers.set('Content-Range', `bytes ${start}-${start + size - 1}/${object.size}`); headers.set('Content-Length', String(size));
+      return new Response(object.body, { status: 206, headers });
+    }
+    headers.set('Content-Length', String(object.size));
+    return new Response(object.body, { headers });
+  }
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+  const body = await readJson(request, 1024);
+  if (body.error) return body.error;
+  const { action, listenedRatio } = (body.value ?? {}) as { action?: unknown; listenedRatio?: unknown };
+  if (!['like', 'dislike', 'skip', 'complete'].includes(String(action)) || typeof listenedRatio !== 'number' || !(listenedRatio >= 0 && listenedRatio <= 1)) {
+    return json({ error: 'invalid_feedback' }, 400);
+  }
+  let interests: string[] = [];
+  try { interests = (JSON.parse(row.script_json ?? '{}') as { interestTags?: string[] }).interestTags ?? []; } catch { /* Feedback without tags still marks playback. */ }
+  const now = new Date();
+  await store.addFeedback(owner, { itemId: row.id, interests, action: action as FeedbackAction, listenedRatio, createdAt: now.toISOString() });
+  if ((action === 'complete' || action === 'skip') && row.state === 'ready') await store.update(owner, row.id, { state: action === 'complete' ? 'played' : 'skipped' }, now);
+  return json({ ok: true }, 200);
 }
 
 export default {
@@ -148,6 +329,8 @@ export default {
         return json({ error: code }, status);
       }
     }
+    const stationResponse = await stationRoutes(request, env, owner, url);
+    if (stationResponse) return stationResponse;
     if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
@@ -171,28 +354,7 @@ export default {
     }
     const idempotencyKey = request.headers.get('Idempotency-Key') ?? '';
     try {
-      let pipeline = pipelines.get(env.DB as object);
-      if (!pipeline) {
-        pipeline = new SegmentPipeline(
-          new AskTextGenerator({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
-          new MistralSpeechSynthesizer({
-            key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID,
-            referenceAudio: async () => {
-              const response = await env.ASSETS.fetch(new Request('https://assets.local/audio/kerstin-reference.flac'));
-              if (!response.ok) throw new Error('German reference audio unavailable');
-              return new Uint8Array(await response.arrayBuffer());
-            },
-          }),
-          new AskEditorialVerifier({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
-          new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
-          4,
-          env.GEMINI_API_KEY ? {
-            text: new GeminiPodcastGenerator({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }),
-            speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }),
-          } : undefined,
-        );
-        pipelines.set(env.DB as object, pipeline);
-      }
+      const pipeline = pipelineFor(env);
       const result = await pipeline.prepare(owner, idempotencyKey, input.profile as Profile, input.sources as Source[], mode, input.voiceId as string | undefined);
       const audioBuffer = new ArrayBuffer(result.audio.byteLength);
       new Uint8Array(audioBuffer).set(result.audio);
@@ -209,6 +371,26 @@ export default {
       return json(status === 502
         ? { error: 'generation_failed', detail }
         : { error: (error as Error).message }, status);
+    }
+  },
+
+  /** Cron: keep the single owner's program filled ahead of playback. */
+  async scheduled(_controller: unknown, env: Environment, ctx: ExecutionContext) {
+    const owner = env.ALLOWED_EMAIL?.toLowerCase();
+    if (!owner) return;
+    ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+  },
+
+  /** Queue consumer: produce one timeline item per message. Retries are driven by the item's state, not the queue. */
+  async queue(batch: QueueBatch, env: Environment) {
+    const owner = env.ALLOWED_EMAIL?.toLowerCase();
+    for (const message of batch.messages) {
+      const body = message.body as Partial<ProductionMessage> | null;
+      if (owner && body?.owner === owner && typeof body.itemId === 'string') {
+        try { await produceItem(stationDeps(env), owner, body.itemId); }
+        catch (error) { console.error('segment production failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown'); }
+      }
+      message.ack();
     }
   },
 };

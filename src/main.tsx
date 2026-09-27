@@ -8,6 +8,7 @@ import { SegmentGenerator } from './components/SegmentGenerator.tsx';
 import { PublicLearningDemo } from './components/PublicLearningDemo.tsx';
 import { SpotifyPanel, type SpotifyControls } from './components/SpotifyPanel.tsx';
 import { DailyLimitReset } from './components/DailyLimitReset.tsx';
+import { ProgramPanel } from './components/ProgramPanel.tsx';
 import { defaultProfile, parseProfile } from './domain/program.ts';
 import type { Profile, Topic } from './domain/program.ts';
 import { learnedWeights, parseFeedback } from './domain/recommendation.ts';
@@ -15,6 +16,8 @@ import type { FeedbackAction, FeedbackEvent } from './domain/recommendation.ts';
 import './style.css';
 
 const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
+// Inside the Android app the page is only the settings cockpit; the app itself plays the program.
+const embeddedInApp = navigator.userAgent.includes('PersonalRadioAndroid');
 const spotifyClientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? '';
 
 // Cache only the static app shell; API calls and generated audio stay online-only.
@@ -62,6 +65,11 @@ function App() {
   }
   function signal(action: FeedbackAction, item = track, listenedRatio = item?.id === track?.id && state.duration > 0 ? state.position / state.duration : 1) {
     if (!item) return;
+    // Program items also report to the server: it marks them played and learns from the signal.
+    if (item.timelineId) void fetch(new URL(`api/timeline/${item.timelineId}/feedback`, window.location.href), {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, listenedRatio: Math.max(0, Math.min(1, listenedRatio)) }),
+    }).catch(() => { /* Playback continues; the item stays open on the server. */ });
     const interests = item.interests ?? [];
     if (!interests.length) return;
     storeFeedback([...feedback, { itemId: item.feedbackId ?? item.id, interests, action, listenedRatio: Math.max(0, Math.min(1, listenedRatio)), createdAt: new Date().toISOString() }]);
@@ -92,6 +100,12 @@ function App() {
     const a = document.createElement('a'); a.href = url; a.download = 'radio-audiotest.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  if (embeddedInApp) return <div className="shell embedded">
+    <main>
+      <div className="intro"><p className="eyebrow">EINSTELLUNGEN</p><h1>Dein Programm.</h1><p>Moderation, Sendungen, Quellen und Sendeuhr. Gehört wird in der App.</p></div>
+      <ProgramPanel player={player} profile={profile} embedded onStartProgram={() => {}} />
+    </main>
+  </div>;
   return <div className="shell">
     <header><a className="brand" href="#" aria-label="Personal Radio Start" onClick={() => setTab('radio')}><span className="brand-icon">◒</span> personal radio<span className="dot">.</span></a><span className="badge">{publicDemo ? 'Öffentliche Demo' : 'Privater Test'}</span></header>
     <main>
@@ -107,6 +121,7 @@ function App() {
           {state.error && <p role="alert" className="error">{state.error}</p>}
         </section>
         {!publicDemo && spotifyClientId && <SpotifyPanel clientId={spotifyClientId} controlsRef={spotifyControls} onSpotifyPlay={() => player.pause()} />}
+        {!publicDemo && <ProgramPanel player={player} profile={profile} onStartProgram={tracks => { spotifyControls.current?.pause(); player.repeat(false); replace(tracks); void player.start(0); }} />}
         {publicDemo ? <PublicLearningDemo profile={generationProfile} feedback={feedback} onFeedback={event => storeFeedback([...feedback, { ...event, createdAt: new Date().toISOString() }])} /> : <SegmentGenerator profile={generationProfile} onReady={playGenerated} />}
         <section className="panel"><div className="section-heading"><h2>Als Nächstes</h2><span>{player.tracks.some(item => item.kind.startsWith('ASK')) ? 'KI-Beitrag' : 'Lokaler Audiotest'}</span></div><ol className="queue" key={queueVersion}>{player.tracks.map((t, i) => <li key={t.id}><button onClick={() => void player.start(i)} aria-current={state.index === i ? 'true' : undefined}><span className="queue-num">{String(i + 1).padStart(2, '0')}</span><span><strong>{t.title}</strong><small>{t.kind}</small></span><span aria-hidden="true">{state.index === i ? '●' : '↗'}</span></button></li>)}</ol></section>
         <section className="note"><strong>{publicDemo ? 'Öffentliche Testversion' : 'Privater KI-Test'}</strong><p>{publicDemo ? 'Hier kannst du Interessen, lokales Feedback-Lernen und den Android-Audioplayer testen. Nachrichtenfeeds, KI-Beiträge und Spotify sind nicht verbunden.' : 'Die Beitragserstellung funktioniert nur auf der privaten Cloudflare-Version nach deren Einrichtung. Auf der öffentlichen Pages-Demo bleiben Testtöne und lokale Dateien verfügbar. Spotify ist nicht verbunden.'}</p></section>

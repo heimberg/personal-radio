@@ -21,8 +21,19 @@ export interface Script {
   turns?: Array<{ speaker: 'host-a' | 'host-b'; text: string }>;
   interestTags?: string[];
 }
+/** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
+export interface HostPersona { name: string; tone: string; style: string; instructions: string; cohostName?: string }
+/** Owner-configured direction for one show; every field is optional. */
+export interface EditorialDirection {
+  instructions?: string;
+  targetMinutes?: number;
+  stationName?: string;
+  persona?: HostPersona;
+  /** Titles of recent segments; the next draft should not repeat these topics. */
+  avoidTopics?: string[];
+}
 export interface TextGenerator {
-  generate(profile: Profile, sources: Source[]): Promise<Script>;
+  generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;
 }
 export interface SpeechSynthesizer {
   synthesize(text: string, turns?: Script['turns'], voiceId?: string): Promise<Uint8Array>;

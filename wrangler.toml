@@ -16,13 +16,32 @@ database_name = "personal-radio"
 database_id = "d76d06b3-cb52-4c4c-88ff-b05329bac327"
 migrations_dir = "migrations"
 
-[vars]
-ASK_BASE_URL = "https://ask.ict-tfbern.ch/api/v1"
-ASK_MODEL = "ask-base"
-GEMINI_TEXT_MODEL = "gemini-3.8-flash"
-GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
-GEMINI_VOICE_A = "Kore"
-GEMINI_VOICE_B = "Puck"
-DAILY_GENERATIONS = "24"
-DAILY_FEED_REQUESTS = "60"
-DAILY_TTS_CHARACTERS = "12000"
+# Generated segment audio. Create once: npx wrangler r2 bucket create personal-radio-audio
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "personal-radio-audio"
+
+# Segment production. Create once: npx wrangler queues create personal-radio-production
+[[queues.producers]]
+binding = "PRODUCTION"
+queue = "personal-radio-production"
+
+[[queues.consumers]]
+queue = "personal-radio-production"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 0
+max_concurrency = 1
+
+# Keeps the program filled while the owner listens.
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Variables and secrets live in the Cloudflare dashboard (Worker → Settings → Variables and Secrets).
+# Nothing is set here: values in a [vars] block would overwrite the dashboard on every deploy,
+# while keep_vars = true keeps everything that is not defined in this file.
+# Optional variables and their defaults in the code:
+#   DAILY_GENERATIONS 24 · DAILY_FEED_REQUESTS 60 · DAILY_TTS_CHARACTERS 12000
+#   GEMINI_TEXT_MODEL gemini-3.8-flash · GEMINI_RESEARCH_MODEL = GEMINI_TEXT_MODEL · GEMINI_TTS_MODEL gemini-3.8-flash-tts
+#   GEMINI_VOICE_A Kore · GEMINI_VOICE_B Puck · MISTRAL_TTS_MODEL voxtral-mini-tts-2603 · MISTRAL_VOICE_ID (none)
+#   ASK_BASE_URL, ASK_MODEL, ASK_API_KEY: all three set enables ASK; otherwise Gemini writes and verifies.

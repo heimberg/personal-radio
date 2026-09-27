@@ -56,3 +56,20 @@ test('pause and resume retain position', async () => {
   const { audio, player } = setup(); await player.start(); player.seek(12); player.pause(); await player.start();
   assert.equal(audio.currentTime, 12);
 });
+
+test('relative track URLs keep their position across pause and resume', async () => {
+  const audio = new FakeAudio(), player = new RadioPlayer(audio);
+  // A real audio element reports src as an absolute URL; the fake mimics that.
+  Object.defineProperty(audio, 'src', { get() { return this._src ? `https://radio.example/${this._src}` : ''; }, set(value: string) { this._src = value; } });
+  player.setTracks([{ id: 'a', title: 'A', kind: 'test', url: 'api/timeline/a/audio' }]);
+  await player.start(); player.seek(12); player.pause(); await player.start();
+  assert.equal(audio.currentTime, 12);
+});
+test('appended program items continue playback after the queue ran out', async () => {
+  const { audio, player } = setup(); player.repeat(false); await player.start(1);
+  audio.dispatchEvent(new Event('ended')); assert.equal(player.state.status, 'ended');
+  player.appendTracks([{ id: '1', title: 'Duplicate', kind: 'test', url: 'blob:1' }, { id: '2', title: 'Track 2', kind: 'test', url: 'blob:2' }]);
+  assert.equal(player.tracks.length, 3);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(player.state.index, 2); assert.equal(player.state.status, 'playing');
+});
