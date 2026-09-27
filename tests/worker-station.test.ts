@@ -191,6 +191,23 @@ test('the Android app authenticates with an Access service token and acts as the
     const unconfigured = await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), withoutConfiguredToken as never);
     assert.equal(unconfigured.status, 401);
     assert.equal(((await unconfigured.json()) as { reason: string }).reason, 'service_token_not_configured');
+
+    // Spotify listening profile: connect sets a state cookie; a callback without the matching state is refused.
+    const spotifyEnv = { ...env, SPOTIFY_CLIENT_ID: 'sid', SPOTIFY_CLIENT_SECRET: 'ssecret' };
+    const spotify = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, { ...init, headers: { 'Cf-Access-Jwt-Assertion': app, ...(init.headers ?? {}) } }), spotifyEnv as never);
+    const connect = await spotify('/api/spotify/connect');
+    assert.equal(connect.status, 302);
+    const location = new URL(connect.headers.get('Location')!);
+    assert.equal(location.origin, 'https://accounts.spotify.com');
+    assert.equal(location.searchParams.get('redirect_uri'), `${ORIGIN}/api/spotify/callback`);
+    const state = location.searchParams.get('state')!;
+    assert.match(connect.headers.get('Set-Cookie')!, new RegExp(`^pr_spotify_state=${state}; Path=/api/spotify; .*HttpOnly; Secure`));
+    const forged = await spotify(`/api/spotify/callback?code=c&state=${state}`, { headers: { Cookie: 'pr_spotify_state=other' } });
+    assert.equal(forged.headers.get('Location'), `${ORIGIN}/?spotify=abgelehnt`);
+    assert.deepEqual(await (await spotify('/api/spotify/profile')).json(), { connected: false, artists: [] });
+    assert.equal((await spotify('/api/spotify/disconnect', { method: 'POST' })).status, 403); // no Origin
+    assert.equal((await station(app, {})).status, 200);
+    assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/spotify/profile`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), env as never)).status, 404);
   } finally { globalThis.fetch = originalFetch; }
 });
 

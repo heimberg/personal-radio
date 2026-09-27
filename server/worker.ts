@@ -11,6 +11,7 @@ import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
 import { arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
+import { SpotifyListening } from './listening.ts';
 import type { MusicCatalog, MusicWriter } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
@@ -226,7 +227,46 @@ function stationDeps(env: Environment): StationDeps {
     researcher: providersFor(env).researcher,
     musicWriter: musicFor(env).writer,
     catalog: musicFor(env).catalog,
+    ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
   };
+}
+
+function listeningFor(env: Environment): SpotifyListening | null {
+  return env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? new SpotifyListening(env.DB, { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET }) : null;
+}
+
+const STATE_COOKIE = 'pr_spotify_state';
+
+/** Connecting the owner's Spotify listening profile (authorization code flow; the secret stays in the Worker). */
+async function listeningRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
+  if (!url.pathname.startsWith('/api/spotify/')) return null;
+  const listening = listeningFor(env);
+  if (!listening) return json({ error: 'spotify_not_configured' }, 404);
+  const redirectUri = `${url.origin}/api/spotify/callback`;
+  if (url.pathname === '/api/spotify/profile' && request.method === 'GET') return json(await listening.status(owner), 200);
+  if (url.pathname === '/api/spotify/connect' && request.method === 'GET') {
+    const state = crypto.randomUUID();
+    return new Response(null, { status: 302, headers: {
+      Location: listening.authorizeUrl(redirectUri, state), 'Cache-Control': 'no-store',
+      'Set-Cookie': `${STATE_COOKIE}=${state}; Path=/api/spotify; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
+    } });
+  }
+  if (url.pathname === '/api/spotify/callback' && request.method === 'GET') {
+    const cookie = request.headers.get('Cookie')?.split(/;\s*/).find(part => part.startsWith(`${STATE_COOKIE}=`))?.slice(STATE_COOKIE.length + 1);
+    const done = (result: string) => new Response(null, { status: 302, headers: {
+      Location: `${url.origin}/?spotify=${result}`, 'Cache-Control': 'no-store', 'Set-Cookie': `${STATE_COOKIE}=; Path=/api/spotify; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    } });
+    const code = url.searchParams.get('code'), state = url.searchParams.get('state');
+    if (!code || !state || !cookie || state !== cookie) return done('abgelehnt');
+    try { await listening.connect(owner, code, redirectUri, new Date()); return done('verbunden'); }
+    catch { return done('fehler'); }
+  }
+  if (url.pathname === '/api/spotify/disconnect' && request.method === 'POST') {
+    if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+    await listening.disconnect(owner);
+    return json({ connected: false }, 200);
+  }
+  return json({ error: 'not_found' }, 404);
 }
 
 /** Plans the program and hands due items to the production queue. */
@@ -424,6 +464,8 @@ export default {
         return json({ error: code }, status);
       }
     }
+    const listeningResponse = await listeningRoutes(request, env, owner, url);
+    if (listeningResponse) return listeningResponse;
     const stationResponse = await stationRoutes(request, env, owner, url);
     if (stationResponse) return stationResponse;
     if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);

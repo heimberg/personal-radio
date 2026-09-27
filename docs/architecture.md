@@ -134,7 +134,7 @@ The cockpit arranges the open items (planned, being voiced, ready): `POST /api/t
 
 ## Music curation (AI → Spotify only)
 
-No Spotify audio, metadata, search results or listening behaviour are ever sent to an AI provider or used for learning. The data flow goes one way:
+No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scope `user-top-read`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
 
 1. The LLM picks tracks (artist, title, short reason) from its own knowledge, guided by `MusicRule` and the recent playlist memory (our own records of the LLM's earlier picks).
 2. The backend resolves each pick through the Spotify Search API with an app token (client credentials) and accepts it only if a normalized artist/title comparison matches. This comparison is deterministic code. Unmatched picks are dropped.

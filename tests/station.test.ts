@@ -484,10 +484,12 @@ test('a song item: AI picks from taste and reactions, Spotify resolves the first
   };
   const voiced: string[] = [];
   h.deps.pipeline.voice = async (_owner, script, _mode, voiceId) => { voiced.push(`${voiceId}: ${script.text}`); return { audio: new Uint8Array([1]), contentType: 'audio/wav', ttsCharacters: 1 }; };
+  h.deps.listening = { topArtists: async () => ['Nine Inch Nails', 'Protomartyr'] };
   const planned = planTimeline(station, [], null, NOW, () => 'song-1').filter(item => item.showId === MUSIC_SHOW_ID)[0];
   await h.store.insertItem(OWNER, { ...planned, id: 'song-1' }, NOW);
   assert.equal(await produceItem(h.deps, OWNER, 'song-1'), 'ready');
   assert.equal(requests[0].taste, 'Industrial, Indie, Rock'); assert.equal(requests[0].announce, true);
+  assert.deepEqual(requests[0].listens, ['Nine Inch Nails', 'Protomartyr']);
   assert.deepEqual(voiced, ['gemini_Laomedeia: Jetzt: Nine Inch Nails mit Closer.']);
   const view = toView((await h.store.getItem(OWNER, 'song-1'))!, station);
   assert.equal(view.showName, 'Musik'); assert.equal(view.title, 'Nine Inch Nails – Closer'); assert.equal(view.estimatedMinutes, 4);

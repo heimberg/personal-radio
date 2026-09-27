@@ -32,6 +32,8 @@ export interface StationDeps {
   /** Artist hours: Gemini picks and writes, Spotify resolves picks to tracks. */
   musicWriter?: MusicWriter;
   catalog?: MusicCatalog;
+  /** The owner's Spotify top artists, when the owner connected the listening profile. */
+  listening?: { topArtists(owner: string, now: Date): Promise<string[]> };
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -277,7 +279,9 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
     await deps.reserveGeneration(owner);
     const focus = HOUR_FOCUS[show.format]!;
-    const interests = [...config.profile.topics, ...config.profile.interests];
+    // Artist and genre hours also draw on what the owner listens to; theme hours stay with the interests.
+    const listens = focus !== 'theme' && deps.listening ? (await deps.listening.topArtists(owner, now)).slice(0, 15).map(artist => `hört ${artist}`) : [];
+    const interests = [...config.profile.topics, ...config.profile.interests, ...listens];
     const subject = hourSubject(show)
       ?? (await deps.musicWriter.pickSubject({ focus, interests, avoid: await recentSubjects(deps, owner, focus), instructions: show.instructions })).subject;
     const { sources, queries } = await deps.researcher.research({
@@ -365,9 +369,10 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
     if (!deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
     if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
     const history = await songHistory(deps, owner);
+    const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
-      liked: history.liked, disliked: history.disliked, announce: config.music.announce,
+      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens,
       direction: { stationName: config.name, persona: config.host },
     });
     let chosen: { pick: SongPick; uri: string; durationMs: number } | null = null;

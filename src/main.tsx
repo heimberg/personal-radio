@@ -30,6 +30,10 @@ connectMediaSession(player);
 
 type View = 'program' | 'settings' | 'yaml';
 
+// Back from connecting the Spotify listening profile: show the result once and clean the address.
+const spotifyReturn = new URLSearchParams(window.location.search).get('spotify');
+if (spotifyReturn) window.history.replaceState(null, '', window.location.pathname);
+
 function sendFeedback(timelineId: string, action: FeedbackAction, listenedRatio: number) {
   // The server marks the item played and learns from the signal; playback never waits for it.
   void fetch(api(`api/timeline/${timelineId}/feedback`), {
@@ -39,12 +43,16 @@ function sendFeedback(timelineId: string, action: FeedbackAction, listenedRatio:
 }
 
 function App() {
-  const [view, setView] = useState<View>('program');
+  const [view, setView] = useState<View>(spotifyReturn ? 'settings' : 'program');
   const [available, setAvailable] = useState<boolean | null>(null);
   const [config, setConfig] = useState<StationConfig | null>(null);
   const [items, setItems] = useState<TimelineItemView[]>([]);
   const [failures, setFailures] = useState<FailureSummary>({ count: 0 });
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(() => {
+    const result = spotifyReturn;
+    return result === 'verbunden' ? 'Spotify-Hörprofil verbunden. Die Songauswahl kennt jetzt deine Top-Künstler.'
+      : result ? 'Spotify-Hörprofil konnte nicht verbunden werden. Prüfe die Redirect-URI im Spotify-Dashboard und versuche es erneut.' : '';
+  });
   const [ratings, setRatings] = useState<Record<string, FeedbackAction>>({});
   const listening = useRef(false);
 
