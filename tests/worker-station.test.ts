@@ -182,10 +182,14 @@ test('the Android app authenticates with an Access service token and acts as the
     await (env.DB as any).raw.prepare(`INSERT INTO station_config (owner_id, config_json, updated_at) VALUES ('owner@example.test', ?, '2026-09-27')`)
       .run(JSON.stringify(defaultStationConfig()));
     assert.equal(((await (await station(app)).json()) as { config: { name: string } | null }).config?.name, 'Personal Radio'); // same owner as the browser login
-    assert.equal((await station(await sign({ type: 'app', common_name: 'other.access' }))).status, 401);
+    const foreign = await station(await sign({ type: 'app', common_name: 'other.access' }));
+    assert.equal(foreign.status, 401);
+    assert.deepEqual(await foreign.json(), { error: 'unauthorized', reason: 'service_token_not_allowed' });
     assert.equal((await station(await sign({ type: 'org', common_name: 'radio-app.access' }))).status, 401);
     const withoutConfiguredToken = { ...env, ACCESS_SERVICE_TOKEN_ID: undefined };
-    assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), withoutConfiguredToken as never)).status, 401);
+    const unconfigured = await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), withoutConfiguredToken as never);
+    assert.equal(unconfigured.status, 401);
+    assert.equal(((await unconfigured.json()) as { reason: string }).reason, 'service_token_not_configured');
   } finally { globalThis.fetch = originalFetch; }
 });
 

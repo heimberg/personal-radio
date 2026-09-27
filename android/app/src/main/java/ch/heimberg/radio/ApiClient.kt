@@ -1,5 +1,6 @@
 package ch.heimberg.radio
 
+import ch.heimberg.radio.core.AccessDiagnosis
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.Timeline
@@ -48,17 +49,10 @@ class ApiClient(private val connection: Connection) {
             }
             val status = http.responseCode
             val text = (if (status in 200..299) http.inputStream else http.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            if (status !in 200..299) throw ApiException(status, messageFor(status))
+            if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, http.getHeaderField("Location"), text))
             return text
         } finally {
             http.disconnect()
         }
-    }
-
-    private fun messageFor(status: Int): String = when (status) {
-        in 300..399, 401, 403 -> "Zugang abgelehnt. Prüfe Service-Token und Access-Regel."
-        404 -> "Adresse gefunden, aber kein Radio-Server dahinter."
-        429 -> "Tageslimit erreicht."
-        else -> "Server antwortet mit Fehler $status."
     }
 }
