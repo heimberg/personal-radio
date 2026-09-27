@@ -10,7 +10,8 @@ export class ProviderError extends Error {
   }
 }
 async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 45_000): Promise<Response> {
-  try { return await fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); }
+  let response: Response;
+  try { response = await fetcher(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) }); }
   catch (error) {
     let provider = 'Provider';
     try { provider = new URL(url).hostname; } catch { /* Keep generic label for invalid URLs. */ }
@@ -19,6 +20,12 @@ async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs
       : '';
     throw new ProviderError(`${provider}${cause}`);
   }
+  if (response.status >= 300 && response.status < 400) {
+    let provider = 'Provider';
+    try { provider = new URL(url).hostname; } catch { /* Keep generic label for invalid URLs. */ }
+    throw new ProviderError(`${provider} redirect blocked (${response.status})`);
+  }
+  return response;
 }
 export class AskTextGenerator implements TextGenerator {
   private endpoint: string;
