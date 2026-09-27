@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -65,6 +66,10 @@ class MainActivity : AppCompatActivity() {
         upcomingView = findViewById(R.id.upcoming)
         spotifyButton = findViewById(R.id.spotify)
         spotifyStatus = findViewById(R.id.spotify_status)
+        // Shown so an installed build can be matched to its CI run.
+        findViewById<TextView>(R.id.version).text = getString(R.string.version, runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull() ?: "?")
         spotify = SpotifyLink(this)
 
         playPause.setOnClickListener { togglePlayback() }
@@ -118,17 +123,22 @@ class MainActivity : AppCompatActivity() {
      * playback service connects on its own and artist hours play with their music.
      */
     private fun connectSpotify() {
-        val clientId = spotifyClientId ?: return
         spotifyStatus.visibility = View.VISIBLE
+        val clientId = spotifyClientId ?: run {
+            spotifyStatus.text = getString(R.string.spotify_not_configured)
+            return
+        }
         if (!spotify.installed) {
             spotifyStatus.text = getString(R.string.spotify_missing)
             return
         }
         spotifyStatus.text = getString(R.string.spotify_connecting)
+        Toast.makeText(this, R.string.spotify_connecting, Toast.LENGTH_SHORT).show()
         spotifyButton.isEnabled = false
         spotify.connect(clientId, showAuthView = true) { error ->
             spotifyButton.isEnabled = true
             spotifyStatus.text = error ?: getString(R.string.spotify_connected)
+            Toast.makeText(this, error ?: getString(R.string.spotify_connected), Toast.LENGTH_LONG).show()
             if (error == null) {
                 spotifyButton.text = getString(R.string.spotify_connected_button)
                 lifecycleScope.launch { refreshTimeline() }
