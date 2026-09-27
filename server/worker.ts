@@ -164,7 +164,14 @@ export default {
       if (!pipeline) {
         pipeline = new SegmentPipeline(
           new AskTextGenerator({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
-          new MistralSpeechSynthesizer({ key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID }),
+          new MistralSpeechSynthesizer({
+            key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID,
+            referenceAudio: async () => {
+              const response = await env.ASSETS.fetch(new Request('https://assets.local/audio/kerstin-reference.flac'));
+              if (!response.ok) throw new Error('German reference audio unavailable');
+              return new Uint8Array(await response.arrayBuffer());
+            },
+          }),
           new AskEditorialVerifier({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
           new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
           4,
