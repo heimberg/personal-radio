@@ -111,7 +111,7 @@ export default {
     if (url.pathname === '/api/mistral-voices') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
-      try { return json({ voices: await listMistralVoices(env.MISTRAL_API_KEY) }, 200); }
+      try { return json({ voices: await listMistralVoices() }, 200); }
       catch { return json({ error: 'voice_catalog_unavailable' }, 502); }
     }
     if (url.pathname === '/api/feed-items') {
