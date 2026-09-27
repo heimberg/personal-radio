@@ -10,10 +10,18 @@ Workers and D1 have free plans. Access is free for small teams (currently up to 
 
 1. Create or use a Cloudflare account. Install Node 24, then authenticate Wrangler with `npx wrangler login`.
 2. Create the persistent database with `npx wrangler d1 create personal-radio`. Copy the returned database ID into `wrangler.toml` in place of `REPLACE_WITH_D1_DATABASE_ID`.
-3. In the GitHub repository settings, add Actions secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts and D1 edit permissions) and `CLOUDFLARE_ACCOUNT_ID`.
-4. Run **Actions → Deploy private Worker → Run workflow**. The workflow builds the app, applies D1 migrations, then deploys the Worker. This first deployment has no provider credentials and rejects requests until Access and its identity settings are configured.
-5. In Cloudflare, open the Worker `personal-radio-private` → **Settings → Domains & Routes**. Enable Cloudflare Access for the `workers.dev` URL. Create an allow policy for only your email. Cloudflare documents Access protection for Workers and JWT validation in the Worker itself.
-6. From the Access application, copy the team-domain hostname (without `https://`) and the Application Audience (AUD) tag. Set Worker secrets:
+3. Create the audio bucket and the production queue (names must match `wrangler.toml`):
+
+   ```sh
+   npx wrangler r2 bucket create personal-radio-audio
+   npx wrangler queues create personal-radio-production
+   ```
+
+   The deploy fails until both exist. The cron trigger (every 10 minutes) is registered by the deploy itself.
+4. In the GitHub repository settings, add Actions secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts, D1, Workers R2 Storage and Queues edit permissions) and `CLOUDFLARE_ACCOUNT_ID`.
+5. Run **Actions → Deploy private Worker → Run workflow**. The workflow builds the app, applies D1 migrations, then deploys the Worker. This first deployment has no provider credentials and rejects requests until Access and its identity settings are configured.
+6. In Cloudflare, open the Worker `personal-radio-private` → **Settings → Domains & Routes**. Enable Cloudflare Access for the `workers.dev` URL. Create an allow policy for only your email. Cloudflare documents Access protection for Workers and JWT validation in the Worker itself.
+7. From the Access application, copy the team-domain hostname (without `https://`) and the Application Audience (AUD) tag. Set Worker secrets:
 
    ```sh
    npx wrangler secret put ACCESS_TEAM_DOMAIN
@@ -27,7 +35,11 @@ Workers and D1 have free plans. Access is free for small teams (currently up to 
 
    Use the ASK HTTPS API base URL, for example `https://ask.ict-tfbern.ch/api/v1`, and the authorized ASK model credentials. The ASK endpoint must allow outbound HTTPS from Cloudflare Workers; verify connectivity and organizational authorization before use. Keep all credentials out of `wrangler.toml`, GitHub source and frontend variables. After setting `MISTRAL_API_KEY`, deploy the Worker and open the private app while signed in through Cloudflare Access. The brief-segment form loads available voices from the authenticated `/api/mistral-voices` route. Choose one there; the selection is stored on that device and sent to the Worker for each brief. No `MISTRAL_VOICE_ID` secret is needed unless you want a server-side fallback. Voxtral supports German, though the available preset voice language and accent can affect pronunciation.
 
-7. Run the deploy workflow again after setting secrets. Open the `workers.dev` URL and confirm Cloudflare Access requires sign-in. The app checks the Access JWT signature, issuer, audience and exact allowed email on every page and API request, even if the Access policy is accidentally bypassed.
+8. Run the deploy workflow again after setting secrets. Open the `workers.dev` URL and confirm Cloudflare Access requires sign-in. The app checks the Access JWT signature, issuer, audience and exact allowed email on every page and API request, even if the Access policy is accidentally bypassed.
+
+## Program production
+
+Once the station is configured in the app ("Einstellungen dieses Geräts übernehmen"), the Worker plans and produces the program on its own: the cron trigger tops up the timeline while you listen, the queue consumer produces one segment at a time, and audio is stored in R2. D1 migration `0002_station.sql` adds the tables; the deploy workflow applies it. Production counts against the same daily limits as manual segments (`DAILY_GENERATIONS`, `DAILY_FEED_REQUESTS`, `DAILY_TTS_CHARACTERS`); with 2-minute segments, one hour of listening needs about 30 generations, so raise `DAILY_GENERATIONS` deliberately. The Workers Paid plan is recommended because decoding provider audio can exceed the Free plan's CPU time per invocation.
 
 ## Test the route
 

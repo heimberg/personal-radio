@@ -16,9 +16,31 @@ database_name = "personal-radio"
 database_id = "d76d06b3-cb52-4c4c-88ff-b05329bac327"
 migrations_dir = "migrations"
 
+# Generated segment audio. Create once: npx wrangler r2 bucket create personal-radio-audio
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "personal-radio-audio"
+
+# Segment production. Create once: npx wrangler queues create personal-radio-production
+[[queues.producers]]
+binding = "PRODUCTION"
+queue = "personal-radio-production"
+
+[[queues.consumers]]
+queue = "personal-radio-production"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 0
+max_concurrency = 1
+
+# Keeps the program filled while the owner listens.
+[triggers]
+crons = ["*/10 * * * *"]
+
 [vars]
 ASK_BASE_URL = "https://ask.ict-tfbern.ch/api/v1"
 ASK_MODEL = "ask-base"
+MISTRAL_TTS_MODEL = "voxtral-mini-tts-2603"
 GEMINI_TEXT_MODEL = "gemini-3.8-flash"
 GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
 GEMINI_VOICE_A = "Kore"

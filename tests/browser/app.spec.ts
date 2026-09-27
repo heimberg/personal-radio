@@ -139,3 +139,55 @@ test('saved feeds are searched together and the strongest initial interest match
   await page.getByRole('button', { name: 'Passenden Beitrag in allen Feeds finden' }).click();
   await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('Geologie der Alpen');
 });
+
+function silentWav(seconds: number) {
+  const rate = 8000, samples = rate * seconds, buffer = Buffer.alloc(44 + samples * 2);
+  buffer.write('RIFF', 0); buffer.writeUInt32LE(36 + samples * 2, 4); buffer.write('WAVE', 8); buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22); buffer.writeUInt32LE(rate, 24);
+  buffer.writeUInt32LE(rate * 2, 28); buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write('data', 36); buffer.writeUInt32LE(samples * 2, 40);
+  return buffer;
+}
+
+test('server program: import device settings, show timeline, play ready segments and report completion', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('radio.feeds.v1', JSON.stringify([{ id: 'x', name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }]));
+    const OriginalAudio = window.Audio;
+    window.Audio = class extends OriginalAudio {
+      constructor(src?: string) { super(src); (window as unknown as { testAudio: HTMLAudioElement }).testAudio = this; }
+    };
+  });
+  let stored: any = null;
+  const feedback: any[] = [];
+  await page.route('**/api/station', async route => {
+    if (route.request().method() === 'PUT') stored = JSON.parse(route.request().postData() ?? '{}');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ config: stored }) });
+  });
+  await page.route('**/api/timeline', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: stored ? [
+    { id: 't1', seq: 1, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
+      title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
+      sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }] },
+    { id: 't2', seq: 2, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:02:00.000Z', state: 'failed', estimatedMinutes: 2, error: 'NO_SOURCES' },
+  ] : [] }) }));
+  let planned = 0;
+  await page.route('**/api/timeline/plan', route => { planned++; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"planned":2,"queued":2,"expired":0}' }); });
+  await page.route('**/api/timeline/t1/audio', route => route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav(2) }));
+  await page.route('**/api/timeline/t1/feedback', async route => {
+    feedback.push(JSON.parse(route.request().postData() ?? '{}'));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Einstellungen dieses Geräts übernehmen' }).click();
+  await expect(page.getByRole('button', { name: '▶ Programm hören' })).toBeVisible();
+  await expect(page.getByText('2 neue Beiträge geplant, 2 in Produktion.')).toBeVisible();
+  expect(planned).toBe(1);
+  expect(stored.feeds).toEqual([{ id: 'feed-1', name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }]);
+  expect(stored.shows[0]).toMatchObject({ id: 'kurz', feedIds: ['feed-1'], verification: 'strict' });
+  const timeline = page.getByRole('list', { name: 'Programmablauf' });
+  await expect(timeline.getByText('Keine neuen Artikel in den Feeds dieser Sendung.')).toBeVisible();
+  await expect(timeline.getByRole('link', { name: 'Raumfahrt heute' })).toHaveAttribute('href', 'https://news.example.test/a');
+  await page.getByRole('button', { name: '▶ Programm hören' }).click();
+  await expect(page.getByRole('heading', { name: 'Sonde gelandet' })).toBeVisible();
+  await expect(page.getByText('Wiedergabe läuft', { exact: true })).toBeVisible();
+  await page.evaluate(() => { const audio = (window as unknown as { testAudio: HTMLAudioElement }).testAudio; audio.currentTime = audio.duration - 0.1; });
+  await expect.poll(() => feedback).toEqual([{ action: 'complete', listenedRatio: 1 }]);
+});

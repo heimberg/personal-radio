@@ -21,8 +21,10 @@ export interface Script {
   turns?: Array<{ speaker: 'host-a' | 'host-b'; text: string }>;
   interestTags?: string[];
 }
+/** Owner-configured direction for one show; both fields are optional. */
+export interface EditorialDirection { instructions?: string; targetMinutes?: number }
 export interface TextGenerator {
-  generate(profile: Profile, sources: Source[]): Promise<Script>;
+  generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;
 }
 export interface SpeechSynthesizer {
   synthesize(text: string, turns?: Script['turns'], voiceId?: string): Promise<Uint8Array>;

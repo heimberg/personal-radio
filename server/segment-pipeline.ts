@@ -1,9 +1,11 @@
 // Server-only orchestration. Invoke only after authenticating the owner.
 import { parseProfile, parseScript } from '../src/domain/program.ts';
-import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer } from '../src/domain/program.ts';
+import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
+import type { VerificationPolicy } from '../src/domain/station.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 export interface EditorialVerifier { verify(script: Script, sources: Source[]): Promise<EditorialDecision> }
+export interface VoicedAudio { audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number }
 export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number; mode: 'brief' | 'podcast' }
 export interface PodcastProviders { text: TextGenerator; speech: SpeechSynthesizer }
 export interface CharacterBudgetStore { reserve(ownerId: string, characters: number): Promise<void> }
@@ -94,20 +96,43 @@ export class SegmentPipeline {
   }
 
   private async run(ownerId: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast', voiceId?: string): Promise<PreparedSegment> {
+    const script = await this.draft(profile, sources, mode);
+    await this.review(script, sources, 'strict');
+    const voiced = await this.voice(ownerId, script, mode, voiceId);
+    return { script, ...voiced, mode };
+  }
+
+  /** Step 1: provider draft, structurally validated against the supplied sources. */
+  async draft(profile: Profile, sources: Source[], mode: 'brief' | 'podcast', direction?: EditorialDirection): Promise<Script> {
+    validateSources(sources);
+    if (mode !== 'brief' && mode !== 'podcast' || mode === 'podcast' && !this.podcast) throw new PipelineError('INVALID_INPUT');
+    const safeProfile = parseProfile(profile);
     const textProvider = mode === 'podcast' ? this.podcast!.text : this.text;
-    const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
-    const script = parseScript(await textProvider.generate(profile, sources), sources);
-    const allowedTags = new Set([...profile.topics, ...profile.interests]);
+    const script = parseScript(await textProvider.generate(safeProfile, sources, direction), sources);
+    const allowedTags = new Set([...safeProfile.topics, ...safeProfile.interests]);
     script.interestTags = script.interestTags?.filter(tag => allowedTags.has(tag)).slice(0, 30) ?? [];
     if (script.text.length > 12_000 || [...script.text.trim().split(/\s+/)].length > 1400 || mode === 'podcast' && !script.turns) throw new PipelineError('INVALID_INPUT');
+    return script;
+  }
+
+  /** Step 2: evidence review. Only the strict policy calls the verifier; the show decides. */
+  async review(script: Script, sources: Source[], policy: VerificationPolicy): Promise<EditorialDecision> {
+    if (policy !== 'strict') return { approved: true, reasons: [`VERIFICATION_${policy.toUpperCase()}`] };
     let decision: EditorialDecision;
     try { decision = await this.verifier.verify(script, sources); }
     catch { throw new PipelineError('REJECTED'); }
     if (!decision.approved) throw new PipelineError('REJECTED');
+    return decision;
+  }
+
+  /** Step 3: reserve the character budget, then synthesize. */
+  async voice(ownerId: string, script: Script, mode: 'brief' | 'podcast', voiceId?: string): Promise<VoicedAudio> {
+    if (mode === 'podcast' && !this.podcast) throw new PipelineError('INVALID_INPUT');
+    const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const characters = [...script.text].length;
     await this.budget.reserve(ownerId, characters);
     const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
-    return { script, audio, contentType: mode === 'podcast' ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters, mode };
+    return { audio, contentType: mode === 'podcast' ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
   }
 }

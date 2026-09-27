@@ -15,21 +15,21 @@ A private, single-user radio: tune in and hear a continuous program of AI-genera
 5. **Server-side configuration.** A backend that produces without an open browser must know the configuration, so shows, sources, schedule, feedback and memory move from `localStorage` to D1. The device keeps only UI preferences and a playback cache. Export and delete remain available.
 6. **Providers are replaceable adapters.** Text through an OpenAI-compatible chat API (ASK by default, owner-controlled; model per show) and Gemini for dialogs. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
-8. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit and production needs Workflows. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
+8. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
 
 ## System overview
 
 ```
 Cloudflare
-  Cron Trigger (every ~10 min) ── keeps the timeline filled ~45 min ahead of the playhead
+  Cron Trigger (every 10 min) ── while the owner listens, keeps the timeline filled up to the horizon (default 20 min)
         │
         ▼
   Planner (Worker) ── reads schedule, shows, music rules, memory, feedback from D1
         │ creates timeline items (planned)
         ▼
-  Workflows (one run per item, durable steps, per-step retries)
+  Queue consumer (one item per message, one at a time; the item's D1 state drives retries)
         segment:     collect sources → draft (ASK/Gemini) → verify per show policy
-                     → reserve budget → TTS → store in R2 → ready
+                     → store script (state voicing) → reserve budget → TTS → R2 → ready
         music block: LLM picks tracks → resolve via Spotify search (code, no AI)
                      → moderation for resolved tracks only → TTS → R2 → ready
         │
@@ -60,6 +60,17 @@ Android app (primary)             Web cockpit (desktop)
 | `Memory` | What was played, covered-story fingerprints for deduplication, series state ("part 3 of …"). |
 
 Explicit configuration always wins over learned weights. The existing learning rules stay: thumbs are strong signals, completion is weakly positive, a skip before 20 % is ignored and a later skip is weakly negative, with a 45-day half-life.
+
+## Program production (implemented, milestone 1)
+
+- **Configuration** is one validated JSON document per owner in D1 (`station_config`): profile, feeds, shows, schedule, time zone and horizon. The cockpit imports it once from the device and edits it as JSON until the dedicated editors exist. `parseStationConfig` rejects unknown references, out-of-range lengths (brief 1–2 min because of the TTS cap, dialog 2–10 min), invalid times and time zones.
+- **Planning** (`server/station.ts`, `planTimeline`) runs on every cron tick and on "Jetzt planen". It rotates the enabled shows of the schedule slot that is active at each planned time, stops at the horizon and at 12 new items per tick, and plans nothing outside an active slot.
+- **Listener gate:** the cron only plans new content if the owner opened the program or gave feedback within the last 3 hours. Unplayed items expire after 12 hours, so without this gate the station would pay for content nobody hears.
+- **Production** runs in a queue consumer, not in the browser request. Each item moves `planned → voicing → ready` (or `failed` / `expired`); a lease in D1 prevents concurrent production. The approved script is stored before speech synthesis, so a TTS retry never pays for a second draft. Transient provider errors back off (10, 20 min) and give up after 3 attempts; rejections and invalid drafts fail permanently; an exhausted daily budget defers the item to the next UTC day. Three failures within an hour pause planning.
+- **Sources** come from the show's feeds: articles older than 30 days or already covered are skipped, the rest is ranked with explicit interests and learned weights (ties: newest first). Used articles are recorded in `covered_sources` so they are not retold.
+- **Queues instead of Workflows:** the D1 state machine already provides durable steps, and a plain queue handler stays testable with the Node test runner (Workflows require the `cloudflare:workers` runtime module).
+- **Audio** lives in R2 under `segments/<item>.mp3|wav`, is served with HTTP range support and is deleted 7 days after playback or on expiry.
+- **Feedback** from the player (`complete`, `skip`, thumbs) is stored in D1; server-side learned weights feed the next drafts.
 
 ## Music curation (AI → Spotify only)
 
@@ -92,21 +103,18 @@ Public repository, private application. Cloudflare Access protects the Worker. B
 
 ## Current state and gaps
 
-Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning.
+Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning. Milestone 1 adds the server-side program described above.
 
-Gaps against this plan:
+Remaining gaps:
 
-- Production runs inside one synchronous `POST /api/segments` request (up to several minutes). A locked screen or a dropped connection loses already-paid audio. Move production to Workflows and R2.
-- Profile, feeds, feedback and voice are in `localStorage`; move them to D1 (one-time import from the device).
-- Topics are still a fixed list of three; replace them with shows and free interests.
-- The Mistral TTS model is hard-coded; make it configuration.
-- The JWKS for the Access check is recreated on every request; cache it at module scope.
-- Frontend error messages are derived from substring matches on provider error details; return stable error codes.
-- `speechMinutes` allows 10 minutes, while the brief prompt asks for at most 250 words and Mistral TTS caps at 280 words.
+- The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
+- Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
+- Access accepts browser logins only; the Android app needs service-token support.
+- Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
 
 ## Milestones
 
-1. **Program on the server:** D1 tables for the domain model, import of device settings, R2 audio, Workflows production, Cron horizon, timeline API, cockpit timeline with desktop preview.
+1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; import of device settings; queue production with R2 audio; cron horizon with listener gate; timeline API; cockpit timeline with continuous browser playback.
 2. **Android player with our segments:** Media3 service, timeline sync, prefetch, feedback, service-token auth, 60-minute screen-off test.
 3. **Spotify in the app:** App Remote, music-block workflow (AI → Spotify), handoff test.
 4. **Full customization:** show editor with prompt templates and voices, program-clock editor, music rules, verification policy per show.
@@ -121,7 +129,7 @@ Gaps against this plan:
 - https://developer.spotify.com/documentation/web-playback-sdk
 - https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide
 - https://developer.android.com/media/media3/session/background-playback
-- https://developers.cloudflare.com/workflows/
+- https://developers.cloudflare.com/queues/
 - https://developers.cloudflare.com/r2/
 - https://developers.cloudflare.com/workers/configuration/cron-triggers/
 - https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/

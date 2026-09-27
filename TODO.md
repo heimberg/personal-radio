@@ -4,6 +4,8 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Matthias
 
+- [ ] **Vor dem nächsten Deploy (Meilenstein 1):** `npx wrangler r2 bucket create personal-radio-audio` und `npx wrangler queues create personal-radio-production` ausführen; den `CLOUDFLARE_API_TOKEN` um R2- und Queues-Rechte erweitern; Workers-Paid-Plan prüfen; `DAILY_GENERATIONS` an die gewünschte Hördauer anpassen (2-Minuten-Beiträge: ca. 30 pro Stunde). Danach in der App «Einstellungen dieses Geräts übernehmen».
+
 - [ ] **Cloudflare bereitstellen:** Cloudflare-Konto verwenden, D1-Datenbank anlegen und die zurückgegebene Datenbank-ID in `wrangler.toml` einsetzen. Anleitung: [`docs/cloudflare-deployment.md`](docs/cloudflare-deployment.md).
 - [ ] **GitHub-Deploy-Zugang einrichten:** Repository-Secrets `CLOUDFLARE_API_TOKEN` und `CLOUDFLARE_ACCOUNT_ID` hinterlegen. Der Token braucht Worker-Script- und D1-Rechte.
 - [ ] **Privaten Zugang festlegen:** Cloudflare Access für die Worker-Adresse aktivieren, nur die eigene E-Mail erlauben und Team-Domain sowie Application Audience bereithalten.
@@ -26,11 +28,10 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Nächste Meilensteine
 
-- [ ] Meilenstein 1 – Programm auf dem Server: Sendungen, Quellen, Sendeuhr, Feedback und Gedächtnis in D1 (einmaliger Import der Geräteeinstellungen); Produktion über Cloudflare Workflows statt im Browser-Request; Audio in R2; Cron Trigger hält das Programm ~45 Min. im Voraus gefüllt; Timeline-API.
+- [x] Meilenstein 1 – Programm auf dem Server: Konfiguration, Timeline, Feedback und Gedächtnis in D1; Produktion über Cloudflare Queue mit Audio in R2; Cron plant nur, solange du zuhörst; Timeline-API und Programm-Panel mit durchgehender Wiedergabe im Browser.
 - [ ] Meilenstein 2 – Native Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Zugang per Cloudflare Access Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
 - [ ] Meilenstein 3 – Spotify in der Android-App über App Remote SDK; Musikblöcke: KI wählt Titel, Backend löst sie per Spotify-Suche auf, Moderation nur für gefundene Titel; harte Übergaben ohne Überlappung.
 - [ ] Meilenstein 4 – Editoren für Sendungen (Prompt-Vorlage, Stimme, Länge, Prüfstrenge), Sendeuhr und Musikregeln.
-- [ ] Workers-Paid-Plan (5 USD/Monat) aktivieren, sobald Workflows gebraucht werden oder CPU-Limits auftreten.
 - [ ] Später: durchgehender Stream-Modus ohne Spotify (Auto, Lautsprecher).
 
 ## Architekturentscheidungen übernommen (Stand 27.09.2026, Details in docs/architecture.md)
@@ -41,7 +42,7 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - Konfiguration serverseitig in D1 statt local-first, weil das Backend ohne offenen Browser produziert.
 - Spotify-Daten fliessen nie zur KI: KI → Spotify-Suche, nicht umgekehrt.
 - Prüfstrenge pro Sendung: streng (Zitatprüfung), leicht oder aus.
-- Hosting bleibt Cloudflare (Worker, D1, R2, Workflows, Cron, Access). Keine Graph- oder Vektordatenbank zum Start.
+- Hosting bleibt Cloudflare (Worker, D1, R2, Queues, Cron, Access). Keine Graph- oder Vektordatenbank zum Start.
 
 ## Bereits geprüft
 
