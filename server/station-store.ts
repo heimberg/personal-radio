@@ -32,8 +32,8 @@ export interface TimelineRow {
   created_at: string;
   updated_at: string;
 }
-export type TimelinePatch = Partial<Pick<TimelineRow, 'state' | 'attempts' | 'lease_until' | 'script_json' | 'sources_json' | 'verification' | 'audio_key' | 'content_type' | 'research_json' | 'error'>>;
-const PATCHABLE = ['state', 'attempts', 'lease_until', 'script_json', 'sources_json', 'verification', 'audio_key', 'content_type', 'research_json', 'error'] as const;
+export type TimelinePatch = Partial<Pick<TimelineRow, 'state' | 'attempts' | 'lease_until' | 'script_json' | 'sources_json' | 'verification' | 'audio_key' | 'content_type' | 'research_json' | 'error' | 'estimated_minutes'>>;
+const PATCHABLE = ['state', 'attempts', 'lease_until', 'script_json', 'sources_json', 'verification', 'audio_key', 'content_type', 'research_json', 'error', 'estimated_minutes'] as const;
 
 /** An artist hour keeps one audio file per spoken part; everything else has at most one. */
 export function audioKeysOf(row: Pick<TimelineRow, 'audio_key' | 'script_json'>): string[] {

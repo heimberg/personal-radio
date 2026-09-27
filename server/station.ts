@@ -1,5 +1,5 @@
 // Server-only program runtime: plans the timeline and produces its segments without an open browser.
-import { HOUR_FOCUS, activeSlot, hourSubject, isMusicHour } from '../src/domain/station.ts';
+import { HOUR_FOCUS, MUSIC_SHOW_ID, SONG_MINUTES, activeSlot, hourSubject, isMusicHour } from '../src/domain/station.ts';
 import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
 import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
@@ -11,7 +11,7 @@ import type { SegmentPipeline } from './segment-pipeline.ts';
 import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
 import { HOUR_KINDS } from './music.ts';
-import type { MusicCatalog, MusicWriter, TrackPick } from './music.ts';
+import type { MusicCatalog, MusicWriter, SongPick, TrackPick } from './music.ts';
 
 export interface AudioBucket {
   put(key: string, value: Uint8Array, options: { httpMetadata: { contentType: string } }): Promise<unknown>;
@@ -50,24 +50,42 @@ const nextUtcMidnight = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(),
 
 export interface PlannedItem { id: string; seq: number; showId: string; plannedAt: string; estimatedMinutes: number }
 
+/** Spoken items need songs after them; music hours bring their own music. */
+function needsSongsAfter(config: StationConfig, showId: string | undefined): boolean {
+  const show = config.shows.find(item => item.id === showId);
+  return !!show && !isMusicHour(show.format);
+}
+
 /**
  * Fills the program up to the configured horizon. Plans only while a schedule slot is active, so
  * nothing is produced hours ahead for a slot that starts later; the next cron tick picks it up.
+ * With music on, every spoken item is followed by `music.between` songs. [tail] lists the show IDs of
+ * the most recent items, newest last, so the rule also holds across planning runs.
  */
 export function planTimeline(config: StationConfig, open: Array<Pick<TimelineRow, 'estimated_minutes'>>, last: Pick<TimelineRow, 'seq' | 'show_id'> | null,
-  now: Date, newId: () => string): PlannedItem[] {
+  now: Date, newId: () => string, tail: string[] = last ? [last.show_id] : []): PlannedItem[] {
   let ahead = open.reduce((sum, item) => sum + item.estimated_minutes, 0);
-  let seq = (last?.seq ?? 0) + 1, lastShow = last?.show_id;
+  let seq = (last?.seq ?? 0) + 1;
+  let lastShow = [...tail].reverse().find(id => id !== MUSIC_SHOW_ID);
+  // Songs still owed after the most recent spoken item.
+  const trailingSongs = tail.length - 1 - tail.map(id => id !== MUSIC_SHOW_ID).lastIndexOf(true);
+  let songsOwed = needsSongsAfter(config, lastShow) ? Math.max(0, config.music.between - trailingSongs) : 0;
   const planned: PlannedItem[] = [];
   while (ahead < config.horizonMinutes && planned.length < MAX_NEW_ITEMS) {
     const at = minutes(now, ahead);
     const slot = activeSlot(config, at);
     if (!slot) break;
+    if (songsOwed > 0) {
+      planned.push({ id: newId(), seq: seq++, showId: MUSIC_SHOW_ID, plannedAt: at.toISOString(), estimatedMinutes: SONG_MINUTES });
+      ahead += SONG_MINUTES; songsOwed--;
+      continue;
+    }
     const rotation = slot.showIds.map(id => config.shows.find(show => show.id === id)).filter((show): show is ShowConfig => !!show?.enabled);
     if (!rotation.length) break;
     const show = rotation[(rotation.findIndex(item => item.id === lastShow) + 1) % rotation.length];
     planned.push({ id: newId(), seq: seq++, showId: show.id, plannedAt: at.toISOString(), estimatedMinutes: show.targetMinutes });
     ahead += show.targetMinutes; lastShow = show.id;
+    if (needsSongsAfter(config, show.id)) songsOwed = config.music.between;
   }
   return planned;
 }
@@ -94,7 +112,8 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const lastSeen = options.requireListener ? await deps.store.lastSeen(owner) : now;
   const listening = !!lastSeen && now.getTime() - lastSeen.getTime() <= ACTIVE_LISTENER_HOURS * 3_600_000;
   if (listening && await deps.store.recentFailures(owner, minutes(now, -60)) < 3) {
-    planned = planTimeline(config, await deps.store.openItems(owner), await deps.store.lastItem(owner), now, deps.newId ?? (() => crypto.randomUUID()));
+    const recent = await deps.store.recentItems(owner, 4);
+    planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id));
     for (const item of planned) await deps.store.insertItem(owner, item, now);
   }
   const due = (await deps.store.dueItems(owner, now)).map(row => row.id);
@@ -150,8 +169,9 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   if (!row) return 'skipped';
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
   const show = config.shows.find(item => item.id === row.show_id);
-  if (!show) return fail('SHOW_REMOVED');
+  if (!show && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
   try {
+    if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
     let current = row;
     if (current.state === 'planned') {
@@ -213,7 +233,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
 interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
 interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string }
 /** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
-interface HourPackage { kind: 'music_hour' | 'artist_hour'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
+interface HourPackage { kind: 'music_hour' | 'artist_hour' | 'song'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
 const packageFocus = (pkg: Partial<HourPackage>): HourFocus => pkg.focus ?? 'artist';
 const packageSubject = (pkg: Partial<HourPackage>): string => pkg.subject ?? pkg.artist ?? '';
 
@@ -293,7 +313,11 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
   } else {
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
   }
-  const voiceId = show.voiceId ?? config.host.voiceId;
+  return voiceParts(deps, owner, config, show.voiceId ?? config.host.voiceId, row, pkg);
+}
+
+/** Voices every spoken part that has no audio yet, storing progress after each, then marks the item ready. */
+async function voiceParts(deps: StationDeps, owner: string, config: StationConfig, voiceId: string | undefined, row: TimelineRow, pkg: HourPackage): Promise<ProduceOutcome> {
   for (const [index, part] of pkg.parts.entries()) {
     if (part.kind !== 'speech' || part.audioKey) continue;
     const voiced = await deps.pipeline.voice(owner, { title: pkg.title, text: part.text, sourceIds: part.sourceIds.length ? part.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle);
@@ -306,6 +330,61 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
   }
   await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, error: null }, deps.now());
   return 'ready';
+}
+
+/** Songs of recent song items with the owner's reaction: liked, disliked, or just played. */
+async function songHistory(deps: StationDeps, owner: string): Promise<{ recent: string[]; liked: string[]; disliked: string[] }> {
+  const rows = (await deps.store.recentItems(owner, 120)).filter(row => row.show_id === MUSIC_SHOW_ID && row.script_json);
+  const reactions = new Map<string, string>();
+  for (const event of await deps.store.feedback(owner)) {
+    if (event.action === 'like' || event.action === 'dislike') reactions.set(event.itemId, event.action);
+    else if (event.action === 'skip' && event.listenedRatio < 0.3 && !reactions.has(event.itemId)) reactions.set(event.itemId, 'dislike');
+  }
+  const recent: string[] = [], liked: string[] = [], disliked: string[] = [];
+  for (const row of rows) {
+    try {
+      const track = (JSON.parse(row.script_json!) as HourPackage).parts.find((part): part is TrackPart => part.kind === 'track');
+      if (!track) continue;
+      const name = `${track.artist} – ${track.title}`;
+      recent.push(name);
+      if (reactions.get(row.id) === 'like') liked.push(name);
+      if (reactions.get(row.id) === 'dislike') disliked.push(name);
+    } catch { /* Skip corrupt rows. */ }
+  }
+  return { recent: [...new Set(recent)].reverse(), liked: liked.reverse(), disliked: disliked.reverse() };
+}
+
+/**
+ * One song between spoken items: the AI proposes a few songs from the owner's taste (and reactions to
+ * earlier songs), Spotify resolves the first it knows, the host announces it briefly.
+ */
+async function produceSong(deps: StationDeps, owner: string, config: StationConfig, row: TimelineRow,
+  fail: (error: string) => Promise<'failed'>): Promise<ProduceOutcome> {
+  let pkg: HourPackage;
+  if (row.state === 'planned') {
+    if (!deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
+    if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
+    const history = await songHistory(deps, owner);
+    const picks = await deps.musicWriter.pickSongs({
+      taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
+      liked: history.liked, disliked: history.disliked, announce: config.music.announce,
+      direction: { stationName: config.name, persona: config.host },
+    });
+    let chosen: { pick: SongPick; uri: string; durationMs: number } | null = null;
+    for (const pick of picks) {
+      const track = await deps.catalog.find(pick);
+      if (track) { chosen = { pick, ...track }; break; }
+    }
+    if (!chosen) return fail(`TOO_FEW_TRACKS: 0 von ${picks.length} Songs auf Spotify gefunden`);
+    const title = `${chosen.pick.artist} – ${chosen.pick.title}`;
+    const intro: SpeechPart[] = config.music.announce && chosen.pick.announcement ? [{ kind: 'speech', text: chosen.pick.announcement, sourceIds: [] }] : [];
+    pkg = { kind: 'song', title, subject: title, text: chosen.pick.announcement, sourceIds: [],
+      parts: [...intro, { kind: 'track', uri: chosen.uri, title: chosen.pick.title, artist: chosen.pick.artist, durationMs: chosen.durationMs }] };
+    await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), estimated_minutes: Math.max(1, Math.round(chosen.durationMs / 60_000)) }, deps.now());
+  } else {
+    pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
+  }
+  return voiceParts(deps, owner, config, config.host.voiceId, row, pkg);
 }
 
 /** Plans one item of a show right away, outside the program clock ("Jetzt produzieren"). */
@@ -328,7 +407,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   let queries: string[] = [];
   try { queries = (JSON.parse(row.research_json ?? '{}') as { queries?: string[] }).queries ?? []; } catch { /* Research details are optional. */ }
   return {
-    id: row.id, seq: row.seq, showId: row.show_id, showName: config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
+    id: row.id, seq: row.seq, showId: row.show_id,
+    showName: row.show_id === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
@@ -341,10 +421,10 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
 }
 
 function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'focus' | 'subject' | 'artist'> | null {
-  if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour') || !Array.isArray(pkg.parts)) return null;
+  if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour' && pkg.kind !== 'song') || !Array.isArray(pkg.parts)) return null;
   const playable = row.state !== 'expired', focus = packageFocus(pkg), subject = packageSubject(pkg);
   return {
-    focus, subject, ...(focus === 'artist' ? { artist: subject } : {}),
+    ...(pkg.kind === 'song' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
     parts: pkg.parts.map((part, index) => part.kind === 'track'
       ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),

@@ -63,6 +63,7 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     // This environment only has ASK: the feed show writes with ASK, the web research show stays off.
     station.shows = station.shows.map(show => show.id === 'kurz' ? { ...show, textProvider: 'ask' } : show.id === 'entdecken' ? { ...show, enabled: false } : show);
     station.host = { ...station.host, voiceId: 'voice-test' };
+    station.music = { ...station.music, between: 0 }; // Songs need Gemini and Spotify, which this environment lacks.
     const invalid = await call('/api/station', { method: 'PUT', body: JSON.stringify({ ...station, horizonMinutes: 500 }) });
     assert.equal(invalid.status, 400); assert.match((await invalid.json()).detail, /horizonMinutes/);
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station), headers: { Origin: 'https://evil.example' } })).status, 403);

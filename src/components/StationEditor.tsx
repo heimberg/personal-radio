@@ -55,8 +55,12 @@ function Section({ title, description, children }: { title: string; description:
   </section>;
 }
 
-export function StationEditor({ config, onSave }: Props) {
-  const [draft, setDraft] = useState<StationConfig>(() => structuredClone(config));
+/** Fields added after a configuration was stored get their defaults, as on the server. */
+const complete = (config: StationConfig): StationConfig => structuredClone({ ...config, music: config.music ?? { between: 0, announce: true, taste: '' } });
+
+export function StationEditor({ config: stored, onSave }: Props) {
+  const config = complete(stored);
+  const [draft, setDraft] = useState<StationConfig>(() => complete(stored));
   const [voices, setVoices] = useState<Voice[]>([]);
   const [interest, setInterest] = useState('');
   const [newFormat, setNewFormat] = useState<ShowFormat>('theme_hour');
@@ -67,7 +71,7 @@ export function StationEditor({ config, onSave }: Props) {
   const toggle = (id: string) => setExpanded(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(config);
 
-  useEffect(() => { setDraft(structuredClone(config)); }, [config]);
+  useEffect(() => { setDraft(complete(stored)); }, [stored]);
   useEffect(() => {
     fetch(api('api/mistral-voices'), { credentials: 'same-origin' })
       .then(response => response.ok ? response.json() as Promise<{ voices?: Voice[] }> : { voices: [] })
@@ -135,6 +139,16 @@ export function StationEditor({ config, onSave }: Props) {
       <Field label={`Neues entdecken: ${draft.profile.exploration} %`} hint="Platz für Themen ausserhalb deiner Interessen.">
         <input type="range" min={0} max={50} step={5} value={draft.profile.exploration} onChange={event => change(next => { next.profile.exploration = Number(event.target.value); })} />
       </Field>
+    </Section>
+
+    <Section title="Musik" description="Songs zwischen den Beiträgen. Die KI wählt nach deinem Geschmack, Spotify spielt sie in der App. Deine 👍/👎 auf Songs verfeinern die Auswahl.">
+      <Field label={draft.music.between === 0 ? 'Songs zwischen Beiträgen: aus' : `Songs zwischen Beiträgen: ${draft.music.between}`} hint="Nach jedem Wortbeitrag. Musikstunden bringen ihre eigene Musik mit.">
+        <input type="range" min={0} max={3} value={draft.music.between} onChange={event => change(next => { next.music.between = Number(event.target.value); })} />
+      </Field>
+      <Field label="Musikgeschmack" hint="Genres, Künstler, Stimmungen – so konkret wie möglich.">
+        <textarea rows={2} maxLength={500} value={draft.music.taste} placeholder="z. B. Industrial, Indie, Rock – eher spezifisch, gern Nine Inch Nails, Einstürzende Neubauten, Protomartyr" onChange={event => change(next => { next.music.taste = event.target.value; })} />
+      </Field>
+      <label className="check"><input type="checkbox" checked={draft.music.announce} onChange={event => change(next => { next.music.announce = event.target.checked; })} />Kurze Ansage vor jedem Song</label>
     </Section>
 
     <Section title="Sendungen" description="Jede Sendung ist ein Format mit eigenem Auftrag. Musikstunden wechseln Moderation und Songs über Spotify ab.">

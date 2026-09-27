@@ -130,6 +130,7 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
 .state-ready { background: var(--soft); color: var(--brand-strong); }
 .state-voicing { background: #e8e2f4; color: #4f3f7a; }
 .state-failed { background: var(--warn-bg); color: var(--danger); }
+.timeline-body.song strong { font-weight: 600; }
 .timeline-error { font-size: .82rem; color: var(--danger); }
 .timeline-tracks { font-size: .82rem; color: var(--muted); }
 .timeline-tracks em { font-style: normal; opacity: .8; }

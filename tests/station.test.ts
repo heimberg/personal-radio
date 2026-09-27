@@ -5,6 +5,7 @@ import type { StationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
 import { planTimeline, produceItem, scheduleShowNow, tick, toView } from '../server/station.ts';
+import { MUSIC_SHOW_ID } from '../src/domain/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { PipelineError } from '../server/segment-pipeline.ts';
 import { ProviderError } from '../server/providers.ts';
@@ -19,6 +20,8 @@ function config(overrides: Partial<StationConfig> = {}): StationConfig {
   const base = defaultStationConfig({ profile, feeds: [{ name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }] });
   // Feed-path tests: the web research show is covered separately below.
   base.shows = base.shows.map(show => show.id === 'entdecken' ? { ...show, enabled: false } : show);
+  // Songs between items are covered by their own tests.
+  base.music = { ...base.music, between: 0 };
   return parseStationConfig({ ...base, ...overrides });
 }
 
@@ -344,6 +347,7 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
   h.deps.musicWriter = {
     pickSubject: async () => { throw new Error('the artist is fixed'); },
     pickTracks: async () => ['Glory Box', 'Unbekannt', 'Roads', 'Sour Times', 'Numb'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
+    pickSongs: async () => [],
     writeHour: async input => { hourInput = input; return { title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
       tracks: [{ index: 0, text: 'Zu Glory Box.', sourceIds: ['w1'] }, { index: 2, text: 'Zu Sour Times.', sourceIds: [] }], outro: { text: 'Danke.', sourceIds: [] } }; },
   };
@@ -388,7 +392,7 @@ test('an artist hour without enough Spotify matches fails with the count; missin
   const h = harness({ station: parseStationConfig(station) }); await h.setup();
   const due = [(await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!];
   h.deps.researcher = { research: async () => ({ sources: [{ id: 'w1', url: 'https://example.org/p', title: 't', excerpt: 'x', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }) };
-  h.deps.musicWriter = { pickSubject: async () => ({ subject: 'Björk', reason: 'r' }), pickTracks: async () => [{ title: 'A', artist: 'Björk', reason: '' }, { title: 'B', artist: 'Björk', reason: '' }],
+  h.deps.musicWriter = { pickSongs: async () => [], pickSubject: async () => ({ subject: 'Björk', reason: 'r' }), pickTracks: async () => [{ title: 'A', artist: 'Björk', reason: '' }, { title: 'B', artist: 'Björk', reason: '' }],
     writeHour: async () => { throw new Error('not reached'); } };
   assert.equal(await produceItem(h.deps, OWNER, due[0]), 'failed');
   assert.equal((await h.store.getItem(OWNER, due[0]))?.error, 'SPOTIFY_NOT_CONFIGURED');
@@ -412,6 +416,7 @@ test('a theme hour lets the AI pick a new theme, researches it and programs fitt
   h.deps.researcher = { research: async request => { briefs.push(request.brief); return { sources: [source], queries: [] }; } };
   h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 200_000 }) };
   h.deps.musicWriter = {
+    pickSongs: async () => [],
     pickSubject: async input => { asked.push({ focus: input.focus, avoid: input.avoid }); return { subject: asked.length === 1 ? 'Der Mond' : 'Vulkane', reason: 'r' }; },
     pickTracks: async input => { tracksInput = input; return [['Space Oddity', 'David Bowie'], ['Fly Me to the Moon', 'Frank Sinatra'], ['Walking on the Moon', 'The Police']].map(([title, artist]) => ({ title, artist, reason: 'r' })); },
     writeHour: async input => ({ title: `Themen-Stunde: ${input.subject}`, intro: { text: 'Heute der Mond.', sourceIds: ['w1'] },
@@ -443,4 +448,65 @@ test('music hour settings: fixed genre or theme, per-kind defaults, Gemini only;
   const legacy = { kind: 'artist_hour', title: 'Björk', artist: 'Björk', text: '', sourceIds: [], parts: [{ kind: 'track', uri: 'spotify:track:x', title: 'Joga', artist: 'Björk', durationMs: 1 }] };
   const view = toView({ id: 'x', seq: 1, show_id: 'kuenstler', planned_at: NOW.toISOString(), state: 'ready', estimated_minutes: 60, script_json: JSON.stringify(legacy) } as never, null);
   assert.equal(view.focus, 'artist'); assert.equal(view.subject, 'Björk'); assert.equal(view.artist, 'Björk');
+});
+
+test('music between items: the planner puts the configured number of songs after every spoken item, also across runs', () => {
+  let n = 0; const newId = () => `x${++n}`;
+  const station = config({ music: { between: 1, announce: true, taste: 'Industrial, Indie, Rock' }, horizonMinutes: 20 });
+  const shows = (items: Array<{ showId: string }>) => items.map(item => item.showId === MUSIC_SHOW_ID ? '♫' : item.showId);
+  const first = planTimeline(station, [], null, NOW, newId);
+  assert.deepEqual(shows(first), ['kurz', '♫', 'kurz', '♫', 'kurz', '♫', 'kurz']);
+  assert.equal(first[1].estimatedMinutes, 4);
+  // Two songs between items; a run that starts after a spoken item owes its songs first.
+  const two = config({ music: { between: 2, announce: true, taste: '' }, horizonMinutes: 20 });
+  assert.deepEqual(shows(planTimeline(two, [], { seq: 5, show_id: 'kurz' }, NOW, newId, ['kurz'])), ['♫', '♫', 'kurz', '♫', '♫', 'kurz']);
+  assert.deepEqual(shows(planTimeline(two, [], { seq: 5, show_id: MUSIC_SHOW_ID }, NOW, newId, ['kurz', MUSIC_SHOW_ID])), ['♫', 'kurz', '♫', '♫', 'kurz', '♫']);
+  // Music hours bring their own music.
+  const hours = config({ music: { between: 1, announce: true, taste: '' }, horizonMinutes: 120,
+    schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['kuenstler'] }],
+    shows: config().shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true } : show) });
+  assert.deepEqual(shows(planTimeline(hours, [], null, NOW, newId)), ['kuenstler', 'kuenstler']);
+});
+
+test('a song item: AI picks from taste and reactions, Spotify resolves the first it knows, the host announces it', async () => {
+  const station = config({ music: { between: 1, announce: true, taste: 'Industrial, Indie, Rock' } });
+  const h = harness({ station }); await h.setup();
+  const requests: any[] = [];
+  h.deps.catalog = { find: async pick => pick.title === 'Gibt es nicht' ? null : { uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 250_000 } };
+  h.deps.musicWriter = {
+    pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); },
+    pickSongs: async request => {
+      requests.push(request);
+      return requests.length === 1
+        ? [{ title: 'Gibt es nicht', artist: 'Niemand', announcement: 'x' }, { title: 'Closer', artist: 'Nine Inch Nails', announcement: 'Jetzt: Nine Inch Nails mit Closer.' }]
+        : [{ title: 'Hurt', artist: 'Nine Inch Nails', announcement: '' }];
+    },
+  };
+  const voiced: string[] = [];
+  h.deps.pipeline.voice = async (_owner, script, _mode, voiceId) => { voiced.push(`${voiceId}: ${script.text}`); return { audio: new Uint8Array([1]), contentType: 'audio/wav', ttsCharacters: 1 }; };
+  const planned = planTimeline(station, [], null, NOW, () => 'song-1').filter(item => item.showId === MUSIC_SHOW_ID)[0];
+  await h.store.insertItem(OWNER, { ...planned, id: 'song-1' }, NOW);
+  assert.equal(await produceItem(h.deps, OWNER, 'song-1'), 'ready');
+  assert.equal(requests[0].taste, 'Industrial, Indie, Rock'); assert.equal(requests[0].announce, true);
+  assert.deepEqual(voiced, ['gemini_Laomedeia: Jetzt: Nine Inch Nails mit Closer.']);
+  const view = toView((await h.store.getItem(OWNER, 'song-1'))!, station);
+  assert.equal(view.showName, 'Musik'); assert.equal(view.title, 'Nine Inch Nails – Closer'); assert.equal(view.estimatedMinutes, 4);
+  assert.deepEqual(view.parts, [{ kind: 'speech', audioUrl: 'api/timeline/song-1/audio?part=0' }, { kind: 'track', spotifyUri: 'spotify:track:Closer', title: 'Closer', artist: 'Nine Inch Nails', durationMs: 250_000 }]);
+
+  // The owner liked it; the next pick knows, and avoids repeating it. Without an announcement only the track plays.
+  await h.store.addFeedback(OWNER, { itemId: 'song-1', interests: [], action: 'like', listenedRatio: 1, createdAt: NOW.toISOString() });
+  await h.store.saveConfig(OWNER, { ...station, music: { ...station.music, announce: false } }, NOW);
+  await h.store.insertItem(OWNER, { ...planned, id: 'song-2', seq: planned.seq + 1 }, NOW);
+  assert.equal(await produceItem(h.deps, OWNER, 'song-2'), 'ready');
+  assert.deepEqual(requests[1].liked, ['Nine Inch Nails – Closer']); assert.deepEqual(requests[1].avoid, ['Nine Inch Nails – Closer']);
+  assert.equal(requests[1].announce, false);
+  assert.deepEqual(toView((await h.store.getItem(OWNER, 'song-2'))!, station).parts!.map(part => part.kind), ['track']);
+});
+
+test('music settings: stations saved before music keep it off; bounds are checked', () => {
+  const legacy = structuredClone(config()) as any; delete legacy.music;
+  assert.deepEqual(parseStationConfig(legacy).music, { between: 0, announce: true, taste: '' });
+  assert.deepEqual(defaultStationConfig().music, { between: 1, announce: true, taste: '' });
+  assert.throws(() => parseStationConfig({ ...legacy, music: { between: 4 } }), /music\.between/);
+  assert.throws(() => parseStationConfig({ ...legacy, music: { between: 1, taste: 'x'.repeat(501) } }), /music\.taste/);
 });

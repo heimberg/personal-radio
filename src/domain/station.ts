@@ -40,6 +40,18 @@ export interface ShowConfig {
   tracks?: number;
   talkSeconds?: number;
 }
+/** Songs between spoken items, picked by the AI from the owner's taste and played through Spotify. */
+export interface MusicConfig {
+  /** Songs after every spoken item; 0 turns music between items off. */
+  between: number;
+  /** A short spoken intro naming the song before it plays. */
+  announce: boolean;
+  /** The owner's own words: genres, artists, moods. */
+  taste: string;
+}
+/** Reserved show ID of song items; show IDs from the configuration cannot start with an underscore. */
+export const MUSIC_SHOW_ID = '_musik';
+export const SONG_MINUTES = 4;
 export interface ScheduleSlot { id: string; days: number[]; from: string; to: string; showIds: string[] }
 export interface StationConfig {
   version: 1;
@@ -48,6 +60,7 @@ export interface StationConfig {
   host: HostPersona;
   timezone: string;
   horizonMinutes: number;
+  music: MusicConfig;
   profile: Profile;
   feeds: FeedConfig[];
   shows: ShowConfig[];
@@ -77,7 +90,7 @@ export interface TimelineItemView {
   searchQueries?: string[];
   error?: string;
   audioUrl?: string;
-  /** Music hour: speech and Spotify tracks in playing order, and what the hour is about. */
+  /** Music hour or song: speech and Spotify tracks in playing order, and what the hour is about. */
   parts?: TimelinePartView[];
   focus?: HourFocus;
   subject?: string;
@@ -221,7 +234,14 @@ export function parseStationConfig(raw: unknown): StationConfig {
     return { id: id(s.id, `${path}.id`, slotIds), days: [...new Set(days)].sort(), from: s.from, to: s.to, showIds: slotShows };
   });
 
-  return { version: 1, name, host, timezone, horizonMinutes, profile: parseProfile(c.profile), feeds, shows, schedule };
+  // Stations saved before music existed keep playing without songs until the owner turns them on.
+  const m = c.music === undefined ? { between: 0, announce: true, taste: '' } : record(c.music, 'music');
+  const between = Number(m.between ?? 1);
+  if (!Number.isInteger(between) || between < 0 || between > 3) fail('music.between', 'ganze Zahl von 0 bis 3');
+  if (m.announce !== undefined && typeof m.announce !== 'boolean') fail('music.announce', 'true oder false');
+  const music: MusicConfig = { between, announce: m.announce !== false, taste: text(m.taste ?? '', 'music.taste', 500, false) };
+
+  return { version: 1, name, host, timezone, horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */
@@ -230,7 +250,7 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
   const profile = input.profile ?? { ...defaultProfile, topics: [...defaultProfile.topics], interests: [], interestWeights: {} };
   const feedIds = feeds.map(feed => feed.id);
   return parseStationConfig({
-    version: 1, name: 'Personal Radio', host: { ...DEFAULT_HOST, ...(input.voiceId ? { voiceId: input.voiceId } : {}) }, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
+    version: 1, name: 'Personal Radio', music: { between: 1, announce: true, taste: '' }, host: { ...DEFAULT_HOST, ...(input.voiceId ? { voiceId: input.voiceId } : {}) }, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
     profile: { ...profile, interestWeights: {} }, feeds,
     shows: [
       { id: 'kurz', name: 'Kurzbeitrag', enabled: feedIds.length > 0, format: 'brief', feedIds, verification: 'strict', sourceMode: 'feeds',
