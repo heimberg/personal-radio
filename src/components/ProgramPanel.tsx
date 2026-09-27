@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Profile } from '../domain/program.ts';
 import { defaultStationConfig } from '../domain/station.ts';
-import type { StationConfig, TimelineItemView, TimelineState } from '../domain/station.ts';
+import type { FailureSummary, StationConfig, TimelineItemView, TimelineState } from '../domain/station.ts';
 import type { RadioPlayer, Track } from '../audio/player.ts';
 
 interface Props { player: RadioPlayer; profile: Profile; onStartProgram(tracks: Track[]): void; embedded?: boolean }
@@ -57,6 +57,7 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
   const [available, setAvailable] = useState<boolean | null>(null);
   const [config, setConfig] = useState<StationConfig | null>(null);
   const [items, setItems] = useState<TimelineItemView[]>([]);
+  const [failures, setFailures] = useState<FailureSummary>({ count: 0 });
   const [editor, setEditor] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -66,9 +67,9 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
     try {
       const [station, timeline] = await Promise.all([
         fetch(api('api/station'), { credentials: 'same-origin' }).then(readJson<{ config: StationConfig | null }>),
-        fetch(api('api/timeline'), { credentials: 'same-origin' }).then(readJson<{ items: TimelineItemView[] }>),
+        fetch(api('api/timeline'), { credentials: 'same-origin' }).then(readJson<{ items: TimelineItemView[]; failures?: FailureSummary }>),
       ]);
-      setAvailable(true); setConfig(station.config); setItems(timeline.items);
+      setAvailable(true); setConfig(station.config); setItems(timeline.items); setFailures(timeline.failures ?? { count: 0 });
       if (programActive.current) player.appendTracks(timeline.items.filter(item => item.state === 'ready' && item.audioUrl).map(trackFor));
     } catch { setAvailable(false); }
   }, [player]);
@@ -101,6 +102,18 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
       setMessage(`${result.planned ?? 0} neue Beiträge geplant, ${result.queued ?? 0} in Produktion.`);
       await refresh();
     } catch { setMessage('Planung fehlgeschlagen. Prüfe Anmeldung und Server.'); }
+    finally { setBusy(false); }
+  }
+
+  async function cleanup() {
+    setBusy(true);
+    try {
+      const response = await fetch(api('api/timeline/cleanup'), { method: 'POST', credentials: 'same-origin' });
+      const result = await readJson<{ removed?: number }>(response);
+      if (!response.ok) throw new Error();
+      setMessage(`${result.removed ?? 0} Einträge entfernt.`);
+      await refresh();
+    } catch { setMessage('Aufräumen fehlgeschlagen. Prüfe Anmeldung und Server.'); }
     finally { setBusy(false); }
   }
 
@@ -168,7 +181,7 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
     <div className="program-actions">
       {!embedded && <button className="primary" onClick={listen}>▶ Programm hören</button>}
       <button className="secondary" disabled={busy} onClick={() => void plan()}>Jetzt planen</button>
-      {items.some(item => item.error && item.state !== 'ready' && item.state !== 'expired') &&
+      {(failures.count > 0 || items.some(item => item.error && item.state !== 'ready')) &&
         <button className="secondary" disabled={busy} onClick={() => void retry()}>Erneut versuchen</button>}
       <button className="secondary" onClick={() => void toggleEditor()}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
     </div>
@@ -177,7 +190,11 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
       <textarea id="station-config" rows={20} spellCheck={false} value={editor} onChange={event => setEditor(event.target.value)} />
       <button className="primary" disabled={busy} onClick={() => void saveEditor()}>Konfiguration speichern</button>
     </div>}
-    <ol className="timeline" aria-label="Programmablauf">{items.slice().reverse().slice(0, 20).reverse().map(item => <li key={item.id} data-state={item.state}>
+    {failures.count > 0 && <p className="failure-summary" role="status">
+      <span>⚠ {failures.count} fehlgeschlagen{failures.latestError ? ` · zuletzt ${failures.latestAt ? `${new Date(failures.latestAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}: ` : ''}${errorLabel(failures.latestError)}` : ''}</span>
+      <button className="secondary" disabled={busy} onClick={() => void cleanup()}>Aufräumen</button>
+    </p>}
+    <ol className="timeline" aria-label="Programmablauf">{items.map(item => <li key={item.id} data-state={item.state}>
       <span className="timeline-time">{new Date(item.plannedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}</span>
       <span className="timeline-body">
         <strong>{item.title ?? item.showName}</strong>

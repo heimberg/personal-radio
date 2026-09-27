@@ -93,6 +93,13 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'complete', listenedRatio: 1 }) })).status, 200);
     const after = await (await call('/api/timeline')).json() as { items: Array<{ state: string }> };
     assert.equal(after.items[0].state, 'played');
+    // Failures are summarised, not listed, and the cleanup route deletes them.
+    (env.DB as any).raw.prepare(`UPDATE timeline_items SET state = 'failed', error = 'NO_SOURCES' WHERE id = ?`).run(items[1].id);
+    const withFailure = await (await call('/api/timeline')).json() as { items: Array<{ id: string }>; failures: { count: number; latestError: string } };
+    assert.equal(withFailure.failures.count, 1); assert.equal(withFailure.failures.latestError, 'NO_SOURCES');
+    assert.ok(!withFailure.items.some(item => item.id === items[1].id));
+    assert.deepEqual(await (await call('/api/timeline/cleanup', { method: 'POST' })).json(), { removed: 1 });
+    assert.equal(((await (await call('/api/timeline')).json()) as { failures: { count: number } }).failures.count, 0);
     assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 1);
 
     // Cron uses the configured owner, who just listened: 9 open items (18 min) get 1 more, and all 10 unproduced items are queued.

@@ -121,6 +121,29 @@ export class StationStore {
     return { retired, restarted };
   }
 
+  /** What the cockpit lists: everything still to come and the last few heard segments. */
+  async visibleItems(owner: string, recentPlayed = 5): Promise<TimelineRow[]> {
+    const open = await this.openItems(owner);
+    const played = (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND state IN ('played', 'skipped')
+      ORDER BY seq DESC LIMIT ?`).bind(owner, recentPlayed).all<TimelineRow>()).results.reverse();
+    return [...played, ...open];
+  }
+
+  /** Failures are summarised instead of listed one by one. */
+  async failureSummary(owner: string): Promise<{ count: number; latestError?: string; latestAt?: string }> {
+    const count = await this.db.prepare(`SELECT COUNT(*) AS n FROM timeline_items WHERE owner_id = ? AND state = 'failed'`).bind(owner).first<{ n: number }>();
+    const latest = await this.db.prepare(`SELECT error, updated_at FROM timeline_items WHERE owner_id = ? AND state = 'failed' ORDER BY updated_at DESC LIMIT 1`)
+      .bind(owner).first<{ error: string | null; updated_at: string }>();
+    return { count: Number(count?.n ?? 0), ...(latest ? { latestError: latest.error ?? undefined, latestAt: latest.updated_at } : {}) };
+  }
+
+  /** Deletes failed and expired items (all, or only those last changed before the cutoff) and returns their audio keys. */
+  async purge(owner: string, updatedBefore?: Date): Promise<{ removed: number; audioKeys: string[] }> {
+    const rows = (await this.db.prepare(`DELETE FROM timeline_items WHERE owner_id = ? AND state IN ('failed', 'expired')
+      AND updated_at < ? RETURNING audio_key`).bind(owner, updatedBefore?.toISOString() ?? '9999-12-31T23:59:59.999Z').all<{ audio_key: string | null }>()).results;
+    return { removed: rows.length, audioKeys: rows.map(row => row.audio_key).filter((key): key is string => !!key) };
+  }
+
   async recentFailures(owner: string, since: Date): Promise<number> {
     const row = await this.db.prepare(`SELECT COUNT(*) AS failures FROM timeline_items WHERE owner_id = ? AND state = 'failed' AND updated_at >= ?`)
       .bind(owner, since.toISOString()).first<{ failures: number }>();

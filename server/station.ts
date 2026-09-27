@@ -37,6 +37,7 @@ const MAX_NEW_ITEMS = 12;
 const STALE_HOURS = 12;
 const ACTIVE_LISTENER_HOURS = 3;
 const AUDIO_RETENTION_DAYS = 7;
+const PURGE_AFTER_HOURS = 24;
 const MAX_SOURCE_AGE_DAYS = 30;
 const minutes = (date: Date, amount: number) => new Date(date.getTime() + amount * 60_000);
 const nextUtcMidnight = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
@@ -79,6 +80,8 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
     await deps.audio.delete(row.audio_key);
     await deps.store.update(owner, row.id, { audio_key: null }, now);
   }
+  // Failed and expired items are only kept for a day, so the timeline does not fill up.
+  for (const key of (await deps.store.purge(owner, minutes(now, -PURGE_AFTER_HOURS * 60))).audioKeys) await deps.audio.delete(key);
   let planned: PlannedItem[] = [];
   // Circuit breaker: repeated failures (bad feeds, provider outage) must not turn into a paid loop.
   const lastSeen = options.requireListener ? await deps.store.lastSeen(owner) : now;

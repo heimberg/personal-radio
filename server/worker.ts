@@ -236,7 +236,14 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     const config = await store.getConfig(owner);
     await store.touch(owner, new Date());
-    return json({ items: (await store.recentItems(owner, 40)).map(row => toView(row, config)) }, 200);
+    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner) }, 200);
+  }
+  if (url.pathname === '/api/timeline/cleanup') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const { removed, audioKeys } = await store.purge(owner);
+    for (const key of audioKeys) await env.AUDIO.delete(key);
+    return json({ removed }, 200);
   }
   if (url.pathname === '/api/timeline/plan') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
