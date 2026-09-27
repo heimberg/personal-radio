@@ -267,7 +267,7 @@ test('Gemini voices: prebuilt voice, delivery style in the prompt, PCM wrapped a
   const audio = await gemini.synthesize('Guten Morgen, Melchnau!', undefined, 'gemini_Puck', 'energisch und warm');
   assert.match(url, /models\/gemini-3\.8-flash-tts:generateContent$/);
   assert.deepEqual(body.generationConfig, { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } } });
-  assert.match(body.contents[0].parts[0].text, /energisch und warm\. Sprich nur den Text[\s\S]*Guten Morgen, Melchnau!$/);
+  assert.match(body.contents[0].parts[0].text, /^# AUDIO PROFILE: radio host\n## DIRECTOR'S NOTES\nStyle: energisch und warm\.[\s\S]*\n#### TRANSCRIPT\nGuten Morgen, Melchnau!$/);
   assert.equal(String.fromCharCode(...audio.subarray(0, 4)), 'RIFF');
   assert.equal(audio.length, 44 + pcm.length);
   assert.equal(new DataView(pcm.buffer.slice(0)).byteLength, 4800);
