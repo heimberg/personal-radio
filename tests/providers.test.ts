@@ -89,7 +89,7 @@ test('Mistral sends pinned German CC0 reference audio when Kerstin is selected',
   let calls = 0;
   const synth = new MistralSpeechSynthesizer({ key: 'test' }, async (url, init) => {
     calls++;
-    if (url.includes('raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/')) {
+    if (String(url).includes('raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/')) {
       assert.equal(init?.method, undefined);
       return new Response(sample, { status: 200 });
     }
