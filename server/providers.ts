@@ -127,19 +127,21 @@ export class AskEditorialVerifier implements EditorialVerifier {
 
 export class MistralSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
-  private voiceId: string;
+  private voiceId?: string;
   private fetcher: Fetch;
-  constructor(config: { key: string; voiceId: string }, fetcher: Fetch = fetch) {
-    if (!config.key || !config.voiceId) throw new Error('Mistral configuration incomplete');
+  constructor(config: { key: string; voiceId?: string }, fetcher: Fetch = fetch) {
+    if (!config.key) throw new Error('Mistral configuration incomplete');
     this.key = config.key; this.voiceId = config.voiceId; this.fetcher = fetcher;
   }
-  async synthesize(text: string): Promise<Uint8Array> {
+  async synthesize(text: string, _turns?: Script['turns'], selectedVoiceId?: string): Promise<Uint8Array> {
+    const voiceId = selectedVoiceId ?? this.voiceId;
+    if (!voiceId || !/^[A-Za-z0-9_-]{1,100}$/.test(voiceId)) throw new Error('Mistral voice is not selected');
     if (!text.trim() || text.length > 6000 || text.trim().split(/\s+/).length > 280) {
       throw new Error('TTS text outside segment budget');
     }
     const response = await request(this.fetcher, 'https://api.mistral.ai/v1/audio/speech', {
       method: 'POST', headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'voxtral-mini-tts-2603', input: text, voice_id: this.voiceId, response_format: 'mp3' }),
+      body: JSON.stringify({ model: 'voxtral-mini-tts-2603', input: text, voice_id: voiceId, response_format: 'mp3' }),
     });
     if (!response.ok) throw new ProviderError('Mistral', response.status);
     const result = await response.json();
