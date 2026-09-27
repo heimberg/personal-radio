@@ -2,7 +2,15 @@ import { defaultProfile, parseProfile } from './program.ts';
 import type { HostPersona, Profile } from './program.ts';
 
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
-export type ShowFormat = 'brief' | 'podcast' | 'artist_hour';
+export type ShowFormat = 'brief' | 'podcast' | 'artist_hour' | 'genre_hour' | 'theme_hour';
+/** Music hours: spoken parts with Spotify tracks in between, about one artist, one genre or one theme. */
+export type HourFocus = 'artist' | 'genre' | 'theme';
+export const HOUR_FOCUS: Partial<Record<ShowFormat, HourFocus>> = { artist_hour: 'artist', genre_hour: 'genre', theme_hour: 'theme' };
+export const isMusicHour = (format: ShowFormat): boolean => HOUR_FOCUS[format] !== undefined;
+/** The fixed artist, genre or theme of a music hour; undefined lets the AI choose. */
+export function hourSubject(show: ShowConfig): string | undefined {
+  return HOUR_FOCUS[show.format] === 'artist' ? show.artist : HOUR_FOCUS[show.format] === 'genre' ? show.genre : show.theme;
+}
 export type VerificationPolicy = 'strict' | 'light' | 'off';
 export type TextProvider = 'gemini' | 'ask';
 export type SourceMode = 'feeds' | 'web';
@@ -24,9 +32,11 @@ export interface ShowConfig {
   sourceMode: SourceMode;
   /** Research brief for `web` shows, written by the owner. */
   researchPrompt: string;
-  /** Artist hour: fixed artist or band; without it the AI picks one from the listener's interests. */
+  /** Music hours: fixed artist, genre or theme; without it the AI picks one from the listener's interests. */
   artist?: string;
-  /** Artist hour: number of tracks and spoken seconds before each track. */
+  genre?: string;
+  theme?: string;
+  /** Music hours: number of tracks and spoken seconds before each track. */
   tracks?: number;
   talkSeconds?: number;
 }
@@ -67,13 +77,16 @@ export interface TimelineItemView {
   searchQueries?: string[];
   error?: string;
   audioUrl?: string;
-  /** Artist hour: speech and Spotify tracks in playing order. */
+  /** Music hour: speech and Spotify tracks in playing order, and what the hour is about. */
   parts?: TimelinePartView[];
+  focus?: HourFocus;
+  subject?: string;
   artist?: string;
 }
 
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */
-export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90] };
+export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90], genre_hour: [20, 90], theme_hour: [20, 90] };
+export const FORMATS = Object.keys(MINUTES_LIMITS) as ShowFormat[];
 
 export class ConfigError extends Error {}
 
@@ -147,9 +160,10 @@ export function parseStationConfig(raw: unknown): StationConfig {
   const showIds = new Set<string>();
   const shows = list(c.shows, 'shows', 20).map((value, index): ShowConfig => {
     const path = `shows[${index}]`, s = record(value, path);
-    if (s.format !== 'brief' && s.format !== 'podcast' && s.format !== 'artist_hour') fail(`${path}.format`, '«brief», «podcast» oder «artist_hour»');
+    if (!FORMATS.includes(s.format as ShowFormat)) fail(`${path}.format`, FORMATS.map(format => `«${format}»`).join(', '));
+    const format = s.format as ShowFormat, focus = HOUR_FOCUS[format];
     if (s.verification !== 'strict' && s.verification !== 'light' && s.verification !== 'off') fail(`${path}.verification`, '«strict», «light» oder «off»');
-    const [min, max] = MINUTES_LIMITS[s.format];
+    const [min, max] = MINUTES_LIMITS[format];
     const targetMinutes = Number(s.targetMinutes);
     if (!Number.isFinite(targetMinutes) || targetMinutes < min || targetMinutes > max) fail(`${path}.targetMinutes`, `${min} bis ${max} Minuten für «${s.format}»`);
     const showFeeds = list(s.feedIds, `${path}.feedIds`, 30).map((feed, i) => {
@@ -160,7 +174,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     const textProvider = s.textProvider ?? 'gemini';
     if (textProvider !== 'gemini' && textProvider !== 'ask') fail(`${path}.textProvider`, '«gemini» oder «ask»');
     if (s.format === 'podcast' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Dialoge schreibt nur «gemini»');
-    if (s.format === 'artist_hour' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Künstler-Stunden schreibt nur «gemini» (Websuche)');
+    if (focus && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Musikstunden schreibt nur «gemini» (Websuche)');
     const whole = (value: unknown, name: string, min: number, max: number, fallback: number) => {
       if (value === undefined) return fallback;
       if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) fail(`${path}.${name}`, `ganze Zahl von ${min} bis ${max}`);
@@ -170,13 +184,14 @@ export function parseStationConfig(raw: unknown): StationConfig {
     if (sourceMode !== 'feeds' && sourceMode !== 'web') fail(`${path}.sourceMode`, '«feeds» oder «web»');
     return {
       id: id(s.id, `${path}.id`, showIds), name: text(s.name, `${path}.name`, 80), enabled: s.enabled === true,
-      format: s.format, instructions: text(s.instructions ?? '', `${path}.instructions`, 2000, false),
+      format, instructions: text(s.instructions ?? '', `${path}.instructions`, 2000, false),
       feedIds: [...new Set(showFeeds)], targetMinutes, verification: s.verification,
       textProvider, sourceMode, researchPrompt: text(s.researchPrompt ?? '', `${path}.researchPrompt`, 1000, false),
-      ...(s.format === 'artist_hour' ? {
-        ...(s.artist !== undefined && String(s.artist).trim() ? { artist: text(s.artist, `${path}.artist`, 100) } : {}),
-        tracks: whole(s.tracks, 'tracks', 3, 15, 10),
-        talkSeconds: whole(s.talkSeconds, 'talkSeconds', 20, 120, 60),
+      ...(focus ? {
+        ...(s[focus] !== undefined && s[focus] !== null && String(s[focus]).trim() ? { [focus]: text(s[focus], `${path}.${focus}`, 200) } : {}),
+        tracks: whole(s.tracks, 'tracks', 3, 15, focus === 'theme' ? 8 : 10),
+        // Theme hours talk more: the topic is the content, the music accompanies it.
+        talkSeconds: whole(s.talkSeconds, 'talkSeconds', 20, 180, focus === 'theme' ? 120 : 60),
       } : {}),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),
     };
@@ -226,6 +241,10 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
       { id: 'kuenstler', name: 'Künstler-Stunde', enabled: false, format: 'artist_hour', feedIds: [], verification: 'light', sourceMode: 'web',
         targetMinutes: 60, tracks: 10, talkSeconds: 60, instructions: 'Frühwerk und Einflüsse betonen, keine Chart-Statistiken.',
         researchPrompt: 'Wenig bekannte Hintergründe zur Entstehung der Songs.' },
+      { id: 'genre', name: 'Genre-Stunde', enabled: false, format: 'genre_hour', feedIds: [], verification: 'light', sourceMode: 'web',
+        targetMinutes: 60, tracks: 10, talkSeconds: 60, instructions: 'Vom Ursprung bis heute, Wegbereiter und Seitenwege.', researchPrompt: '' },
+      { id: 'thema', name: 'Themen-Stunde', enabled: false, format: 'theme_hour', feedIds: [], verification: 'light', sourceMode: 'web',
+        targetMinutes: 60, tracks: 8, talkSeconds: 120, instructions: 'Erzähle das Thema in Kapiteln; jeder Song passt inhaltlich zum Kapitel davor.', researchPrompt: '' },
     ],
     schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['kurz', 'entdecken', 'dialog'] }],
   });

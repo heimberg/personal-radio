@@ -24,7 +24,8 @@ const EDITOR_HELP = [
   '# host: Moderations-Persona – name, tone, style, instructions, voiceId (Mistral-Stimme, z. B. de_kerstin_cc0); cohostName spricht in Dialog-Sendungen mit',
   '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
   '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
-  '#        format artist_hour (20–90 Min.): artist (leer = KI wählt), tracks 3–15, talkSeconds 20–120 – Musik über Spotify',
+  '#        format artist_hour | genre_hour | theme_hour (20–90 Min.): artist | genre | theme (leer = KI wählt),',
+  '#          tracks 3–15, talkSeconds 20–180 – Musik über Spotify zwischen den Moderationen',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');
 function errorLabel(error: string): string {
@@ -228,7 +229,7 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
         {item.error && item.state !== 'ready' && <small className="timeline-error">
           {item.updatedAt ? `${new Date(item.updatedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} · ` : ''}
           {errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</small>}
-        {item.parts && <small className="timeline-tracks">{item.artist ? `${item.artist}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
+        {item.parts && <small className="timeline-tracks">{item.subject ? `${item.subject}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
           {' '}– Moderation hier, Musik über Spotify in der App.</small>}
         {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
         {item.searchQueries?.length ? <small className="timeline-search">Google-Suche: {item.searchQueries.map((query, index) => <span key={query}>{index ? ' · ' : ''}
