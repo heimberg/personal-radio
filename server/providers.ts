@@ -139,6 +139,24 @@ export class AskEditorialVerifier implements EditorialVerifier {
   }
 }
 
+// Pinned CC0 German voice reference: rhasspy/dataset-voice-kerstin.
+const KERSTIN_REFERENCE_URL = 'https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/f73127135cf80d6ef52aef6af58c49774f4fd625/verified/de_rhasspy-0019.flac';
+let kerstinReferencePromise: Promise<string> | undefined;
+async function kerstinReference(fetcher: Fetch): Promise<string> {
+  kerstinReferencePromise ??= (async () => {
+    const response = await request(fetcher, KERSTIN_REFERENCE_URL, {}, 15_000);
+    if (!response.ok) throw new ProviderError('German reference audio', response.status);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length < 1_000 || bytes.length > 512_000) throw new Error('German reference audio size invalid');
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
+    }
+    return btoa(binary);
+  })().catch(error => { kerstinReferencePromise = undefined; throw error; });
+  return kerstinReferencePromise;
+}
+
 export class MistralSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private voiceId?: string;
@@ -153,9 +171,12 @@ export class MistralSpeechSynthesizer implements SpeechSynthesizer {
     if (!text.trim() || text.length > 6000 || text.trim().split(/\s+/).length > 280) {
       throw new Error('TTS text outside segment budget');
     }
+    const voice = voiceId === 'de_kerstin_cc0'
+      ? { ref_audio: await kerstinReference(this.fetcher) }
+      : { voice_id: voiceId };
     const response = await request(this.fetcher, 'https://api.mistral.ai/v1/audio/speech', {
       method: 'POST', headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'voxtral-mini-tts-2603', input: text, voice_id: voiceId, response_format: 'mp3' }),
+      body: JSON.stringify({ model: 'voxtral-mini-tts-2603', input: text, ...voice, response_format: 'mp3' }),
     });
     if (!response.ok) throw new ProviderError('Mistral', response.status);
     const result = await response.json();
@@ -168,7 +189,6 @@ export class MistralSpeechSynthesizer implements SpeechSynthesizer {
   }
 }
 
-/** Gemini's supported two-speaker TTS API. Unary output is a WAV file. */
 export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private model: string;
