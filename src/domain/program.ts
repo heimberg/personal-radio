@@ -22,7 +22,11 @@ export interface Script {
   interestTags?: string[];
 }
 /** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
-export interface HostPersona { name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string }
+export interface HostPersona {
+  name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string;
+  /** How the voice speaks (Gemini voices follow it): e.g. «energisch, warm, mit Tempowechseln». */
+  voiceStyle?: string;
+}
 /** Owner-configured direction for one show; every field is optional. */
 export interface EditorialDirection {
   instructions?: string;
@@ -36,7 +40,8 @@ export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;
 }
 export interface SpeechSynthesizer {
-  synthesize(text: string, turns?: Script['turns'], voiceId?: string): Promise<Uint8Array>;
+  /** [style] is a spoken-delivery instruction; voices that cannot follow it ignore it. */
+  synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array>;
 }
 
 export const defaultProfile: Profile = {

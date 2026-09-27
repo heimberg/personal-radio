@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -255,4 +255,33 @@ test('ASK verification tolerates code fences, explains cut-off answers, and Gemi
   const rejected = JSON.stringify({ approved: false, checks: [{ claim: 'Mars', sourceIds: ['s1'], quote: '', supported: false }], reasons: [] });
   assert.equal((await new FallbackVerifier(ask(rejected), counting).verify(script, sources)).approved, false);
   assert.equal(geminiCalls, 0);
+});
+
+test('Gemini voices: prebuilt voice, delivery style in the prompt, PCM wrapped as WAV; the router picks the engine by voice ID', async () => {
+  let body: any, url = '';
+  const pcm = new Uint8Array(4800).fill(1);
+  const gemini = new GeminiSpeechSynthesizer({ key: 'g', model: 'gemini-3.8-flash-tts' }, async (input, init) => {
+    url = String(input); body = JSON.parse(String(init?.body));
+    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: btoa(String.fromCharCode(...pcm)) } }] } }] });
+  });
+  const audio = await gemini.synthesize('Guten Morgen, Melchnau!', undefined, 'gemini_Puck', 'energisch und warm');
+  assert.match(url, /models\/gemini-3\.8-flash-tts:generateContent$/);
+  assert.deepEqual(body.generationConfig, { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } } });
+  assert.match(body.contents[0].parts[0].text, /energisch und warm\. Sprich nur den Text[\s\S]*Guten Morgen, Melchnau!$/);
+  assert.equal(String.fromCharCode(...audio.subarray(0, 4)), 'RIFF');
+  assert.equal(audio.length, 44 + pcm.length);
+  assert.equal(new DataView(pcm.buffer.slice(0)).byteLength, 4800);
+  assert.equal(new DataView(pcmToWav(pcm).buffer).getUint32(24, true), 24000);
+  await assert.rejects(gemini.synthesize('x', undefined, 'de_kerstin_cc0'), /Gemini voice is not selected/);
+
+  const used: string[] = [];
+  const engine = (name: string) => ({ synthesize: async () => { used.push(name); return new Uint8Array([1]); } });
+  const router = new VoiceRouter(engine('mistral'), engine('gemini'));
+  await router.synthesize('a', undefined, 'gemini_Fenrir'); await router.synthesize('a', undefined, 'de_kerstin_cc0'); await router.synthesize('a');
+  assert.deepEqual(used, ['gemini', 'mistral', 'mistral']);
+  await assert.rejects(new VoiceRouter(engine('mistral')).synthesize('a', undefined, 'gemini_Puck'), /GEMINI_API_KEY/);
+});
+
+test('every persona prompt asks for scripts written to be heard', () => {
+  assert.match(personaPrompt({ persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } }, 'brief'), /Schreibe fürs Ohr/);
 });

@@ -132,13 +132,15 @@ export class SegmentPipeline {
   }
 
   /** Step 3: reserve the character budget, then synthesize. */
-  async voice(ownerId: string, script: Script, mode: 'brief' | 'podcast', voiceId?: string): Promise<VoicedAudio> {
+  async voice(ownerId: string, script: Script, mode: 'brief' | 'podcast', voiceId?: string, style?: string): Promise<VoicedAudio> {
     if (mode === 'podcast' && !this.podcast) throw new PipelineError('INVALID_INPUT');
     const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const characters = [...script.text].length;
     await this.budget.reserve(ownerId, characters);
-    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined);
+    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
-    return { audio, contentType: mode === 'podcast' ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
+    // Mistral returns MP3; Gemini voices return WAV.
+    const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
+    return { audio, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
   }
 }

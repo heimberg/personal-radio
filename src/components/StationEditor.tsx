@@ -109,6 +109,9 @@ export function StationEditor({ config, onSave }: Props) {
         </Field>
         <Field label="Co-Moderation in Dialogen"><input value={draft.host.cohostName ?? ''} maxLength={40} onChange={event => change(next => { next.host.cohostName = event.target.value; })} /></Field>
       </div>
+      <Field label="Sprechstil" hint="Wie die Stimme spricht – Gemini-Stimmen folgen dieser Anweisung, z. B. «begeistert, warm, mit Tempowechseln und hörbarem Lächeln».">
+        <input value={draft.host.voiceStyle ?? ''} maxLength={300} onChange={event => change(next => { next.host.voiceStyle = event.target.value; })} />
+      </Field>
       <Field label="Anweisungen an die Moderation" hint="Gilt für alle Sendungen.">
         <textarea rows={3} maxLength={2000} value={draft.host.instructions} onChange={event => change(next => { next.host.instructions = event.target.value; })} />
       </Field>
