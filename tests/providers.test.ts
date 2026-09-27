@@ -84,6 +84,14 @@ test('Mistral decodes audio_data and sends voice and model', async () => {
   });
   assert.equal(Buffer.from(await tts.synthesize('Guten Tag.')).toString(), 'ID3');
 });
+test('Mistral accepts the voice selected by the authenticated app without a Worker voice secret', async () => {
+  const synth = new MistralSpeechSynthesizer({ key: 'test' }, async (_url, init) => {
+    assert.equal(JSON.parse(String(init?.body)).voice_id, 'preset-de');
+    return Response.json({ audio_data: 'SUQz' });
+  });
+  await synth.synthesize('Guten Tag.', undefined, 'preset-de');
+});
+
 test('TTS rejects oversized input without spending money', async () => {
   const tts = new MistralSpeechSynthesizer({ key: 'test', voiceId: 'test' }, async () => { throw new Error('must not call'); });
   await assert.rejects(tts.synthesize('Wort '.repeat(281)), /budget/);
