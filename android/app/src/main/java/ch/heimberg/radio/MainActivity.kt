@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.Labels
+import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
@@ -39,6 +41,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var showView: TextView
     private lateinit var playPause: Button
     private lateinit var upcomingView: TextView
+    private lateinit var spotifyButton: Button
+    private lateinit var spotify: SpotifyLink
+    private var spotifyClientId: String? = null
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -57,11 +62,14 @@ class MainActivity : AppCompatActivity() {
         showView = findViewById(R.id.show)
         playPause = findViewById(R.id.play_pause)
         upcomingView = findViewById(R.id.upcoming)
+        spotifyButton = findViewById(R.id.spotify)
+        spotify = SpotifyLink(this)
 
         playPause.setOnClickListener { togglePlayback() }
         findViewById<Button>(R.id.next).setOnClickListener { controller?.seekToNextMediaItem() }
         findViewById<Button>(R.id.like).setOnClickListener { rate(true) }
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
+        spotifyButton.setOnClickListener { connectSpotify() }
         findViewById<Button>(R.id.plan).setOnClickListener { planNow() }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
         findViewById<Button>(R.id.connection).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
@@ -99,7 +107,25 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
+        if (::spotify.isInitialized) spotify.disconnect()
         super.onStop()
+    }
+
+    /**
+     * Asks Spotify once for permission to control it (Spotify shows its own dialog). Afterwards the
+     * playback service connects on its own and artist hours play with their music.
+     */
+    private fun connectSpotify() {
+        val clientId = spotifyClientId ?: return
+        if (!spotify.installed) {
+            statusView.text = getString(R.string.spotify_missing)
+            return
+        }
+        statusView.text = getString(R.string.spotify_connecting)
+        spotify.connect(clientId, showAuthView = true) { error ->
+            statusView.text = error ?: getString(R.string.spotify_connected)
+            if (error == null) lifecycleScope.launch { refreshTimeline() }
+        }
     }
 
     private val playerListener = object : Player.Listener {
@@ -138,7 +164,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun rate(liked: Boolean) {
-        val id = controller?.currentMediaItem?.mediaId ?: return
+        val id = controller?.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return
         lifecycleScope.launch {
             val result = runCatching { api.send(FeedbackPolicy.rating(id, liked)) }
             statusView.text = result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" })
@@ -153,8 +179,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun refreshTimeline() {
-        runCatching { api.timeline() }
-            .onSuccess { items -> upcomingView.text = describe(items.filter { it.isOpen }.take(12)) }
+        runCatching { api.response() }
+            .onSuccess { timeline ->
+                spotifyClientId = timeline.spotify?.clientId
+                spotifyButton.visibility = if (spotifyClientId != null) View.VISIBLE else View.GONE
+                upcomingView.text = describe(timeline.items.filter { it.isOpen }.take(12))
+            }
             .onFailure { upcomingView.text = it.message }
     }
 
@@ -164,7 +194,8 @@ class MainActivity : AppCompatActivity() {
         return items.joinToString("\n\n") { item ->
             val planned = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
             val error = item.error?.let { "\n" + Labels.error(it) } ?: ""
-            "$planned  ${item.displayTitle}\n${item.showName} · ${Labels.state(item.state)}$error"
+            val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + getString(R.string.spotify_tracks, it) } ?: ""
+            "$planned  ${item.displayTitle}\n${item.showName} · ${Labels.state(item.state)}$tracks$error"
         }
     }
 }

@@ -69,3 +69,63 @@ class FeedbackTest {
         assertEquals("""{"action":"like","listenedRatio":1.0}""", FeedbackPolicy.rating("a", true).toJson())
     }
 }
+
+class ArtistHourTest {
+    private val body = """
+        {"spotify":{"clientId":"abc"},"items":[
+          {"id":"h","seq":3,"showId":"kuenstler","showName":"Künstlerstunde","plannedAt":"2026-09-27T09:00:00.000Z","state":"ready","estimatedMinutes":60,
+           "title":"Portishead","artist":"Portishead","parts":[
+             {"kind":"speech","audioUrl":"api/timeline/h/audio?part=0"},
+             {"kind":"track","spotifyUri":"spotify:track:1","title":"Glory Box","artist":"Portishead","durationMs":305000},
+             {"kind":"speech","audioUrl":"api/timeline/h/audio?part=2"}]},
+          {"id":"a","seq":1,"showId":"kurz","showName":"Kurzbeitrag","plannedAt":"2026-09-27T08:00:00.000Z","state":"ready","estimatedMinutes":2,"audioUrl":"api/timeline/a/audio"}
+        ]}
+    """.trimIndent()
+
+    @Test fun readsPartsAndTheSpotifyClientId() {
+        val timeline = TimelineJson.parseResponse(body)
+        assertEquals("abc", timeline.spotify?.clientId)
+        val hour = timeline.items.last()
+        assertTrue(hour.isPlayable && hour.hasMusic)
+        assertEquals(null, TimelineJson.parseResponse("""{"items":[]}""").spotify)
+        val unvoiced = hour.copy(parts = hour.parts.mapIndexed { i, p -> if (i == 2) p.copy(audioUrl = null) else p })
+        assertTrue(!unvoiced.isPlayable)
+    }
+
+    @Test fun anHourBecomesStepsInPlayingOrderWithFeedbackOnTheLastOne() {
+        val hour = TimelineJson.parse(body).last()
+        val steps = Program.steps(hour)
+        assertEquals(listOf("h#0", "h#1", "h#2"), steps.map { it.mediaId })
+        val track = steps[1] as TrackStep
+        assertEquals("spotify:track:1", track.spotifyUri); assertEquals("Glory Box", track.title); assertEquals(305_000, track.durationMs)
+        assertEquals(listOf(false, false, true), steps.map { it.last })
+        assertEquals("h", Program.itemIdOf("h#2")); assertEquals("a", Program.itemIdOf("a"))
+        assertEquals(listOf("a"), Program.steps(TimelineJson.parse(body).first()).map { it.mediaId })
+    }
+
+    @Test fun hoursWaitUntilSpotifyIsConnected() {
+        val queue = ProgramQueue()
+        val items = TimelineJson.parse(body)
+        assertEquals(listOf("a"), queue.takeNew(items, musicAvailable = false).map { it.id })
+        assertEquals(listOf("h"), queue.takeNew(items, musicAvailable = true).map { it.id })
+    }
+
+    @Test fun theTrackWatchHandsBackAtTheEndOrWhenSpotifyMovesOn() {
+        val watch = TrackWatch("spotify:track:1", 300_000)
+        assertTrue(!watch.ended("spotify:track:old", true, 50_000)) // state from before our track started
+        assertTrue(!watch.ended("spotify:track:1", false, 0))
+        assertTrue(!watch.ended("spotify:track:1", true, 120_000)) // paused in the middle, e.g. a call
+        assertTrue(watch.ended("spotify:track:1", true, 299_000))
+        val moved = TrackWatch("spotify:track:1", 300_000)
+        moved.ended("spotify:track:1", false, 1_000)
+        assertTrue(moved.ended("spotify:track:autoplay", false, 0))
+        val reset = TrackWatch("spotify:track:1", 300_000)
+        reset.ended("spotify:track:1", false, 1_000)
+        assertTrue(reset.ended("spotify:track:1", true, 0))
+    }
+
+    @Test fun artistHourErrorsAreExplained() {
+        assertEquals("Zu wenige Songs gefunden – 2 von 14 Songs auf Spotify gefunden", Labels.error("TOO_FEW_TRACKS: 2 von 14 Songs auf Spotify gefunden"))
+        assertEquals("Spotify ist auf dem Server nicht eingerichtet.", Labels.error("SPOTIFY_NOT_CONFIGURED"))
+    }
+}

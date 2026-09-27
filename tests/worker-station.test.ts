@@ -81,6 +81,7 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal(items[0].state, 'ready'); assert.equal(items[0].title, 'Gelandet');
     assert.deepEqual(items[0].sources, [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }]);
     assert.equal(items[1].state, 'planned'); // the foreign message was ignored
+    assert.equal(((await (await call('/api/timeline')).json()) as { spotify?: unknown }).spotify, undefined);
 
     const full = await call(`/${items[0].audioUrl}`);
     assert.equal(full.status, 200); assert.equal(full.headers.get('Content-Type'), 'audio/mpeg');
@@ -234,7 +235,8 @@ test('artist hour through the Worker: produce now, queue, parts in the timeline 
     const { itemId } = await (await call('/api/shows/kuenstler/produce', { method: 'POST' })).json() as { itemId: string };
     assert.deepEqual(sent.map(message => message.itemId), [itemId]);
     await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
-    const { items } = await (await call('/api/timeline')).json() as { items: Array<{ id: string; state: string; artist?: string; parts?: Array<{ kind: string; audioUrl?: string; spotifyUri?: string }> }> };
+    const { items, spotify } = await (await call('/api/timeline')).json() as { spotify?: { clientId: string }; items: Array<{ id: string; state: string; artist?: string; parts?: Array<{ kind: string; audioUrl?: string; spotifyUri?: string }> }> };
+    assert.deepEqual(spotify, { clientId: 'id' });
     const hour = items.find(item => item.id === itemId)!;
     assert.equal(hour.state, 'ready', JSON.stringify(hour)); assert.equal(hour.artist, 'Portishead');
     assert.equal(spotifySeen.length, 3);

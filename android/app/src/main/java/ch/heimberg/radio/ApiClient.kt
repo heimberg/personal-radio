@@ -2,6 +2,7 @@ package ch.heimberg.radio
 
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
+import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import kotlinx.coroutines.Dispatchers
@@ -14,7 +15,10 @@ class ApiException(val status: Int, message: String) : Exception(message)
 /** Talks to the private Worker with the Access service token on every request. */
 class ApiClient(private val connection: Connection) {
 
-    suspend fun timeline(): List<TimelineItem> = withContext(Dispatchers.IO) { TimelineJson.parse(request("GET", "api/timeline")) }
+    suspend fun timeline(): List<TimelineItem> = response().items
+
+    /** The timeline plus the public Spotify client ID, when the Worker has one. */
+    suspend fun response(): Timeline = withContext(Dispatchers.IO) { TimelineJson.parseResponse(request("GET", "api/timeline")) }
 
     /** Plans and queues production right away instead of waiting for the next cron tick. */
     suspend fun plan() { withContext(Dispatchers.IO) { request("POST", "api/timeline/plan") } }
