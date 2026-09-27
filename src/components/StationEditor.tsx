@@ -4,6 +4,7 @@ import type { Topic } from '../domain/program.ts';
 import { ConfigError, HOUR_FOCUS, MINUTES_LIMITS, isMusicHour, parseStationConfig } from '../domain/station.ts';
 import type { FeedConfig, HourFocus, ScheduleSlot, ShowConfig, ShowFormat, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
+import { ListeningProfile } from './ListeningProfile.tsx';
 
 interface Props { config: StationConfig; onSave(next: StationConfig): Promise<boolean> }
 interface Voice { id: string; name: string }
@@ -148,6 +149,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <Field label="Musikgeschmack" hint="Genres, Künstler, Stimmungen – so konkret wie möglich.">
         <textarea rows={2} maxLength={500} value={draft.music.taste} placeholder="z. B. Industrial, Indie, Rock – eher spezifisch, gern Nine Inch Nails, Einstürzende Neubauten, Protomartyr" onChange={event => change(next => { next.music.taste = event.target.value; })} />
       </Field>
+      <ListeningProfile />
       <label className="check"><input type="checkbox" checked={draft.music.announce} onChange={event => change(next => { next.music.announce = event.target.checked; })} />Kurze Ansage vor jedem Song</label>
     </Section>
 

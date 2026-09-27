@@ -36,6 +36,7 @@ async function fakeWorker(page: Page, initial: unknown) {
       title: 'Portishead', focus: 'artist', subject: 'Portishead', parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
         { kind: 'track', spotifyUri: 'spotify:track:1', title: 'Glory Box', artist: 'Portishead', durationMs: 1 }] },
   ] : [], failures: state.stored ? { count: 1, latestError: 'NO_SOURCES', latestAt: '2026-09-27T13:31:00.000Z' } : { count: 0 } }) }));
+  await page.route('**/api/spotify/profile', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ connected: true, artists: ['Nine Inch Nails', 'Protomartyr'] }) }));
   await page.route('**/api/timeline/arrange', route => { state.calls.push(`arrange ${JSON.parse(route.request().postData() ?? '{}').order.join(',')}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   await page.route('**/api/timeline/shuffle', route => { state.calls.push('shuffle'); return route.fulfill({ contentType: 'application/json', body: '{"added":1}' }); });
   await page.route('**/api/timeline/*/remove', route => { state.calls.push(`remove ${new URL(route.request().url()).pathname.split('/')[3]}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
@@ -145,6 +146,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await page.getByLabel('Zeitfenster 1').getByRole('button', { name: 'Themen-Stunde' }).click();
 
   const music = page.getByRole('region', { name: 'Musik' });
+  await expect(music.getByRole('group', { name: 'Spotify-Hörprofil' })).toContainText('Nine Inch Nails, Protomartyr');
   await music.getByRole('slider').fill('2');
   await music.getByRole('textbox').fill('Industrial, Indie, Rock');
 

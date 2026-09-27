@@ -28,6 +28,6 @@ Merges into `feat/ai-segment-pipeline` deploy the Worker (migrations included) t
 
 ## Privacy
 
-Keys live only in Worker secrets and GitHub Actions secrets. Do not commit keys, the signing keystore, exports or generated personal audio. Spotify audio, metadata and listening behaviour never reach an AI provider. A voice supplied to Mistral must be authorized for that use.
+Keys live only in Worker secrets and GitHub Actions secrets. Do not commit keys, the signing keystore, exports or generated personal audio. Spotify audio and playback data never reach an AI provider; only the owner's top artists do, and only if the owner connects the listening profile. A voice supplied to Mistral must be authorized for that use.
 
 No project license has been selected yet; public visibility alone does not grant an open-source license.

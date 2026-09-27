@@ -19,6 +19,8 @@ export interface MusicWriter {
 export interface SongPick { title: string; artist: string; announcement: string }
 export interface SongRequest {
   taste: string; interests: string[]; avoid: string[]; liked: string[]; disliked: string[];
+  /** Artists the owner listens to most on Spotify (the owner's choice to share them). */
+  listens: string[];
   announce: boolean; direction: EditorialDirection;
 }
 export interface CatalogTrack { uri: string; durationMs: number }
@@ -144,10 +146,10 @@ export class GeminiMusicWriter implements MusicWriter {
     const announce = input.announce
       ? ' Zu jedem Song eine Ansage von höchstens 35 Wörtern, gesprochen von der Moderation: Künstler und Titel nennen, dazu höchstens eine allgemein bekannte, sichere Einordnung (Album, Jahr, Szene) oder eine Stimmung als Übergang. Erfinde keine Details; wenn du unsicher bist, bleib bei Künstler, Titel und Stimmung.'
       : ' Das Feld «announcement» bleibt leer.';
-    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst den nächsten Song zwischen zwei Wortbeiträgen. Schlage 3 Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers; eher spezifisch und abseits der Charts, Entdeckungen gemischt mit Vertrautem aus dem Geschmack, abwechslungsreich gegenüber den letzten Songs. Nichts aus «vermeiden». «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
+    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst den nächsten Song zwischen zwei Wortbeiträgen. Schlage 3 Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers; eher spezifisch und abseits der Charts, Entdeckungen gemischt mit Vertrautem aus dem Geschmack, abwechslungsreich gegenüber den letzten Songs. Nichts aus «vermeiden». «hört» sind die Künstler, die er zurzeit am meisten hört: der Kern seines Geschmacks. Schlage etwa zur Hälfte Songs dieser Künstler vor, sonst nah verwandte, weniger bekannte Künstler, die er wahrscheinlich noch nicht kennt. «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
       (input.announce ? personaPrompt(input.direction, 'brief') : ''),
       { geschmack: input.taste || 'nicht angegeben – orientiere dich an den Interessen', interessen: input.interests.slice(0, 30),
-        vermeiden: input.avoid.slice(0, 60), mag: input.liked.slice(0, 20), 'mag nicht': input.disliked.slice(0, 20) }, 'Gemini song pick', 0.9) as { songs?: unknown[] };
+        hört: input.listens.slice(0, 40), vermeiden: input.avoid.slice(0, 60), mag: input.liked.slice(0, 20), 'mag nicht': input.disliked.slice(0, 20) }, 'Gemini song pick', 0.9) as { songs?: unknown[] };
     return (Array.isArray(result?.songs) ? result.songs : []).flatMap((value): SongPick[] => {
       const item = value as Record<string, unknown>;
       const title = text(item?.title, 200), artist = text(item?.artist, 100);
