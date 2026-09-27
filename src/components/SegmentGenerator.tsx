@@ -164,7 +164,7 @@ export function SegmentGenerator({ profile, onReady }: Props) {
         body: JSON.stringify({ profile, sources: [source], mode, ...(mode === 'brief' && selectedVoiceId ? { voiceId: selectedVoiceId } : {}) }),
       });
       if (!response.ok) {
-        const details = await response.json().catch(() => ({})) as { error?: string };
+        const details = await response.json().catch(() => ({})) as { error?: string; detail?: string };
         const message = response.status === 404 ? 'Die private KI-API ist auf dieser Demo noch nicht eingerichtet.'
           : response.status === 401 ? 'Bitte zuerst bei deiner privaten Radio-App anmelden.'
           : response.status === 403 ? 'Die Anfrage wurde aus Sicherheitsgründen abgewiesen.'
@@ -173,7 +173,9 @@ export function SegmentGenerator({ profile, onReady }: Props) {
           : response.status === 503 && details.error === 'podcast_provider_not_configured' ? 'Gemini ist für Podcasts noch nicht in der privaten App konfiguriert.'
           : response.status === 503 ? 'Das dauerhafte Kontingent ist gerade nicht erreichbar. Bitte später erneut versuchen.'
           : details.error === 'not_found' ? 'Die private KI-API ist auf dieser Demo noch nicht eingerichtet.'
-          : 'Der Beitrag konnte gerade nicht erstellt werden.';
+          : response.status === 502 && details.error === 'generation_failed'
+            ? `Erstellung fehlgeschlagen: ${details.detail ?? 'unbekannter Providerfehler'}. Prüfe ASK- und Mistral-Konfiguration.`
+            : 'Der Beitrag konnte gerade nicht erstellt werden.';
         throw new Error(message);
       }
       const audioType = response.headers.get('Content-Type')?.split(';')[0];
