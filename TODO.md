@@ -44,7 +44,7 @@ Stand: 27.09.2026. Das Programm läuft auf dem privaten Worker; gehört wird in 
 - [ ] **Spotify-Developer-App für die Android-App:** (Signierschlüssel ist hinterlegt, SHA1 im CI-Log) in der Spotify-Developer-App unter «Android packages» den Paketnamen `ch.heimberg.radio` mit dem SHA1-Fingerprint des Schlüssels eintragen und die Redirect-URI `personal-radio://spotify-callback` ergänzen.
 - [x] Musik zwischen den Beiträgen: KI wählt nach Musikgeschmack und 👍/👎, Spotify spielt, kurze Ansage; mindestens N Songs nach jedem Wortbeitrag.
 - [ ] **Musik einschalten:** Einstellungen → Musik → Songs zwischen Beiträgen (1–3) und Musikgeschmack setzen, speichern. Tageslimit `DAILY_TTS_CHARACTERS` bei Bedarf erhöhen (Ansagen kosten Zeichen).
-- [ ] Visuelle Timeline: Punkte verschieben, entfernen, zufällig mischen.
+- [x] Visuelle Timeline: Punkte verschieben (↑/↓, am Desktop ziehen), entfernen, «Mischen» (mindestens ein Song zwischen Beiträgen, fehlende Songs werden ergänzt), «+ Song»; die App übernimmt die Reihenfolge beim nächsten Abgleich.
 - [x] Lebendige Stimme: Gemini-Stimmen (z. B. Laomedeia, Puck, Fenrir) mit Sprechstil der Persona; Texte werden fürs Ohr geschrieben.
 - [ ] **Stimme umstellen:** Einstellungen → Sender und Moderation → Stimme (z. B. «Laomedeia · aufgestellt (Gemini)») und Sprechstil wählen, speichern.
 - [x] Webseite aufgeräumt: Test-, Demo- und Einzelbeitrags-Oberflächen entfernt; Programm, grafische Einstellungen und YAML.

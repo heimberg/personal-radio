@@ -4,7 +4,7 @@ import { activeSlot, ConfigError, defaultStationConfig, parseStationConfig } fro
 import type { StationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
-import { planTimeline, produceItem, scheduleShowNow, tick, toView } from '../server/station.ts';
+import { arrangeTimeline, planTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from '../server/station.ts';
 import { MUSIC_SHOW_ID } from '../src/domain/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { PipelineError } from '../server/segment-pipeline.ts';
@@ -509,4 +509,42 @@ test('music settings: stations saved before music keep it off; bounds are checke
   assert.deepEqual(defaultStationConfig().music, { between: 1, announce: true, taste: '' });
   assert.throws(() => parseStationConfig({ ...legacy, music: { between: 4 } }), /music\.between/);
   assert.throws(() => parseStationConfig({ ...legacy, music: { between: 1, taste: 'x'.repeat(501) } }), /music\.taste/);
+});
+
+test('arranging, removing and shuffling the program keeps it consistent and puts songs between spoken items', async () => {
+  const station = config({ music: { between: 1, announce: true, taste: '' } });
+  const h = harness({ station }); await h.setup();
+  const ids: string[] = [];
+  for (const [index, showId] of ['kurz', 'kurz', 'kurz', MUSIC_SHOW_ID].entries()) {
+    const id = `i${index + 1}`; ids.push(id);
+    await h.store.insertItem(OWNER, { id, seq: index + 1, showId, plannedAt: new Date(NOW.getTime() + index * 60_000).toISOString(), estimatedMinutes: showId === MUSIC_SHOW_ID ? 4 : 2 }, NOW);
+  }
+  const order = async () => (await h.store.openItems(OWNER)).map(row => row.id);
+  assert.equal(await arrangeTimeline(h.deps, OWNER, ['i4', 'i1', 'i3', 'i2']), true);
+  assert.deepEqual(await order(), ['i4', 'i1', 'i3', 'i2']);
+  const open = await h.store.openItems(OWNER);
+  assert.deepEqual(open.map(row => row.planned_at), [0, 4, 6, 8].map(minute => new Date(NOW.getTime() + minute * 60_000).toISOString()));
+  // A stale order is refused and changes nothing.
+  assert.equal(await arrangeTimeline(h.deps, OWNER, ['i1', 'i2']), false);
+  assert.deepEqual(await order(), ['i4', 'i1', 'i3', 'i2']);
+
+  h.bucket.set('segments/i3.mp3', new Uint8Array([1]));
+  await h.store.update(OWNER, 'i3', { state: 'ready', audio_key: 'segments/i3.mp3' }, NOW);
+  assert.equal(await removeItem(h.deps, OWNER, 'i3'), true);
+  assert.equal(h.bucket.size, 0);
+  assert.deepEqual(await order(), ['i4', 'i1', 'i2']);
+  assert.equal(await removeItem(h.deps, OWNER, 'i3'), false);
+
+  // Two spoken items and one song: the song goes between them; nothing needs adding.
+  assert.deepEqual(await shuffleTimeline(h.deps, OWNER), []);
+  let shows = (await h.store.openItems(OWNER)).map(row => row.show_id);
+  assert.deepEqual(shows, ['kurz', MUSIC_SHOW_ID, 'kurz']);
+  // A third spoken item needs a second song, which the shuffle adds for production.
+  await h.store.insertItem(OWNER, { id: 'i5', seq: 99, showId: 'kurz', plannedAt: NOW.toISOString(), estimatedMinutes: 2 }, NOW);
+  const added = await shuffleTimeline(h.deps, OWNER);
+  assert.equal(added!.length, 1);
+  shows = (await h.store.openItems(OWNER)).map(row => row.show_id);
+  assert.deepEqual(shows, ['kurz', MUSIC_SHOW_ID, 'kurz', MUSIC_SHOW_ID, 'kurz']);
+  // The planner continues after the arranged tail.
+  assert.equal((await h.store.lastItem(OWNER))?.show_id, 'kurz');
 });

@@ -120,7 +120,12 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
 .alert { display: flex; align-items: center; gap: 10px; background: var(--warn-bg); border-radius: 12px; padding: 8px 8px 8px 14px; font-size: .88rem; margin-bottom: 14px; }
 .alert span { flex: 1 1 auto; min-width: 0; }
 .timeline { list-style: none; padding: 0; margin: 0; }
-.timeline li { display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.timeline li { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.timeline li[draggable=true] { cursor: grab; }
+.timeline li.dragging { opacity: .4; }
+.item-tools { display: flex; flex-direction: column; gap: 2px; }
+.item-tools button { border: 1px solid var(--line); background: transparent; border-radius: 8px; width: 34px; height: 30px; font-size: .9rem; color: var(--muted); }
+.item-tools button:hover:not(:disabled) { border-color: var(--brand); color: var(--text); }
 .timeline li[data-state=played], .timeline li[data-state=skipped] { opacity: .6; }
 .timeline-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; padding-top: 1px; }
 .timeline-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -176,5 +181,5 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
   .inline { flex-wrap: wrap; }
   .inline > .button { flex: 1 1 auto; }
   .feed > input:first-child { flex-basis: 100%; }
-  .timeline li { grid-template-columns: 44px 1fr; }
+  .timeline li { grid-template-columns: 40px 1fr auto; gap: 8px; }
 }

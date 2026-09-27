@@ -128,6 +128,10 @@ Implementation: a music hour is one timeline item whose `script_json` holds the 
 
 `music` in the station configuration: `between` (0–3 songs after every spoken item; music hours bring their own music), `announce` (a short spoken intro) and `taste` (the owner's own description). The planner inserts song items (reserved show ID `_musik`, about 4 minutes) after every brief or dialog. A song item asks Gemini for three candidates that fit the taste, avoiding recent songs and taking the owner's 👍/👎 and early skips on earlier songs into account (these are songs the AI picked, not Spotify data). Spotify resolves the first one it knows; the host voices a short announcement. The item has the same `parts` as a music hour, so the Android app plays it without changes. Song picks do not count towards `DAILY_GENERATIONS`; announcements count towards `DAILY_TTS_CHARACTERS`.
 
+## Arranging the program
+
+The cockpit arranges the open items (planned, being voiced, ready): `POST /api/timeline/arrange` with the full new order (a stale order is refused with 409), `POST /api/timeline/{id}/remove` (expires the item and releases its audio), `POST /api/timeline/shuffle` (shuffles and spreads songs so that at least `max(1, music.between)` sit between two spoken items, adding and producing missing songs) and `POST /api/shows/_musik/produce` (one more song). Arranging gives the items fresh sequence numbers after all existing ones, so the planner continues after the new tail. The Android app rebuilds the part of its playlist after the current item whenever the server order differs; the item that is playing is never interrupted.
+
 ## Music curation (AI → Spotify only)
 
 No Spotify audio, metadata, search results or listening behaviour are ever sent to an AI provider or used for learning. The data flow goes one way:

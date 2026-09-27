@@ -9,7 +9,7 @@ import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
-import { produceItem, scheduleShowNow, tick, toView } from './station.ts';
+import { arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import type { MusicCatalog, MusicWriter } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
@@ -293,7 +293,25 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const result = await refreshProgram(env, owner, false);
     return json({ ...reset, planned: result.planned, queued: result.due.length }, 200);
   }
-  const produce = url.pathname.match(/^\/api\/shows\/([a-z0-9-]{1,40})\/produce$/);
+  if (url.pathname === '/api/timeline/arrange') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 16_384);
+    if (body.error) return body.error;
+    const order = (body.value as { order?: unknown } | undefined)?.order;
+    if (!Array.isArray(order) || !order.every(id => typeof id === 'string')) return json({ error: 'invalid_order' }, 400);
+    // A stale order (the program changed meanwhile) is refused, and the cockpit reloads.
+    return await arrangeTimeline(stationDeps(env), owner, order as string[]) ? json({ ok: true }, 200) : json({ error: 'stale_order' }, 409);
+  }
+  if (url.pathname === '/api/timeline/shuffle') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const added = await shuffleTimeline(stationDeps(env), owner);
+    if (!added) return json({ error: 'not_configured' }, 404);
+    for (const itemId of added) await env.PRODUCTION.send({ owner, itemId });
+    return json({ added: added.length }, 200);
+  }
+  const produce = url.pathname.match(/^\/api\/shows\/(_musik|[a-z0-9-]{1,40})\/produce$/);
   if (produce) {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
@@ -303,10 +321,15 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|remove)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
+  if (match[2] === 'remove') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    return await removeItem(stationDeps(env), owner, row.id) ? json({ ok: true }, 200) : json({ error: 'not_open' }, 409);
+  }
   if (match[2] === 'audio') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     // Artist hours keep one file per spoken part: ?part=<index into the hour's parts>.
