@@ -38,9 +38,13 @@ jobs:
             echo "No RADIO_KEYSTORE_B64 secret: building with a temporary debug key."
             exit 0
           fi
-          # Copying often adds line breaks or spaces; they are not part of base64.
-          if ! printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
-            echo "::error::RADIO_KEYSTORE_B64 is not valid base64 (${#KEYSTORE_B64} characters). Store the output of 'base64 -w0 radio.jks' (Linux) or 'base64 -i radio.jks' (macOS)."
+          # Copying often adds line breaks, spaces or the '%' zsh prints after output without a newline.
+          # Keep only base64 characters and report what was dropped (never the value itself).
+          cleaned=$(printf '%s' "$KEYSTORE_B64" | sed '/^-----/d' | tr -cd 'A-Za-z0-9+/=')
+          dropped=$(printf '%s' "$KEYSTORE_B64" | tr -d 'A-Za-z0-9+/=' | tr -d ' \r\n\t' | fold -w1 | sort -u | tr -d '\n')
+          if [ -n "$dropped" ]; then echo "::warning::Ignored characters that are not base64 in RADIO_KEYSTORE_B64: $dropped"; fi
+          if ! printf '%s' "$cleaned" | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
+            echo "::error::RADIO_KEYSTORE_B64 is not valid base64 (${#cleaned} base64 characters; a valid value has a multiple of 4). Store the output of 'base64 -w0 radio.jks' (Linux) or 'base64 -i radio.jks' (macOS) without anything after it."
             exit 1
           fi
           if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
