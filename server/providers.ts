@@ -11,7 +11,11 @@ export class ProviderError extends Error {
 }
 async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 45_000): Promise<Response> {
   try { return await fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); }
-  catch { throw new ProviderError('Provider'); }
+  catch {
+    let provider = 'Provider';
+    try { provider = new URL(url).hostname; } catch { /* Keep generic label for invalid URLs. */ }
+    throw new ProviderError(provider);
+  }
 }
 export class AskTextGenerator implements TextGenerator {
   private endpoint: string;
