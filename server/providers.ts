@@ -5,9 +5,32 @@ import type { EditorialVerifier } from './segment-pipeline.ts';
 
 type Fetch = typeof fetch;
 export class ProviderError extends Error {
-  constructor(provider: string, status?: number) {
-    super(`${provider} request failed${status ? ` (${status})` : ''}`);
+  readonly status?: number;
+  /** How long the provider asks us to wait (rate limits), when it says so. */
+  readonly retryAfterMs?: number;
+  constructor(provider: string, status?: number, info: { detail?: string; retryAfterMs?: number } = {}) {
+    super(`${provider} request failed${status ? ` (${status})` : ''}${info.detail ? `: ${info.detail}` : ''}`);
+    this.status = status;
+    this.retryAfterMs = info.retryAfterMs;
   }
+}
+
+/**
+ * Google's error body explains quota problems (per minute, per day, or no free-tier quota for the
+ * model) and may carry a RetryInfo delay. Its message never contains the API key.
+ */
+async function googleFailure(label: string, response: Response): Promise<ProviderError> {
+  let detail: string | undefined, retryAfterMs: number | undefined;
+  try {
+    const body = await response.json() as { error?: { message?: unknown; details?: Array<{ '@type'?: string; retryDelay?: unknown }> } };
+    if (typeof body.error?.message === 'string') detail = body.error.message.replace(/\s+/g, ' ').trim().slice(0, 240);
+    const delay = body.error?.details?.find(item => item['@type']?.endsWith('RetryInfo'))?.retryDelay;
+    const seconds = typeof delay === 'string' ? Number.parseFloat(delay) : NaN;
+    if (Number.isFinite(seconds) && seconds >= 0) retryAfterMs = Math.round(seconds * 1000);
+  } catch { /* Keep the status alone when the body is not JSON. */ }
+  const header = Number(response.headers.get('Retry-After'));
+  if (retryAfterMs === undefined && Number.isFinite(header) && header > 0) retryAfterMs = header * 1000;
+  return new ProviderError(label, response.status, { detail, retryAfterMs });
 }
 async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 45_000): Promise<Response> {
   let response: Response;
@@ -27,7 +50,8 @@ async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs
   }
   return response;
 }
-const RETRYABLE_PROVIDER_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+// 429 is deliberately absent: an exhausted quota does not recover within a second; production waits instead.
+const RETRYABLE_PROVIDER_STATUSES = new Set([408, 500, 502, 503, 504]);
 async function requestWithTransientRetry(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 45_000): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await request(fetcher, url, init, timeoutMs);
@@ -121,7 +145,7 @@ async function geminiGenerate(fetcher: Fetch, key: string, model: string, body: 
   const response = await requestWithTransientRetry(fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }, timeoutMs);
-  if (!response.ok) throw new ProviderError(label, response.status);
+  if (!response.ok) throw await googleFailure(label, response);
   let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; groundingMetadata?: GeminiGrounding }> };
   try { payload = await response.json(); } catch { throw new Error(`${label} returned invalid data`); }
   const candidate = payload.candidates?.[0];
@@ -224,7 +248,7 @@ export class GeminiPodcastGenerator implements TextGenerator {
         generationConfig: { responseMimeType: 'application/json', temperature: 0.45 },
       }),
     });
-    if (!response.ok) throw new ProviderError('Gemini text', response.status);
+    if (!response.ok) throw await googleFailure('Gemini text', response);
     try {
       const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
       const text = payload.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('');
@@ -387,7 +411,7 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
         mode: 'conversational', speakers: speakers.map((speaker, index) => ({ speaker, voice: this.voices[index] })),
       } } }),
     }, 120_000);
-    if (!response.ok) throw new ProviderError('Gemini TTS', response.status);
+    if (!response.ok) throw await googleFailure('Gemini TTS', response);
     let encoded: unknown;
     try {
       const result = await response.json() as { steps?: Array<{ type?: string; content?: Array<{ type?: string; data?: string }> }> };

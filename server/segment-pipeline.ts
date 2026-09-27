@@ -120,7 +120,11 @@ export class SegmentPipeline {
     if (policy !== 'strict') return { approved: true, reasons: [`VERIFICATION_${policy.toUpperCase()}`] };
     let decision: EditorialDecision;
     try { decision = await this.verifier.verify(script, sources); }
-    catch { throw new PipelineError('REJECTED'); }
+    catch (error) {
+      // A rate-limited verifier says nothing about the script; let the caller wait and retry.
+      if ((error as { status?: unknown } | null)?.status === 429) throw error;
+      throw new PipelineError('REJECTED');
+    }
     if (!decision.approved) throw new PipelineError('REJECTED');
     return decision;
   }
