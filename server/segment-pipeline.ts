@@ -74,12 +74,12 @@ export class SegmentPipeline {
     this.budget = budget; this.maxConcurrent = maxConcurrent; this.podcast = podcast;
   }
 
-  prepare(ownerId: string, idempotencyKey: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast' = 'brief'): Promise<PreparedSegment> {
+  prepare(ownerId: string, idempotencyKey: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast' = 'brief', voiceId?: string): Promise<PreparedSegment> {
     if (!ownerId || !/^[a-zA-Z0-9_-]{12,100}$/.test(idempotencyKey)) return Promise.reject(new PipelineError('INVALID_INPUT'));
     try { validateSources(sources); } catch (error) { return Promise.reject(error); }
     const safeProfile = parseProfile(profile);
     if (mode !== 'brief' && mode !== 'podcast' || mode === 'podcast' && !this.podcast) return Promise.reject(new PipelineError('INVALID_INPUT'));
-    const fingerprint = JSON.stringify({ profile: safeProfile, sources, mode });
+    const fingerprint = JSON.stringify({ profile: safeProfile, sources, mode, voiceId });
     const key = `${ownerId}:${idempotencyKey}`;
     const existing = this.active.get(key);
     if (existing) {
@@ -88,12 +88,12 @@ export class SegmentPipeline {
     }
     if (this.active.size >= this.maxConcurrent) return Promise.reject(new PipelineError('TOO_MANY_REQUESTS'));
     // Remove settled entries: this coalesces concurrent retries only, not retries after completion.
-    const promise = this.run(ownerId, safeProfile, sources, mode).finally(() => this.active.delete(key));
+    const promise = this.run(ownerId, safeProfile, sources, mode, voiceId).finally(() => this.active.delete(key));
     this.active.set(key, { fingerprint, promise });
     return promise;
   }
 
-  private async run(ownerId: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast'): Promise<PreparedSegment> {
+  private async run(ownerId: string, profile: Profile, sources: Source[], mode: 'brief' | 'podcast', voiceId?: string): Promise<PreparedSegment> {
     const textProvider = mode === 'podcast' ? this.podcast!.text : this.text;
     const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const script = parseScript(await textProvider.generate(profile, sources), sources);
@@ -106,7 +106,7 @@ export class SegmentPipeline {
     if (!decision.approved) throw new PipelineError('REJECTED');
     const characters = [...script.text].length;
     await this.budget.reserve(ownerId, characters);
-    const audio = await speechProvider.synthesize(script.text, script.turns);
+    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
     return { script, audio, contentType: mode === 'podcast' ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters, mode };
   }
