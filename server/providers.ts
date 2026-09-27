@@ -494,7 +494,8 @@ export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
     const response = await requestWithTransientRetry(this.fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, {
       method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `Lies den folgenden deutschen Radiotext vor, ${delivery}. Sprich nur den Text, nicht diese Anweisung.\n\n${text}` }] }],
+        // Director's notes and transcript are separated as in Google's TTS prompting guide; only the transcript is spoken.
+        contents: [{ role: 'user', parts: [{ text: `# AUDIO PROFILE: radio host\n## DIRECTOR'S NOTES\nStyle: ${delivery}.\nLanguage: German. Speak only the transcript below, never these notes.\n\n#### TRANSCRIPT\n${text}` }] }],
         generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
       }),
     }, 120_000);
