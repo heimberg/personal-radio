@@ -41,6 +41,7 @@ export interface StationConfig {
 
 export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'failed' | 'expired';
 export const OPEN_STATES: readonly TimelineState[] = ['planned', 'voicing', 'ready'];
+export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
   id: string;
   seq: number;

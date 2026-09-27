@@ -310,3 +310,23 @@ test('the host persona\'s voice is used unless the show sets its own; rejections
   assert.equal((await h.store.getItem(OWNER, due[1]))?.error, 'REJECTED: Nicht belegt: «Mars»');
   assert.equal(defaultStationConfig().host.voiceId, 'de_kerstin_cc0');
 });
+
+test('failures are summarised, cleaned up on request and purged automatically after a day', async () => {
+  const h = harness({ items: [] }); await h.setup();
+  const due = (await tick(h.deps, OWNER)).due;
+  for (const id of due.slice(0, 3)) await produceItem(h.deps, OWNER, id);
+  const summary = await h.store.failureSummary(OWNER);
+  assert.equal(summary.count, 3); assert.equal(summary.latestError, 'NO_SOURCES');
+  const visible = await h.store.visibleItems(OWNER);
+  assert.ok(visible.every(row => row.state !== 'failed' && row.state !== 'expired'));
+  assert.equal(visible.length, due.length - 3);
+  // Manual cleanup removes all failed and expired rows.
+  assert.deepEqual(await h.store.purge(OWNER), { removed: 3, audioKeys: [] });
+  assert.equal((await h.store.failureSummary(OWNER)).count, 0);
+  // Automatic purge: only rows older than a day go.
+  h.db.raw.prepare(`UPDATE timeline_items SET state = 'failed', updated_at = ? WHERE id = ?`).run('2026-09-26T07:00:00.000Z', due[3]);
+  h.db.raw.prepare(`UPDATE timeline_items SET state = 'failed', updated_at = ? WHERE id = ?`).run('2026-09-27T07:30:00.000Z', due[4]);
+  await tick(h.deps, OWNER);
+  assert.equal(await h.store.getItem(OWNER, due[3]), null);
+  assert.equal((await h.store.getItem(OWNER, due[4]))?.state, 'failed');
+});

@@ -166,8 +166,7 @@ test('server program: import device settings, show timeline, play ready segments
     { id: 't1', seq: 1, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
       title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
       sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },
-    { id: 't2', seq: 2, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:02:00.000Z', state: 'failed', estimatedMinutes: 2, error: 'NO_SOURCES', updatedAt: '2026-09-27T13:31:00.000Z' },
-  ] : [] }) }));
+  ] : [], failures: stored ? { count: 1, latestError: 'NO_SOURCES', latestAt: '2026-09-27T13:31:00.000Z' } : { count: 0 } }) }));
   let planned = 0;
   await page.route('**/api/timeline/plan', route => { planned++; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"planned":2,"queued":2,"expired":0}' }); });
   await page.route('**/api/timeline/t1/audio', route => route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav(2) }));
@@ -184,7 +183,13 @@ test('server program: import device settings, show timeline, play ready segments
   expect(stored.shows[0]).toMatchObject({ id: 'kurz', feedIds: ['feed-1'], verification: 'strict', textProvider: 'gemini', sourceMode: 'feeds' });
   expect(stored.shows.find((show: any) => show.id === 'entdecken')).toMatchObject({ enabled: true, sourceMode: 'web' });
   const timeline = page.getByRole('list', { name: 'Programmablauf' });
-  await expect(timeline.getByText(/\d\d:\d\d · Keine neuen Artikel in den Feeds dieser Sendung\./)).toBeVisible();
+  await expect(page.getByText(/⚠ 1 fehlgeschlagen · zuletzt \d\d:\d\d: Keine neuen Artikel in den Feeds dieser Sendung\./)).toBeVisible();
+  await expect(timeline.getByRole('listitem')).toHaveCount(1);
+  let cleaned = 0;
+  await page.route('**/api/timeline/cleanup', route => { cleaned++; return route.fulfill({ contentType: 'application/json', body: '{"removed":1}' }); });
+  await page.getByRole('button', { name: 'Aufräumen' }).click();
+  await expect(page.getByText('1 Einträge entfernt.')).toBeVisible();
+  expect(cleaned).toBe(1);
   let retried = 0;
   await page.route('**/api/timeline/retry', route => { retried++; return route.fulfill({ contentType: 'application/json', body: '{"retired":1,"restarted":0,"planned":1,"queued":1}' }); });
   await page.getByRole('button', { name: 'Erneut versuchen' }).click();
