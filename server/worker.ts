@@ -244,6 +244,15 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const result = await refreshProgram(env, owner, false);
     return json({ planned: result.planned, queued: result.due.length, expired: result.expired }, 200);
   }
+  if (url.pathname === '/api/timeline/retry') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const now = new Date();
+    await store.touch(owner, now);
+    const reset = await store.retryNow(owner, now);
+    const result = await refreshProgram(env, owner, false);
+    return json({ ...reset, planned: result.planned, queued: result.due.length }, 200);
+  }
   const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);

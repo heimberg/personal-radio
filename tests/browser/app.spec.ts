@@ -166,7 +166,7 @@ test('server program: import device settings, show timeline, play ready segments
     { id: 't1', seq: 1, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
       title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
       sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },
-    { id: 't2', seq: 2, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:02:00.000Z', state: 'failed', estimatedMinutes: 2, error: 'NO_SOURCES' },
+    { id: 't2', seq: 2, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:02:00.000Z', state: 'failed', estimatedMinutes: 2, error: 'NO_SOURCES', updatedAt: '2026-09-27T13:31:00.000Z' },
   ] : [] }) }));
   let planned = 0;
   await page.route('**/api/timeline/plan', route => { planned++; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"planned":2,"queued":2,"expired":0}' }); });
@@ -184,7 +184,12 @@ test('server program: import device settings, show timeline, play ready segments
   expect(stored.shows[0]).toMatchObject({ id: 'kurz', feedIds: ['feed-1'], verification: 'strict', textProvider: 'gemini', sourceMode: 'feeds' });
   expect(stored.shows.find((show: any) => show.id === 'entdecken')).toMatchObject({ enabled: true, sourceMode: 'web' });
   const timeline = page.getByRole('list', { name: 'Programmablauf' });
-  await expect(timeline.getByText('Keine neuen Artikel in den Feeds dieser Sendung.')).toBeVisible();
+  await expect(timeline.getByText(/\d\d:\d\d · Keine neuen Artikel in den Feeds dieser Sendung\./)).toBeVisible();
+  let retried = 0;
+  await page.route('**/api/timeline/retry', route => { retried++; return route.fulfill({ contentType: 'application/json', body: '{"retired":1,"restarted":0,"planned":1,"queued":1}' }); });
+  await page.getByRole('button', { name: 'Erneut versuchen' }).click();
+  await expect(page.getByText('1 Fehlschläge abgeräumt, 0 wartende Beiträge neu gestartet, 1 neu geplant, 1 in Produktion.')).toBeVisible();
+  expect(retried).toBe(1);
   await expect(timeline.getByRole('link', { name: 'Raumfahrt heute' })).toHaveAttribute('href', 'https://news.example.test/a');
   await expect(timeline.getByRole('link', { name: 'sonde landung' })).toHaveAttribute('href', 'https://www.google.com/search?q=sonde%20landung');
   await page.getByRole('button', { name: '▶ Programm hören' }).click();

@@ -49,6 +49,8 @@ export interface TimelineItemView {
   plannedAt: string;
   state: TimelineState;
   estimatedMinutes: number;
+  /** Last change on the server, e.g. when an error happened. */
+  updatedAt?: string;
   title?: string;
   sources?: Array<{ title: string; url: string }>;
   interestTags?: string[];

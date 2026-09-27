@@ -100,6 +100,19 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
     finally { setBusy(false); }
   }
 
+  /** Retires failed items and restarts waiting ones right away, e.g. after fixing a provider setting. */
+  async function retry() {
+    setBusy(true); setMessage('Neuer Versuch wird gestartet …');
+    try {
+      const response = await fetch(api('api/timeline/retry'), { method: 'POST', credentials: 'same-origin' });
+      const result = await readJson<{ retired?: number; restarted?: number; planned?: number; queued?: number }>(response);
+      if (!response.ok) throw new Error();
+      setMessage(`${result.retired ?? 0} Fehlschläge abgeräumt, ${result.restarted ?? 0} wartende Beiträge neu gestartet, ${result.planned ?? 0} neu geplant, ${result.queued ?? 0} in Produktion.`);
+      await refresh();
+    } catch { setMessage('Neuer Versuch fehlgeschlagen. Prüfe Anmeldung und Server.'); }
+    finally { setBusy(false); }
+  }
+
   // The YAML library is only loaded when the editor opens.
   async function toggleEditor() {
     if (editor !== null) { setEditor(null); return; }
@@ -151,6 +164,8 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
     <div className="program-actions">
       {!embedded && <button className="primary" onClick={listen}>▶ Programm hören</button>}
       <button className="secondary" disabled={busy} onClick={() => void plan()}>Jetzt planen</button>
+      {items.some(item => item.error && item.state !== 'ready' && item.state !== 'expired') &&
+        <button className="secondary" disabled={busy} onClick={() => void retry()}>Erneut versuchen</button>}
       <button className="secondary" onClick={() => void toggleEditor()}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
     </div>
     {editor !== null && <div className="config-editor">
@@ -163,7 +178,9 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
       <span className="timeline-body">
         <strong>{item.title ?? item.showName}</strong>
         <small>{item.showName} · {STATE_LABELS[item.state]}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</small>
-        {item.error && item.state !== 'ready' && <small className="timeline-error">{ERROR_LABELS[item.error] ?? item.error}</small>}
+        {item.error && item.state !== 'ready' && <small className="timeline-error">
+          {item.updatedAt ? `${new Date(item.updatedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} · ` : ''}
+          {ERROR_LABELS[item.error] ?? item.error}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</small>}
         {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
         {item.searchQueries?.length ? <small className="timeline-search">Google-Suche: {item.searchQueries.map((query, index) => <span key={query}>{index ? ' · ' : ''}
           <a href={`https://www.google.com/search?q=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer">{query}</a></span>)}</small> : null}
