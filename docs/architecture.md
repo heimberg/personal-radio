@@ -124,6 +124,10 @@ Production, entirely ahead of time:
 
 Implementation: a music hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks. The Android app plays the hour with the App Remote handoff described below; the web player skips it.
 
+## Songs between spoken items
+
+`music` in the station configuration: `between` (0–3 songs after every spoken item; music hours bring their own music), `announce` (a short spoken intro) and `taste` (the owner's own description). The planner inserts song items (reserved show ID `_musik`, about 4 minutes) after every brief or dialog. A song item asks Gemini for three candidates that fit the taste, avoiding recent songs and taking the owner's 👍/👎 and early skips on earlier songs into account (these are songs the AI picked, not Spotify data). Spotify resolves the first one it knows; the host voices a short announcement. The item has the same `parts` as a music hour, so the Android app plays it without changes. Song picks do not count towards `DAILY_GENERATIONS`; announcements count towards `DAILY_TTS_CHARACTERS`.
+
 ## Music curation (AI → Spotify only)
 
 No Spotify audio, metadata, search results or listening behaviour are ever sent to an AI provider or used for learning. The data flow goes one way:

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MUSIC_SHOW_ID } from '../domain/station.ts';
 import type { FailureSummary, StationConfig, TimelineItemView } from '../domain/station.ts';
 import { FORMAT_LABELS, STATE_LABELS, VERIFICATION_LABELS, clockTime, errorLabel, post } from '../station-client.ts';
 
@@ -72,12 +73,12 @@ export function Timeline({ config, items, failures, refresh }: Props) {
     {items.length === 0 ? <p className="empty">Noch nichts geplant. «Jetzt planen» startet die Produktion.</p> :
       <ol className="timeline" aria-label="Programmablauf">{items.map(item => <li key={item.id} data-state={item.state}>
         <span className="timeline-time">{clockTime(item.plannedAt)}</span>
-        <div className="timeline-body">
-          <strong>{item.title ?? item.showName}</strong>
+        <div className={`timeline-body ${item.showId === MUSIC_SHOW_ID ? 'song' : ''}`}>
+          <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.title ?? item.showName}</strong>
           <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</span>
           {item.error && item.state !== 'ready' && <span className="timeline-error">
             {item.updatedAt ? `${clockTime(item.updatedAt)} · ` : ''}{errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</span>}
-          {item.parts && <span className="timeline-tracks">♫ {item.subject ? `${item.subject}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
+          {item.parts && item.showId !== MUSIC_SHOW_ID && <span className="timeline-tracks">♫ {item.subject ? `${item.subject}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
             <em> – Musik über Spotify in der App</em></span>}
           {(item.sources?.length || item.searchQueries?.length) ? <span className="timeline-sources">
             {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}

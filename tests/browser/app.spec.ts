@@ -130,6 +130,10 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await slot.getByRole('button', { name: 'So' }).click();
   await page.getByLabel('Zeitfenster 1').getByRole('button', { name: 'Themen-Stunde' }).click();
 
+  const music = page.getByRole('region', { name: 'Musik' });
+  await music.getByRole('slider').fill('2');
+  await music.getByRole('textbox').fill('Industrial, Indie, Rock');
+
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Ungespeicherte Änderungen');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(page.getByText(/^Gespeichert\./)).toBeVisible();
@@ -140,6 +144,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.shows.find((show: any) => show.format === 'theme_hour')).toMatchObject({ id: 'themen-stunde', theme: 'Der Mond', tracks: 8, talkSeconds: 120, enabled: true });
   expect(saved.shows.find((show: any) => show.id === 'kuenstler')).toMatchObject({ format: 'genre_hour', genre: 'Krautrock', enabled: true });
   expect(saved.shows.find((show: any) => show.id === 'kuenstler').artist).toBeUndefined();
+  expect(saved.music).toEqual({ between: 2, announce: true, taste: 'Industrial, Indie, Rock' });
   expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });
 
   // Invalid input is explained before anything is sent.

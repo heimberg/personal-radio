@@ -99,6 +99,21 @@ test('music providers call fetch as a plain function, as Workers require', async
   assert.equal(await catalog.find({ title: 'Hallogallo', artist: 'Neu!' }), null);
 });
 
+test('song picks: taste, reactions and avoid list go to Gemini; picks without artist are dropped; announcements only when wanted', async () => {
+  let body: any;
+  const writer = new GeminiMusicWriter({ key: 'g' }, async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ songs: [{ title: 'Closer', artist: 'Nine Inch Nails', announcement: 'Jetzt: Closer.' }, { title: 'Ohne' }] }) }] } }] });
+  });
+  const request = { taste: 'Industrial', interests: ['Raumfahrt'], avoid: ['A – B'], liked: ['C – D'], disliked: ['E – F'], announce: true,
+    direction: { persona: { name: 'Mira', tone: 'lebhaft', style: 'Radio', instructions: '' } } };
+  assert.deepEqual(await writer.pickSongs(request), [{ title: 'Closer', artist: 'Nine Inch Nails', announcement: 'Jetzt: Closer.' }]);
+  const input = JSON.parse(body.contents[0].parts[0].text);
+  assert.deepEqual([input.geschmack, input.vermeiden, input.mag, input['mag nicht']], ['Industrial', ['A – B'], ['C – D'], ['E – F']]);
+  assert.match(body.systemInstruction.parts[0].text, /höchstens 35 Wörtern[\s\S]*Du sprichst als Mira/);
+  assert.equal((await writer.pickSongs({ ...request, announce: false }))[0].announcement, '');
+});
+
 test('long moderations are split into parts Mistral can speak', () => {
   const sentence = 'Das ist ein Satz mit genau zehn Wörtern für den Test. ';
   const chunks = splitSpeech(sentence.repeat(60).trim(), 250);
