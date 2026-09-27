@@ -54,15 +54,34 @@ test('the Gemini music writer validates picks and scripts and drops unknown sour
     body = JSON.parse(String(init?.body));
     return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(replies.shift()) }] } }] });
   });
-  const picks = await writer.pickTracks({ artist: 'Portishead', count: 2, sources, instructions: 'Frühwerk' });
+  const picks = await writer.pickTracks({ focus: 'artist', subject: 'Portishead', count: 2, sources, instructions: 'Frühwerk' });
   assert.deepEqual(picks, [{ title: 'Glory Box', artist: 'Portishead', reason: 'Schlüsselsong', year: 1994 }, { title: 'Roads', artist: 'Portishead', reason: 'Stille' }]);
   assert.match(body.systemInstruction.parts[0].text, /Wähle 6 Songs von «Portishead»/);
-  const hour = await writer.writeHour({ artist: 'Portishead', picks, sources, talkSeconds: 60,
+  const hour = await writer.writeHour({ focus: 'artist', subject: 'Portishead', picks, sources, talkSeconds: 60,
     direction: { persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } } });
   assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörtern/);
   assert.match(body.systemInstruction.parts[0].text, /Du sprichst als Mira/);
   assert.deepEqual(hour.intro, { text: 'Willkommen.', sourceIds: ['w1'] });
   assert.deepEqual(hour.tracks, [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }]);
+});
+
+test('genre and theme hours ask for songs by different artists and drop picks without an artist', async () => {
+  const systems: string[] = [];
+  const replies: unknown[] = [
+    { subject: 'Krautrock', reason: 'r' },
+    { tracks: [{ title: 'Hallogallo', artist: 'Neu!' }, { title: 'Ohne Künstler' }] },
+    { tracks: [{ title: 'Space Oddity', artist: 'David Bowie' }] },
+  ];
+  const writer = new GeminiMusicWriter({ key: 'g' }, async (_url, init) => {
+    systems.push(JSON.parse(String(init?.body)).systemInstruction.parts[0].text);
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(replies.shift()) }] } }] });
+  });
+  assert.deepEqual(await writer.pickSubject({ focus: 'genre', interests: ['Elektronik'], avoid: [], instructions: '' }), { subject: 'Krautrock', reason: 'r' });
+  assert.match(systems[0], /Genre-Stunde/);
+  assert.deepEqual((await writer.pickTracks({ focus: 'genre', subject: 'Krautrock', count: 3, sources, instructions: '' })).map(pick => pick.title), ['Hallogallo']);
+  assert.match(systems[1], /^Du stellst die Songliste einer Genre-Stunde zusammen\. Wähle 7 Songs, die das Genre «Krautrock»/);
+  await writer.pickTracks({ focus: 'theme', subject: 'Der Mond', count: 3, sources, instructions: '' });
+  assert.match(systems[2], /inhaltlich zum Thema «Der Mond» passen/);
 });
 
 test('long moderations are split into parts Mistral can speak', () => {

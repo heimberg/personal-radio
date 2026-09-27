@@ -1,6 +1,6 @@
 // Server-only program runtime: plans the timeline and produces its segments without an open browser.
-import { activeSlot } from '../src/domain/station.ts';
-import type { ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
+import { HOUR_FOCUS, activeSlot, hourSubject, isMusicHour } from '../src/domain/station.ts';
+import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
 import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
@@ -10,6 +10,7 @@ import { PipelineError } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
 import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
+import { HOUR_KINDS } from './music.ts';
 import type { MusicCatalog, MusicWriter, TrackPick } from './music.ts';
 
 export interface AudioBucket {
@@ -151,7 +152,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const show = config.shows.find(item => item.id === row.show_id);
   if (!show) return fail('SHOW_REMOVED');
   try {
-    if (show.format === 'artist_hour') return await produceArtistHour(deps, owner, config, show, row, fail);
+    if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
     let current = row;
     if (current.state === 'planned') {
       if (show.format === 'podcast' && !deps.podcastAvailable) return fail('PODCAST_PROVIDER_NOT_CONFIGURED');
@@ -169,7 +170,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
       const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics };
-      const script = await deps.pipeline.draft(profile, sources, show.format, direction, generator);
+      const script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       await deps.pipeline.review(script, sources, show.verification);
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: queries.length ? JSON.stringify({ queries }) : null };
@@ -211,7 +212,10 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
 /** Stored in script_json: the hour's speech and tracks in playing order. */
 interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
 interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string }
-interface HourPackage { kind: 'artist_hour'; title: string; artist: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
+/** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
+interface HourPackage { kind: 'music_hour' | 'artist_hour'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
+const packageFocus = (pkg: Partial<HourPackage>): HourFocus => pkg.focus ?? 'artist';
+const packageSubject = (pkg: Partial<HourPackage>): string => pkg.subject ?? pkg.artist ?? '';
 
 /** Mistral speaks at most about 280 words per request; longer moderations become consecutive parts. */
 export function splitSpeech(text: string, maxWords = 250): string[] {
@@ -227,20 +231,24 @@ export function splitSpeech(text: string, maxWords = 250): string[] {
   return chunks;
 }
 
-async function recentArtists(deps: StationDeps, owner: string): Promise<string[]> {
-  const artists: string[] = [];
+/** Subjects of recent hours of the same kind, so the AI does not pick them again. */
+async function recentSubjects(deps: StationDeps, owner: string, focus: HourFocus): Promise<string[]> {
+  const subjects: string[] = [];
   for (const row of await deps.store.recentItems(owner, 60)) {
-    try { const pkg = JSON.parse(row.script_json ?? '{}') as Partial<HourPackage>; if (pkg.kind === 'artist_hour' && pkg.artist) artists.push(pkg.artist); } catch { /* Skip. */ }
+    try {
+      const pkg = JSON.parse(row.script_json ?? '{}') as Partial<HourPackage>;
+      if ((pkg.kind === 'music_hour' || pkg.kind === 'artist_hour') && packageFocus(pkg) === focus && packageSubject(pkg)) subjects.push(packageSubject(pkg));
+    } catch { /* Skip. */ }
   }
-  return [...new Set(artists)];
+  return [...new Set(subjects)];
 }
 
 /**
- * One hour about one artist: grounded dossier → AI track picks → Spotify search (code only) →
- * moderations for resolved tracks → verification → voicing part by part. Progress is stored after every
- * spoken part, so a retry never pays twice.
+ * One hour about an artist, a genre or a theme: grounded dossier → AI track picks → Spotify search (code
+ * only) → moderations for resolved tracks → verification → voicing part by part. Progress is stored after
+ * every spoken part, so a retry never pays twice.
  */
-async function produceArtistHour(deps: StationDeps, owner: string, config: StationConfig, show: ShowConfig, row: TimelineRow,
+async function produceMusicHour(deps: StationDeps, owner: string, config: StationConfig, show: ShowConfig, row: TimelineRow,
   fail: (error: string) => Promise<'failed'>): Promise<ProduceOutcome> {
   const now = deps.now();
   let pkg: HourPackage;
@@ -248,14 +256,15 @@ async function produceArtistHour(deps: StationDeps, owner: string, config: Stati
     if (!deps.researcher || !deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
     if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
     await deps.reserveGeneration(owner);
+    const focus = HOUR_FOCUS[show.format]!;
     const interests = [...config.profile.topics, ...config.profile.interests];
-    const artist = show.artist ?? (await deps.musicWriter.pickArtist({ interests, avoid: await recentArtists(deps, owner), instructions: show.instructions })).artist;
+    const subject = hourSubject(show)
+      ?? (await deps.musicWriter.pickSubject({ focus, interests, avoid: await recentSubjects(deps, owner, focus), instructions: show.instructions })).subject;
     const { sources, queries } = await deps.researcher.research({
-      brief: `Künstler-Stunde über ${artist}: Biografie, Schaffensphasen, Alben, Entstehung einzelner Songs, Einflüsse, Anekdoten. ${show.researchPrompt}`,
-      interests: [artist], avoidTopics: [], now,
+      brief: `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim(), interests: [subject], avoidTopics: [], now,
     });
     if (!sources.length) return fail('NO_SOURCES');
-    const picks = await deps.musicWriter.pickTracks({ artist, count: show.tracks ?? 10, sources, instructions: show.instructions });
+    const picks = await deps.musicWriter.pickTracks({ focus, subject, count: show.tracks ?? 10, sources, instructions: show.instructions });
     const resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }> = [];
     for (const pick of picks) {
       if (resolved.length >= (show.tracks ?? 10)) break;
@@ -264,7 +273,7 @@ async function produceArtistHour(deps: StationDeps, owner: string, config: Stati
     }
     if (resolved.length < 3) return fail(`TOO_FEW_TRACKS: ${resolved.length} von ${picks.length} Songs auf Spotify gefunden`);
     const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner) };
-    const hour = await deps.musicWriter.writeHour({ artist, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
+    const hour = await deps.musicWriter.writeHour({ focus, subject, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
     const sourceIds = [...new Set(spoken.flatMap(part => part.sourceIds))];
     const text = spoken.map(part => part.text).join(' ');
@@ -277,7 +286,7 @@ async function produceArtistHour(deps: StationDeps, owner: string, config: Stati
       parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, reason: item.pick.reason });
     });
     parts.push(...speech(hour.outro));
-    pkg = { kind: 'artist_hour', title: hour.title, artist, text, sourceIds, parts };
+    pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts };
     await deps.store.markCovered(owner, sources.map(source => source.url), now);
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), sources_json: JSON.stringify(sources),
       verification: show.verification, research_json: queries.length ? JSON.stringify({ queries }) : null }, deps.now());
@@ -331,11 +340,11 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   };
 }
 
-function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'artist'> | null {
-  if (pkg.kind !== 'artist_hour' || !Array.isArray(pkg.parts)) return null;
-  const playable = row.state !== 'expired';
+function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'focus' | 'subject' | 'artist'> | null {
+  if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour') || !Array.isArray(pkg.parts)) return null;
+  const playable = row.state !== 'expired', focus = packageFocus(pkg), subject = packageSubject(pkg);
   return {
-    artist: pkg.artist ?? '',
+    focus, subject, ...(focus === 'artist' ? { artist: subject } : {}),
     parts: pkg.parts.map((part, index) => part.kind === 'track'
       ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),

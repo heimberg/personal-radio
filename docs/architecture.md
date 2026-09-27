@@ -93,20 +93,26 @@ The two steps keep the script call independent of whether a model supports searc
 
 **Topic memory:** every draft and every research request receive the titles of the last 15 produced segments with the instruction not to repeat them.
 
-## Artist hour (server side implemented; playback in the app next)
+## Music hours: artist, genre, theme
 
-A show format `artist_hour` for one hour about one artist or band: individual tracks, and between them generated background on the artist, the band and the songs, grounded in web search.
+Three show formats share one production: spoken parts with Spotify tracks in between, grounded in web search.
+
+- `artist_hour` — one artist or band: tracks across the career, background on the artist and the songs.
+- `genre_hour` — one genre or scene: its history from the origins to today, told through songs by different artists.
+- `theme_hour` — any topic (science, history, culture, nature, not only music): the topic is the content, told in chapters; after each chapter a song by any artist that fits the topic in its lyrics, title, origin or mood. Defaults: 8 tracks, 120 seconds of speech per chapter.
 
 ```yaml
-- id: kuenstler-sonntag
-  name: Künstler-Stunde
-  format: artist_hour
-  artist: Portishead          # or pick: interests — the AI chooses from the listener's interests
-  tracks: 11
-  talkSecondsPerTrack: 60
-  instructions: Frühwerk und Einflüsse betonen, keine Chart-Statistiken.
-  verification: strict
+- id: thema
+  name: Themen-Stunde
+  format: theme_hour
+  theme: Der Mond          # artist: … / genre: … for the other formats; leave empty and the AI picks from your interests
+  tracks: 8                # 3–15
+  talkSeconds: 120         # 20–180 per moderation
+  instructions: Erzähle das Thema in Kapiteln.
+  verification: light
 ```
+
+Without a fixed subject the AI picks one from the listener's interests and avoids the subjects of recent hours of the same kind.
 
 Production, entirely ahead of time:
 
@@ -116,7 +122,7 @@ Production, entirely ahead of time:
 4. **Check and voice:** claims are checked against the dossier sources; unsupported sentences are rewritten or dropped. Moderations are voiced to R2.
 5. **Timeline:** opening → moderation → Spotify track → moderation → … → closing. About 45 minutes of music and 12–15 minutes of AI speech per hour, which satisfies the speech requirement by construction. One hour needs roughly 10,000–12,000 TTS characters; raise `DAILY_TTS_CHARACTERS` accordingly.
 
-Implementation: an artist hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks. The Android app plays the hour with the App Remote handoff described below; the web player skips it.
+Implementation: a music hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks. The Android app plays the hour with the App Remote handoff described below; the web player skips it.
 
 ## Music curation (AI → Spotify only)
 
@@ -176,7 +182,7 @@ Remaining gaps:
 
 - The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
 - Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
-- The Android app (milestone 2, see [Android app](android.md)) plays our segments and, for artist hours, hands over to Spotify through App Remote. The embedded cockpit needs a login that works inside a WebView when the service token alone is not enough: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
+- The Android app (milestone 2, see [Android app](android.md)) plays our segments and, for artist hours, hands over to Spotify through App Remote for music hours. The embedded cockpit needs a login that works inside a WebView when the service token alone is not enough: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
 - Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
 
 ## Milestones
