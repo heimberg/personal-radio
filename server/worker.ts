@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer, ProviderError } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer, ProviderError } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
 import type { TextGenerator } from '../src/domain/program.ts';
@@ -146,7 +146,8 @@ function providersFor(env: Environment): Providers {
         geminiBrief: new GeminiBriefGenerator(gemini), geminiDialog: new GeminiPodcastGenerator(gemini),
         researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }),
       } : {}),
-      verifier: askReady ? new AskEditorialVerifier(askConfig) : gemini ? new GeminiEditorialVerifier(gemini) : unavailable,
+      verifier: askReady && gemini ? new FallbackVerifier(new AskEditorialVerifier(askConfig), new GeminiEditorialVerifier(gemini))
+        : askReady ? new AskEditorialVerifier(askConfig) : gemini ? new GeminiEditorialVerifier(gemini) : unavailable,
     };
     providerCache.set(env.DB as object, providers);
   }

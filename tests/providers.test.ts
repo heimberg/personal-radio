@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -229,4 +229,30 @@ test('Gemini quota errors carry Google\'s explanation and retry delay and are no
     return true;
   });
   assert.equal(calls, 1);
+});
+
+test('model JSON is accepted inside a Markdown code block or with text around it', () => {
+  assert.deepEqual(parseModelJson('```json\n{"approved":true}\n```'), { approved: true });
+  assert.deepEqual(parseModelJson('Hier ist das Ergebnis: {"approved":false,"checks":[]} Ende.'), { approved: false, checks: [] });
+  assert.throws(() => parseModelJson('{"approved":tru'));
+});
+
+test('ASK verification tolerates code fences, explains cut-off answers, and Gemini stands in when ASK fails', async () => {
+  const script = { title: 'T', text: 'Ein Test.', sourceIds: ['s1'] };
+  const verdict = JSON.stringify({ approved: true, checks: [{ claim: 'Test', sourceIds: ['s1'], quote: 'Ein Test.', supported: true }], reasons: [] });
+  const ask = (content: string, finish = 'stop') => new AskEditorialVerifier({ baseUrl: 'https://ask.example/api/v1', key: 'k', model: 'm' },
+    async () => Response.json({ choices: [{ message: { content }, finish_reason: finish }] }));
+  assert.equal((await ask('```json\n' + verdict + '\n```').verify(script, sources)).approved, true);
+  await assert.rejects(ask('{"approved":true,"checks":[{"claim":"Te', 'length').verify(script, sources), /cut off \(max_tokens reached\)/);
+  await assert.rejects(ask('', 'length').verify(script, sources), /no verification content \(finish_reason: length\)/);
+  const gemini = new GeminiEditorialVerifier({ key: 'g' }, async () => geminiText(verdict));
+  const fallback = await new FallbackVerifier(ask('kaputt'), gemini).verify(script, sources);
+  assert.equal(fallback.approved, true);
+  assert.match(fallback.reasons.at(-1)!, /Geprüft durch Ersatz, weil: ASK returned invalid verification data/);
+  // A real verdict from ASK is final, even a rejection.
+  let geminiCalls = 0;
+  const counting = new GeminiEditorialVerifier({ key: 'g' }, async () => { geminiCalls++; return geminiText(verdict); });
+  const rejected = JSON.stringify({ approved: false, checks: [{ claim: 'Mars', sourceIds: ['s1'], quote: '', supported: false }], reasons: [] });
+  assert.equal((await new FallbackVerifier(ask(rejected), counting).verify(script, sources)).approved, false);
+  assert.equal(geminiCalls, 0);
 });
