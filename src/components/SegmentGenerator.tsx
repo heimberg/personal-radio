@@ -173,6 +173,16 @@ export function SegmentGenerator({ profile, onReady }: Props) {
           : response.status === 503 && details.error === 'podcast_provider_not_configured' ? 'Gemini ist für Podcasts noch nicht in der privaten App konfiguriert.'
           : response.status === 503 ? 'Das dauerhafte Kontingent ist gerade nicht erreichbar. Bitte später erneut versuchen.'
           : details.error === 'not_found' ? 'Die private KI-API ist auf dieser Demo noch nicht eingerichtet.'
+          : response.status === 502 && details.error === 'generation_failed' && mode === 'podcast' && details.detail?.includes('Gemini text request failed (503)')
+            ? 'Gemini ist vorübergehend überlastet (503). Der Aufruf wurde bereits wiederholt; bitte versuche es in etwa einer Minute nochmals.'
+          : response.status === 502 && details.error === 'generation_failed' && mode === 'podcast' && details.detail?.includes('Gemini text request failed (401)')
+            ? 'Gemini lehnt den API-Key ab (401). Prüfe das Cloudflare-Secret GEMINI_API_KEY.'
+          : response.status === 502 && details.error === 'generation_failed' && mode === 'podcast' && details.detail?.includes('Gemini text request failed (429)')
+            ? 'Gemini meldet ein Kontingent- oder Rate-Limit (429). Prüfe Kontingent und Abrechnung in Google AI Studio.'
+          : response.status === 502 && details.error === 'generation_failed' && mode === 'podcast' && details.detail?.includes('ASK verification')
+            ? 'Die ASK-Quellenprüfung ist fehlgeschlagen. Prüfe ASK-URL, API-Key und Modell.'
+          : response.status === 502 && details.error === 'generation_failed' && mode === 'podcast'
+            ? `Podcast-Erstellung fehlgeschlagen: ${details.detail ?? 'unbekannter Providerfehler'}. Prüfe Gemini-Konfiguration und Kontingent.`
           : response.status === 502 && details.error === 'generation_failed'
             ? `Erstellung fehlgeschlagen: ${details.detail ?? 'unbekannter Providerfehler'}. Prüfe ASK- und Mistral-Konfiguration.`
             : 'Der Beitrag konnte gerade nicht erstellt werden.';
