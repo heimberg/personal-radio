@@ -276,3 +276,23 @@ test('a rate-limited verifier defers instead of rejecting the draft', async () =
   assert.equal(await produceItem(h.deps, OWNER, id), 'deferred');
   assert.equal((await h.store.getItem(OWNER, id))?.lease_until, '2026-09-27T08:02:00.000Z');
 });
+
+test('a manual retry retires failed items, restarts waiting ones and lifts the failure pause', async () => {
+  const h = harness({ items: [] }); await h.setup();
+  const due = (await tick(h.deps, OWNER)).due;
+  for (const id of due.slice(0, 3)) assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
+  h.deps.researcher = undefined;
+  h.behaviour.voice = () => { throw new ProviderError('Mistral', 429); };
+  h.deps.fetchFeed = async () => feedItems(3);
+  assert.equal(await produceItem(h.deps, OWNER, due[3]), 'deferred');
+  assert.equal((await tick(h.deps, OWNER)).planned, 0); // paused by three failures
+  assert.deepEqual(await h.store.retryNow(OWNER, NOW), { retired: 3, restarted: 1 });
+  const restarted = await h.store.getItem(OWNER, due[3]);
+  assert.equal(restarted?.lease_until, null); assert.equal(restarted?.state, 'voicing');
+  const after = await tick(h.deps, OWNER);
+  assert.ok(after.planned > 0);
+  assert.ok(after.due.includes(due[3]));
+  h.behaviour.voice = undefined;
+  assert.equal(await produceItem(h.deps, OWNER, due[3]), 'ready');
+  assert.equal(h.calls.draft, 1); // the approved script was kept
+});

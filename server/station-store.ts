@@ -107,6 +107,20 @@ export class StationStore {
       AND (lease_until IS NULL OR lease_until < ?) ORDER BY seq`).bind(owner, now.toISOString()).all<TimelineRow>()).results;
   }
 
+  /**
+   * Manual restart after a provider problem: failed items are retired (they no longer count towards the
+   * failure pause) and waiting items become due now with fresh attempts. Approved scripts are kept.
+   */
+  async retryNow(owner: string, now: Date): Promise<{ retired: number; restarted: number }> {
+    const at = now.toISOString();
+    const retired = (await this.db.prepare(`UPDATE timeline_items SET state = 'expired', lease_until = NULL, updated_at = ?
+      WHERE owner_id = ? AND state = 'failed' RETURNING id`).bind(at, owner).all<{ id: string }>()).results.length;
+    const restarted = (await this.db.prepare(`UPDATE timeline_items SET lease_until = NULL, attempts = 0, updated_at = ?
+      WHERE owner_id = ? AND state IN ('planned', 'voicing') AND lease_until IS NOT NULL AND error IS NOT NULL RETURNING id`)
+      .bind(at, owner).all<{ id: string }>()).results.length;
+    return { retired, restarted };
+  }
+
   async recentFailures(owner: string, since: Date): Promise<number> {
     const row = await this.db.prepare(`SELECT COUNT(*) AS failures FROM timeline_items WHERE owner_id = ? AND state = 'failed' AND updated_at >= ?`)
       .bind(owner, since.toISOString()).first<{ failures: number }>();

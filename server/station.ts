@@ -205,7 +205,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { queries = (JSON.parse(row.research_json ?? '{}') as { queries?: string[] }).queries ?? []; } catch { /* Research details are optional. */ }
   return {
     id: row.id, seq: row.seq, showId: row.show_id, showName: config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
-    plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes,
+    plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
     ...(script.interestTags?.length ? { interestTags: script.interestTags } : {}),
