@@ -4,6 +4,7 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Matthias
 
+- [ ] **Gemini als Hauptanbieter:** `GEMINI_API_KEY` eines Google-Projekts mit aktivierter Abrechnung (bezahlter Tarif) als Worker-Secret setzen. ASK ist optional und prüft dann als unabhängiges zweites Modell.
 - [ ] **Vor dem nächsten Deploy (Meilenstein 1):** `npx wrangler r2 bucket create personal-radio-audio` und `npx wrangler queues create personal-radio-production` ausführen; den `CLOUDFLARE_API_TOKEN` um R2- und Queues-Rechte erweitern; Workers-Paid-Plan prüfen; `DAILY_GENERATIONS` an die gewünschte Hördauer anpassen (2-Minuten-Beiträge: ca. 30 pro Stunde). Danach in der App «Einstellungen dieses Geräts übernehmen».
 
 - [ ] **Cloudflare bereitstellen:** Cloudflare-Konto verwenden, D1-Datenbank anlegen und die zurückgegebene Datenbank-ID in `wrangler.toml` einsetzen. Anleitung: [`docs/cloudflare-deployment.md`](docs/cloudflare-deployment.md).
@@ -37,6 +38,9 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - [ ] Meilenstein 2 – Die eine Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Einstellungen als eingebettetes Cockpit (WebView, Login per Access-Einmal-PIN); Zugang zur API per Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
 - [ ] Meilenstein 3 – Spotify in der App über App Remote SDK; Musikblöcke mit Moderations-Triggern (Blockstart/-ende, vor/nach jedem N-ten Titel, alle X Minuten, Gruppenwechsel); KI-Titelwahl mit Anmoderation nur für KI-gewählte Titel; eigene Playlists als rotierende Gruppen mit allgemeinen Überleitungen; harte Übergaben ohne Überlappung, kein Abschneiden von Titeln.
 - [ ] Meilenstein 4 – Tools pro Sendung (Wetter über Open-Meteo, Schlagzeilen, MCP-Server) mit Platzhaltern im Prompt; Themen-Gedächtnis der letzten Beiträge; ElevenLabs als weitere Stimme; Formular-Editoren neben YAML; Musikregeln.
+- [x] Gemini als Standard-Textanbieter (ASK optional pro Sendung und als Prüfinstanz), Web-Recherche mit Google-Suche (`sourceMode: web`), Suchanfragen und Quellen im Cockpit, Themen-Gedächtnis.
+- [ ] Künstler-Stunde (`format: artist_hour`): Dossier per Web-Recherche, KI-Titelwahl mit Spotify-Suche, Moderation vor jedem Titel, Timeline mit Spotify-Einträgen; Vorschau auf dem Desktop, Wiedergabe auf dem Handy mit Meilenstein 3.
+- [ ] Google-Drive-Archiv für 👍-Beiträge und Künstler-Stunden (Audio, Skript, Quellen). Wiedergabe bleibt auf R2.
 - [ ] Später: durchgehender Stream-Modus ohne Spotify (Auto, Lautsprecher).
 
 ## Architekturentscheidungen übernommen (Stand 27.09.2026, Details in docs/architecture.md)

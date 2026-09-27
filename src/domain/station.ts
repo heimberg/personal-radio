@@ -4,6 +4,8 @@ import type { HostPersona, Profile } from './program.ts';
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
 export type ShowFormat = 'brief' | 'podcast';
 export type VerificationPolicy = 'strict' | 'light' | 'off';
+export type TextProvider = 'gemini' | 'ask';
+export type SourceMode = 'feeds' | 'web';
 export interface FeedConfig { id: string; name: string; url: string }
 export interface ShowConfig {
   id: string;
@@ -16,6 +18,12 @@ export interface ShowConfig {
   targetMinutes: number;
   verification: VerificationPolicy;
   voiceId?: string;
+  /** Model that writes the script. Dialogs need Gemini. */
+  textProvider: TextProvider;
+  /** `feeds`: the show's RSS/Atom feeds; `web`: research grounded in Google Search. */
+  sourceMode: SourceMode;
+  /** Research brief for `web` shows, written by the owner. */
+  researchPrompt: string;
 }
 export interface ScheduleSlot { id: string; days: number[]; from: string; to: string; showIds: string[] }
 export interface StationConfig {
@@ -45,6 +53,7 @@ export interface TimelineItemView {
   sources?: Array<{ title: string; url: string }>;
   interestTags?: string[];
   verification?: VerificationPolicy;
+  searchQueries?: string[];
   error?: string;
   audioUrl?: string;
 }
@@ -128,10 +137,16 @@ export function parseStationConfig(raw: unknown): StationConfig {
       return feed;
     });
     if (s.voiceId !== undefined && (typeof s.voiceId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(s.voiceId))) fail(`${path}.voiceId`, 'ungültige Stimmen-ID');
+    const textProvider = s.textProvider ?? 'gemini';
+    if (textProvider !== 'gemini' && textProvider !== 'ask') fail(`${path}.textProvider`, '«gemini» oder «ask»');
+    if (s.format === 'podcast' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Dialoge schreibt nur «gemini»');
+    const sourceMode = s.sourceMode ?? 'feeds';
+    if (sourceMode !== 'feeds' && sourceMode !== 'web') fail(`${path}.sourceMode`, '«feeds» oder «web»');
     return {
       id: id(s.id, `${path}.id`, showIds), name: text(s.name, `${path}.name`, 80), enabled: s.enabled === true,
       format: s.format, instructions: text(s.instructions ?? '', `${path}.instructions`, 2000, false),
       feedIds: [...new Set(showFeeds)], targetMinutes, verification: s.verification,
+      textProvider, sourceMode, researchPrompt: text(s.researchPrompt ?? '', `${path}.researchPrompt`, 1000, false),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),
     };
   });
@@ -170,13 +185,16 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
     version: 1, name: 'Personal Radio', host: DEFAULT_HOST, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
     profile: { ...profile, interestWeights: {} }, feeds,
     shows: [
-      { id: 'kurz', name: 'Kurzbeitrag', enabled: true, format: 'brief', feedIds, verification: 'strict',
+      { id: 'kurz', name: 'Kurzbeitrag', enabled: feedIds.length > 0, format: 'brief', feedIds, verification: 'strict', sourceMode: 'feeds',
         targetMinutes: Math.min(2, Math.max(1, profile.speechMinutes)), instructions: '',
         ...(input.voiceId ? { voiceId: input.voiceId } : {}) },
       { id: 'dialog', name: 'Hintergrund im Dialog', enabled: false, format: 'podcast', feedIds, verification: 'light',
         targetMinutes: 5, instructions: 'Ordne ein, erkläre Begriffe und zeige Zusammenhänge.' },
+      { id: 'entdecken', name: 'Entdeckungen', enabled: true, format: 'brief', feedIds: [], verification: 'strict', sourceMode: 'web',
+        targetMinutes: 2, instructions: 'Erzähle eine konkrete Entdeckung, nicht eine Übersicht.',
+        researchPrompt: 'Finde eine aktuelle, wenig bekannte Entwicklung zu einem meiner Interessen, die ich wahrscheinlich noch nicht kenne.' },
     ],
-    schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['kurz', 'dialog'] }],
+    schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['kurz', 'entdecken', 'dialog'] }],
   });
 }
 

@@ -1,6 +1,9 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer, ProviderError } from './providers.ts';
+import type { Researcher } from './providers.ts';
+import type { EditorialVerifier } from './segment-pipeline.ts';
+import type { TextGenerator } from '../src/domain/program.ts';
 import type { Profile, Source } from '../src/domain/program.ts';
 import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
@@ -37,6 +40,7 @@ interface Environment {
   MISTRAL_TTS_MODEL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_TEXT_MODEL?: string;
+  GEMINI_RESEARCH_MODEL?: string;
   GEMINI_TTS_MODEL?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
@@ -119,11 +123,38 @@ function statusFor(error: unknown) {
   return 502;
 }
 
+interface Providers { ask?: TextGenerator; geminiBrief?: TextGenerator; geminiDialog?: TextGenerator; researcher?: Researcher; verifier: EditorialVerifier }
+const providerCache = new WeakMap<object, Providers>();
+
+/** ASK is optional: Gemini writes by default; ASK, when configured, is the independent second model that verifies. */
+function providersFor(env: Environment): Providers {
+  let providers = providerCache.get(env.DB as object);
+  if (!providers) {
+    const askConfig = { baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL };
+    const askReady = Boolean(env.ASK_BASE_URL && env.ASK_API_KEY && env.ASK_MODEL);
+    const gemini = env.GEMINI_API_KEY ? { key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL } : undefined;
+    const unavailable: EditorialVerifier = { verify: async () => { throw new ProviderError('No verifier configured'); } };
+    providers = {
+      ...(askReady ? { ask: new AskTextGenerator(askConfig) } : {}),
+      ...(gemini ? {
+        geminiBrief: new GeminiBriefGenerator(gemini), geminiDialog: new GeminiPodcastGenerator(gemini),
+        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }),
+      } : {}),
+      verifier: askReady ? new AskEditorialVerifier(askConfig) : gemini ? new GeminiEditorialVerifier(gemini) : unavailable,
+    };
+    providerCache.set(env.DB as object, providers);
+  }
+  return providers;
+}
+
 function pipelineFor(env: Environment): SegmentPipeline {
   let pipeline = pipelines.get(env.DB as object);
   if (!pipeline) {
+    const providers = providersFor(env);
+    const missing: TextGenerator = { generate: async () => { throw new ProviderError('No text provider configured'); } };
     pipeline = new SegmentPipeline(
-      new AskTextGenerator({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
+      // The manual single-segment tool keeps ASK when present and otherwise uses Gemini.
+      providers.ask ?? providers.geminiBrief ?? missing,
       new MistralSpeechSynthesizer({
         key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID, model: env.MISTRAL_TTS_MODEL,
         referenceAudio: async () => {
@@ -132,11 +163,11 @@ function pipelineFor(env: Environment): SegmentPipeline {
           return new Uint8Array(await response.arrayBuffer());
         },
       }),
-      new AskEditorialVerifier({ baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL }),
+      providers.verifier,
       new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
       4,
       env.GEMINI_API_KEY ? {
-        text: new GeminiPodcastGenerator({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }),
+        text: providers.geminiDialog!,
         speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }),
       } : undefined,
     );
@@ -152,6 +183,12 @@ function stationDeps(env: Environment): StationDeps {
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
     reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
     podcastAvailable: Boolean(env.GEMINI_API_KEY), now: () => new Date(),
+    generator: (provider, format) => {
+      const providers = providersFor(env);
+      if (provider === 'ask') return format === 'brief' ? providers.ask : undefined;
+      return format === 'podcast' ? providers.geminiDialog : providers.geminiBrief;
+    },
+    researcher: providersFor(env).researcher,
   };
 }
 

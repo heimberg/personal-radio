@@ -20,9 +20,10 @@ These two requirements override every other decision in this document:
 3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. The configuration screens (the cockpit) are embedded in the same app as a WebView of the private Worker, so there is one app and one code base for the settings. Playback never runs in the WebView. The Spotify Web Playback SDK does not support mobile browsers; it stays a desktop-only option.
 4. **The web cockpit is the settings surface.** Shows, persona, sources, schedule and music rules are edited as YAML, the timeline shows sources per segment. It runs inside the Android app and, for convenience, in a desktop browser.
 5. **Server-side configuration.** A backend that produces without an open browser must know the configuration, so shows, sources, schedule, feedback and memory move from `localStorage` to D1. The device keeps only UI preferences and a playback cache. Export and delete remain available.
-6. **Providers are replaceable adapters.** Text through an OpenAI-compatible chat API (ASK by default, owner-controlled; model per show) and Gemini for dialogs. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded.
+6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
-8. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
+8. **Audio lives in R2, Google Drive is an archive.** Playout needs a few hundred MB at most (a 2-minute MP3 is about 2 MB; 7-day retention), well inside R2's free allowance with free egress. Google Drive would need a stored OAuth token (refresh tokens of Google apps in "testing" status expire after 7 days), would route every stream through the Worker and adds latency and quotas. The owner's 2 TB are used later for an archive: liked segments and artist hours are copied to a Drive folder with script and sources.
+9. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
 
 ## System overview
 
@@ -81,6 +82,42 @@ Explicit configuration always wins over learned weights. The existing learning r
 - **Audio** lives in R2 under `segments/<item>.mp3|wav`, is served with HTTP range support and is deleted 7 days after playback or on expiry.
 - **Feedback** from the player (`complete`, `skip`, thumbs) is stored in D1; server-side learned weights feed the next drafts.
 
+## Web research (implemented)
+
+Shows with `sourceMode: web` need no feed. Production runs two steps:
+
+1. **Research** (`GeminiResearcher`): one Gemini call with the `google_search` tool, the show's `researchPrompt`, the listener's interests, today's date and the recent topics. From the grounding metadata only sentences that Gemini attributes to a search result are kept, grouped by that result; each result becomes a source (`w1`…`w8`, at most 24,000 characters in total). Ungrounded text is discarded. The search queries are stored with the item (`research_json`) and shown in the cockpit as Google search links.
+2. **Script** from these sources exactly like from feed articles, followed by the show's verification policy. With `strict`, every claim must quote a grounded sentence.
+
+The two steps keep the script call independent of whether a model supports search and structured output in one request. Grounded requests are billed separately beyond a free daily allowance. Google's terms for grounding with Google Search require showing the search suggestions where grounded results are shown; the cockpit lists the queries as links, which must be checked against the current terms before wider use. Grounding result URLs can be Google redirect links; their titles name the site.
+
+**Topic memory:** every draft and every research request receive the titles of the last 15 produced segments with the instruction not to repeat them.
+
+## Artist hour (next)
+
+A show format `artist_hour` for one hour about one artist or band: individual tracks, and between them generated background on the artist, the band and the songs, grounded in web search.
+
+```yaml
+- id: kuenstler-sonntag
+  name: Künstler-Stunde
+  format: artist_hour
+  artist: Portishead          # or pick: interests — the AI chooses from the listener's interests
+  tracks: 11
+  talkSecondsPerTrack: 60
+  instructions: Frühwerk und Einflüsse betonen, keine Chart-Statistiken.
+  verification: strict
+```
+
+Production, entirely ahead of time:
+
+1. **Dossier:** web research (as above) on biography, periods, albums, the story of individual songs and anecdotes.
+2. **Track selection:** the LLM picks about 11 songs across the career with a reason each; the backend resolves them with Spotify search and keeps unambiguous matches only (AI → Spotify; facts come from the web, never from Spotify).
+3. **Script:** opening, a 45–90 second moderation before each resolved track, closing — in the host persona, optionally as a dialog with the co-host. Moderation only for tracks that resolved.
+4. **Check and voice:** claims are checked against the dossier sources; unsupported sentences are rewritten or dropped. Moderations are voiced to R2.
+5. **Timeline:** opening → moderation → Spotify track → moderation → … → closing. About 45 minutes of music and 12–15 minutes of AI speech per hour, which satisfies the speech requirement by construction. One hour needs roughly 10,000–12,000 TTS characters; raise `DAILY_TTS_CHARACTERS` accordingly.
+
+Timeline items gain the kind `spotify-track`. Spotify tracks play on the phone only with the Android app (milestone 3); the hour can be produced and inspected in the cockpit before, and previewed on desktop with the Web Playback SDK.
+
 ## Music curation (AI → Spotify only)
 
 No Spotify audio, metadata, search results or listening behaviour are ever sent to an AI provider or used for learning. The data flow goes one way:
@@ -132,7 +169,7 @@ Public repository, private application. Cloudflare Access protects the Worker. B
 
 ## Current state and gaps
 
-Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning. Milestone 1 adds the server-side program described above, plus the host persona and the YAML editor.
+Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning. Milestone 1 adds the server-side program described above, plus the host persona, the YAML editor, Gemini as default writer, web research with Google Search grounding and the topic memory.
 
 Remaining gaps:
 
@@ -145,8 +182,8 @@ Remaining gaps:
 
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; import of device settings; queue production with R2 audio; cron horizon with listener gate; timeline API; cockpit timeline with continuous browser playback.
 2. **The Android app with our segments:** Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth and the embedded cockpit; 60-minute screen-off test. From here on the app is the only way to listen on the phone.
-3. **Spotify in the app:** App Remote, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
-4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, topic memory, ElevenLabs as TTS option, form editors next to YAML, music rules, verification policy per show.
+3. **Spotify in the app:** App Remote, the artist hour as the first music format, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
+4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, ElevenLabs as TTS option, form editors next to YAML, music rules, Google Drive archive for liked segments and artist hours.
 5. **Learning and memory:** feedback weights in the planner, deduplication, series.
 6. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
 
@@ -164,3 +201,4 @@ Remaining gaps:
 - https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/
 - https://docs.mistral.ai/studio/audio/text_to_speech/speech
 - https://ai.google.dev/gemini-api/docs/speech-generation
+- https://ai.google.dev/gemini-api/docs/google-search

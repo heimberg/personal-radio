@@ -103,11 +103,11 @@ export class SegmentPipeline {
   }
 
   /** Step 1: provider draft, structurally validated against the supplied sources. */
-  async draft(profile: Profile, sources: Source[], mode: 'brief' | 'podcast', direction?: EditorialDirection): Promise<Script> {
+  async draft(profile: Profile, sources: Source[], mode: 'brief' | 'podcast', direction?: EditorialDirection, generator?: TextGenerator): Promise<Script> {
     validateSources(sources);
     if (mode !== 'brief' && mode !== 'podcast' || mode === 'podcast' && !this.podcast) throw new PipelineError('INVALID_INPUT');
     const safeProfile = parseProfile(profile);
-    const textProvider = mode === 'podcast' ? this.podcast!.text : this.text;
+    const textProvider = generator ?? (mode === 'podcast' ? this.podcast!.text : this.text);
     const script = parseScript(await textProvider.generate(safeProfile, sources, direction), sources);
     const allowedTags = new Set([...safeProfile.topics, ...safeProfile.interests]);
     script.interestTags = script.interestTags?.filter(tag => allowedTags.has(tag)).slice(0, 30) ?? [];

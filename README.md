@@ -35,7 +35,7 @@ npm run build
 - Cloudflare Worker API foundation with Access JWT validation, ASK claim/evidence verification and atomic D1 daily request/TTS quotas. Requires account setup and provider secrets; not deployed or connected to the Pages demo.
 - User-entered RSS/Atom feeds with bounded server retrieval; the app compares saved feeds, ranks entries against interests and learned preferences, and preselects a match.
 - Optional Gemini dialog generation and two-speaker TTS, keeping source evidence verification in ASK and all API credentials in Worker secrets.
-- Server-side program (private Worker): station configuration in D1, cron planning while the owner listens, queue production with audio in R2, timeline API, a program panel that plays ready segments continuously and reports feedback, a host persona for all generated speech and a YAML editor for the whole configuration. See [architecture](docs/architecture.md).
+- Server-side program (private Worker): station configuration in D1, cron planning while the owner listens, queue production with audio in R2, timeline API, a program panel that plays ready segments continuously and reports feedback, a host persona for all generated speech, a YAML editor for the whole configuration, Gemini as default writer with web research grounded in Google Search (sources and search queries shown per segment) and a topic memory. ASK is optional. See [architecture](docs/architecture.md).
 - PWA manifest, Android install icons and a service worker that caches only the static app shell.
 - GitHub Actions type checks, tests, build and a downloadable web build artifact.
 

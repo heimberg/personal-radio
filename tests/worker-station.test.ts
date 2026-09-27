@@ -60,6 +60,8 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.deepEqual(await (await call('/api/station')).json(), { config: null });
     const station = defaultStationConfig({ profile: { topics: [], interests: ['Raumfahrt'], interestWeights: {}, speechMinutes: 2, exploration: 0 },
       feeds: [{ name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }] });
+    // This environment only has ASK: the feed show writes with ASK, the web research show stays off.
+    station.shows = station.shows.map(show => show.id === 'kurz' ? { ...show, textProvider: 'ask' } : show.id === 'entdecken' ? { ...show, enabled: false } : show);
     const invalid = await call('/api/station', { method: 'PUT', body: JSON.stringify({ ...station, horizonMinutes: 500 }) });
     assert.equal(invalid.status, 400); assert.match((await invalid.json()).detail, /horizonMinutes/);
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station), headers: { Origin: 'https://evil.example' } })).status, 403);
@@ -97,5 +99,55 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     await worker.scheduled({}, env as never, { waitUntil: promise => { pending.push(promise); } });
     await Promise.all(pending);
     assert.equal(sent.length, 10 + 10);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Gemini-only setup: web research, Gemini draft and Gemini verification without ASK', async () => {
+  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const jwk = await exportJWK(publicKey); Object.assign(jwk, { kid: 'k2', alg: 'RS256', use: 'sig' });
+  const team = 'gemini-test.cloudflareaccess.com', aud = 'gemini-aud';
+  const token = await new SignJWT({ email: 'owner@example.test', type: 'app' }).setProtectedHeader({ alg: 'RS256', kid: 'k2' })
+    .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
+    if (url.includes('generativelanguage.googleapis.com')) {
+      const body = JSON.parse(String(init?.body));
+      const system = body.systemInstruction.parts[0].text as string;
+      const reply = (text: string, groundingMetadata?: unknown) => Response.json({ candidates: [{ content: { parts: [{ text }] }, ...(groundingMetadata ? { groundingMetadata } : {}) }] });
+      if (body.tools) {
+        calls.push('research');
+        return reply('Die Sonde startet 2027.', { webSearchQueries: ['sonde 2027'], groundingChunks: [{ web: { uri: 'https://example.org/sonde', title: 'example.org' } }],
+          groundingSupports: [{ segment: { text: 'Die Sonde startet 2027.' }, groundingChunkIndices: [0] }] });
+      }
+      if (system.startsWith('Prüfe')) {
+        calls.push('verify');
+        return reply(JSON.stringify({ approved: true, checks: [{ claim: 'Start 2027', sourceIds: ['w1'], quote: 'Die Sonde startet 2027.', supported: true }], reasons: [] }));
+      }
+      calls.push('draft');
+      return reply(JSON.stringify({ title: 'Start 2027', text: 'Die Sonde startet 2027.', sourceIds: ['w1'] }));
+    }
+    if (url.endsWith('/v1/audio/speech')) { calls.push('tts'); return Response.json({ audio_data: 'SUQz' }); }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const sent: Array<{ owner: string; itemId: string }> = [];
+  const env = { DB: sqliteD1(), AUDIO: memoryBucket(), PRODUCTION: { send: async (message: { owner: string; itemId: string }) => { sent.push(message); } },
+    ASSETS: { fetch: async () => new Response('app') }, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud, ALLOWED_EMAIL: 'owner@example.test',
+    ASK_BASE_URL: 'https://ask.example/api/v1', ASK_MODEL: 'ask-base', GEMINI_API_KEY: 'gemini', MISTRAL_API_KEY: 'mistral', MISTRAL_VOICE_ID: 'voice' };
+  const call = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, {
+    ...init, headers: { 'Cf-Access-Jwt-Assertion': token, Origin: ORIGIN, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+  }), env as never);
+  try {
+    const station = defaultStationConfig({ profile: { topics: [], interests: ['Raumfahrt'], interestWeights: {}, speechMinutes: 2, exploration: 0 } });
+    assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
+    await call('/api/timeline/plan', { method: 'POST' });
+    await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
+    assert.deepEqual(calls, ['research', 'draft', 'verify', 'tts']);
+    const { items } = await (await call('/api/timeline')).json() as { items: Array<{ state: string; title?: string; searchQueries?: string[]; sources?: unknown[] }> };
+    assert.equal(items[0].state, 'ready'); assert.equal(items[0].title, 'Start 2027');
+    assert.deepEqual(items[0].searchQueries, ['sonde 2027']);
+    assert.deepEqual(items[0].sources, [{ title: 'example.org', url: 'https://example.org/sonde' }]);
   } finally { globalThis.fetch = originalFetch; }
 });

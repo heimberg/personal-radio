@@ -39,6 +39,9 @@ Workers and D1 have free plans. Access is free for small teams (currently up to 
 
 ## Program production
 
+**Providers:** `GEMINI_API_KEY` is the main key: Gemini writes briefs and dialogs, researches web shows with Google Search and verifies when ASK is absent. Use a billed Gemini project (paid tier). `ASK_API_KEY` is optional; when set, ASK verifies `strict` shows as an independent second model and shows with `textProvider: ask` write with it. `GEMINI_RESEARCH_MODEL` optionally overrides the research model (default `GEMINI_TEXT_MODEL`). Grounded research requests are billed separately beyond Google's free daily allowance. Migration `0003_research.sql` stores the search queries.
+
+
 Once the station is configured in the app ("Einstellungen dieses Geräts übernehmen"), the Worker plans and produces the program on its own: the cron trigger tops up the timeline while you listen, the queue consumer produces one segment at a time, and audio is stored in R2. D1 migration `0002_station.sql` adds the tables; the deploy workflow applies it. Production counts against the same daily limits as manual segments (`DAILY_GENERATIONS`, `DAILY_FEED_REQUESTS`, `DAILY_TTS_CHARACTERS`); with 2-minute segments, one hour of listening needs about 30 generations, so raise `DAILY_GENERATIONS` deliberately. The Workers Paid plan is recommended because decoding provider audio can exceed the Free plan's CPU time per invocation.
 
 ## Test the route

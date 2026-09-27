@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, MistralSpeechSynthesizer } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -149,4 +149,58 @@ test('persona and show instructions reach the system prompt; dialogs name host a
   await gemini.generate(defaultProfile, sources, { ...direction, targetMinutes: 5 });
   assert.match(geminiSystem, /host-a ist Mira, Moderation von «Nachtfunk»; host-b ist Jonas\./);
   assert.match(geminiSystem, /etwa 650 Wörter/);
+});
+
+const geminiText = (text: string, groundingMetadata?: unknown) => Response.json({ candidates: [{ content: { parts: [{ text }] }, ...(groundingMetadata ? { groundingMetadata } : {}) }] });
+
+test('Gemini brief uses the shared prompt, JSON output and topic memory', async () => {
+  let body: any, url = '';
+  const gemini = new GeminiBriefGenerator({ key: 'g', model: 'gemini-test' }, async (input, init) => {
+    url = String(input); body = JSON.parse(String(init?.body));
+    return geminiText(JSON.stringify({ title: 'Kurz', text: 'Ein Test.', sourceIds: ['s1'] }));
+  });
+  const script = await gemini.generate(defaultProfile, sources, { avoidTopics: ['Mondlandung'], persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } });
+  assert.equal(script.title, 'Kurz');
+  assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent');
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.match(body.systemInstruction.parts[0].text, /Du sprichst als Mira/);
+  assert.match(body.systemInstruction.parts[0].text, /wiederhole sie nicht.*«Mondlandung»/);
+  assert.deepEqual(JSON.parse(body.contents[0].parts[0].text).sources, sources);
+});
+
+test('Gemini research keeps only search-grounded sentences, grouped by result, plus the search queries', async () => {
+  let body: any;
+  const researcher = new GeminiResearcher({ key: 'g' }, async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return geminiText('Satz A. Satz B. Unbelegte Behauptung.', {
+      webSearchQueries: ['portishead dummy 1994'],
+      groundingChunks: [{ web: { uri: 'https://example.org/a', title: 'example.org' } }, { web: { uri: 'https://example.net/b', title: 'example.net' } }, { web: { uri: 'http://insecure.example/c', title: 'insecure' } }],
+      groundingSupports: [
+        { segment: { text: 'Satz A.' }, groundingChunkIndices: [0, 1] },
+        { segment: { text: 'Satz B.' }, groundingChunkIndices: [1] },
+        { segment: { text: 'Unsicher.' }, groundingChunkIndices: [2] },
+        { segment: { text: 'Kaputt.' }, groundingChunkIndices: [9] },
+      ],
+    });
+  });
+  const now = new Date('2026-09-27T08:00:00Z');
+  const result = await researcher.research({ brief: 'Hintergrund zu Portishead', interests: ['Trip-Hop'], avoidTopics: ['Dummy'], now });
+  assert.deepEqual(body.tools, [{ google_search: {} }]);
+  assert.equal(JSON.parse(body.contents[0].parts[0].text).heute, '2026-09-27');
+  assert.deepEqual(result.queries, ['portishead dummy 1994']);
+  assert.deepEqual(result.sources.map(source => [source.id, source.url, source.excerpt]), [
+    ['w1', 'https://example.net/b', 'Satz A. Satz B.'],
+    ['w2', 'https://example.org/a', 'Satz A.'],
+  ]);
+  assert.ok(!result.sources.some(source => source.excerpt.includes('Unbelegte')));
+  const empty = new GeminiResearcher({ key: 'g' }, async () => geminiText('Nichts gefunden.'));
+  assert.deepEqual(await empty.research({ brief: '', interests: [], avoidTopics: [], now }), { sources: [], queries: [] });
+});
+
+test('Gemini verifier applies the same local quote check as ASK', async () => {
+  const script = { title: 'T', text: 'Ein Test.', sourceIds: ['s1'] };
+  const answer = (quote: string) => new GeminiEditorialVerifier({ key: 'g' }, async () => geminiText(JSON.stringify({
+    approved: true, checks: [{ claim: 'Test', sourceIds: ['s1'], quote, supported: true }], reasons: [] })));
+  assert.equal((await answer('Ein Test.').verify(script, sources)).approved, true);
+  assert.deepEqual(await answer('Erfundenes Zitat.').verify(script, sources), { approved: false, reasons: ['UNSUPPORTED_OR_INVALID_EVIDENCE'] });
 });

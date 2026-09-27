@@ -27,12 +27,13 @@ export interface TimelineRow {
   verification: string | null;
   audio_key: string | null;
   content_type: string | null;
+  research_json: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
 }
-export type TimelinePatch = Partial<Pick<TimelineRow, 'state' | 'attempts' | 'lease_until' | 'script_json' | 'sources_json' | 'verification' | 'audio_key' | 'content_type' | 'error'>>;
-const PATCHABLE = ['state', 'attempts', 'lease_until', 'script_json', 'sources_json', 'verification', 'audio_key', 'content_type', 'error'] as const;
+export type TimelinePatch = Partial<Pick<TimelineRow, 'state' | 'attempts' | 'lease_until' | 'script_json' | 'sources_json' | 'verification' | 'audio_key' | 'content_type' | 'research_json' | 'error'>>;
+const PATCHABLE = ['state', 'attempts', 'lease_until', 'script_json', 'sources_json', 'verification', 'audio_key', 'content_type', 'research_json', 'error'] as const;
 
 export class StationStore {
   private db: D1Database;

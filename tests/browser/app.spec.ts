@@ -165,7 +165,7 @@ test('server program: import device settings, show timeline, play ready segments
   await page.route('**/api/timeline', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: stored ? [
     { id: 't1', seq: 1, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
       title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
-      sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }] },
+      sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },
     { id: 't2', seq: 2, showId: 'kurz', showName: 'Kurzbeitrag', plannedAt: '2026-09-27T08:02:00.000Z', state: 'failed', estimatedMinutes: 2, error: 'NO_SOURCES' },
   ] : [] }) }));
   let planned = 0;
@@ -181,10 +181,12 @@ test('server program: import device settings, show timeline, play ready segments
   await expect(page.getByText('2 neue Beiträge geplant, 2 in Produktion.')).toBeVisible();
   expect(planned).toBe(1);
   expect(stored.feeds).toEqual([{ id: 'feed-1', name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }]);
-  expect(stored.shows[0]).toMatchObject({ id: 'kurz', feedIds: ['feed-1'], verification: 'strict' });
+  expect(stored.shows[0]).toMatchObject({ id: 'kurz', feedIds: ['feed-1'], verification: 'strict', textProvider: 'gemini', sourceMode: 'feeds' });
+  expect(stored.shows.find((show: any) => show.id === 'entdecken')).toMatchObject({ enabled: true, sourceMode: 'web' });
   const timeline = page.getByRole('list', { name: 'Programmablauf' });
   await expect(timeline.getByText('Keine neuen Artikel in den Feeds dieser Sendung.')).toBeVisible();
   await expect(timeline.getByRole('link', { name: 'Raumfahrt heute' })).toHaveAttribute('href', 'https://news.example.test/a');
+  await expect(timeline.getByRole('link', { name: 'sonde landung' })).toHaveAttribute('href', 'https://www.google.com/search?q=sonde%20landung');
   await page.getByRole('button', { name: '▶ Programm hören' }).click();
   await expect(page.getByRole('heading', { name: 'Sonde gelandet' })).toBeVisible();
   await expect(page.getByText('Wiedergabe läuft', { exact: true })).toBeVisible();

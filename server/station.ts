@@ -1,9 +1,10 @@
 // Server-only program runtime: plans the timeline and produces its segments without an open browser.
 import { activeSlot } from '../src/domain/station.ts';
-import type { ShowConfig, StationConfig, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
-import type { Profile, Script, Source } from '../src/domain/program.ts';
+import type { ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
+import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
+import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
@@ -20,6 +21,10 @@ export interface StationDeps {
   reserveFeed(owner: string): Promise<void>;
   reserveGeneration(owner: string): Promise<void>;
   podcastAvailable: boolean;
+  /** Script writer for a show's provider and format; undefined when that provider is not configured. */
+  generator?(provider: TextProvider, format: ShowConfig['format']): TextGenerator | undefined;
+  /** Google-Search-grounded research for `web` shows; undefined without Gemini. */
+  researcher?: Researcher;
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -108,6 +113,17 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
   }));
 }
 
+/** Topic memory: titles of the most recent produced segments. */
+async function recentTopics(deps: StationDeps, owner: string): Promise<string[]> {
+  const titles: string[] = [];
+  for (const row of (await deps.store.recentItems(owner, 30)).reverse()) {
+    if (!row.script_json || !['voicing', 'ready', 'played', 'skipped'].includes(row.state)) continue;
+    try { const title = (JSON.parse(row.script_json) as Script).title; if (title) titles.push(title); } catch { /* Skip corrupt rows. */ }
+    if (titles.length >= 15) break;
+  }
+  return titles;
+}
+
 export type ProduceOutcome = 'ready' | 'voicing' | 'failed' | 'deferred' | 'retry' | 'skipped';
 
 /**
@@ -128,15 +144,24 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
     let current = row;
     if (current.state === 'planned') {
       if (show.format === 'podcast' && !deps.podcastAvailable) return fail('PODCAST_PROVIDER_NOT_CONFIGURED');
+      const generator = deps.generator ? deps.generator(show.textProvider, show.format) : undefined;
+      if (deps.generator && !generator) return fail(show.textProvider === 'ask' ? 'ASK_NOT_CONFIGURED' : 'GEMINI_NOT_CONFIGURED');
+      if (show.sourceMode === 'web' && !deps.researcher) return fail('GEMINI_NOT_CONFIGURED');
       await deps.reserveGeneration(owner);
       const profile: Profile = { ...config.profile, interestWeights: learnedWeights(await deps.store.feedback(owner), now.getTime()) };
-      const sources = await collectSources(deps, owner, config, show, profile);
+      const avoidTopics = await recentTopics(deps, owner);
+      let sources: Source[], queries: string[] = [];
+      if (show.sourceMode === 'web') {
+        ({ sources, queries } = await deps.researcher!.research({ brief: show.researchPrompt, interests: [...profile.topics, ...profile.interests], avoidTopics, now }));
+      } else sources = await collectSources(deps, owner, config, show, profile);
       if (!sources.length) return fail('NO_SOURCES');
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
-      const script = await deps.pipeline.draft(profile, sources, show.format, { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host });
+      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics };
+      const script = await deps.pipeline.draft(profile, sources, show.format, direction, generator);
       await deps.pipeline.review(script, sources, show.verification);
-      const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification };
+      const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
+        research_json: queries.length ? JSON.stringify({ queries }) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
       current = { ...current, ...patch };
     }
@@ -168,6 +193,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   let script: Partial<Script> = {}, sources: Source[] = [];
   try { script = JSON.parse(row.script_json ?? '{}'); } catch { /* Keep the item visible without details. */ }
   try { sources = JSON.parse(row.sources_json ?? '[]'); } catch { /* Keep the item visible without sources. */ }
+  let queries: string[] = [];
+  try { queries = (JSON.parse(row.research_json ?? '{}') as { queries?: string[] }).queries ?? []; } catch { /* Research details are optional. */ }
   return {
     id: row.id, seq: row.seq, showId: row.show_id, showName: config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes,
@@ -175,6 +202,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
     ...(script.interestTags?.length ? { interestTags: script.interestTags } : {}),
     ...(row.verification ? { verification: row.verification as VerificationPolicy } : {}),
+    ...(queries.length ? { searchQueries: queries } : {}),
     ...(row.error ? { error: row.error } : {}),
     ...(row.audio_key && row.state !== 'expired' ? { audioUrl: `api/timeline/${row.id}/audio` } : {}),
   };

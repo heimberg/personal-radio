@@ -16,6 +16,8 @@ const profile: Profile = { topics: ['Wissenschaft'], interests: ['Raumfahrt'], i
 
 function config(overrides: Partial<StationConfig> = {}): StationConfig {
   const base = defaultStationConfig({ profile, feeds: [{ name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }] });
+  // Feed-path tests: the web research show is covered separately below.
+  base.shows = base.shows.map(show => show.id === 'entdecken' ? { ...show, enabled: false } : show);
   return parseStationConfig({ ...base, ...overrides });
 }
 
@@ -100,7 +102,7 @@ test('tick plans, production stores audio in the bucket and marks sources as cov
   assert.equal(result.planned, 10); // 20-minute default horizon with 2-minute shows
   assert.equal(result.due.length, 10);
   assert.equal(await produceItem(h.deps, OWNER, result.due[0]), 'ready');
-  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host });
+  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host, avoidTopics: [] });
   const ready = await h.store.getItem(OWNER, result.due[0]);
   assert.equal(ready?.state, 'ready'); assert.equal(ready?.audio_key, `segments/${result.due[0]}.mp3`);
   assert.deepEqual([...h.bucket.keys()], [`segments/${result.due[0]}.mp3`]);
@@ -192,4 +194,54 @@ test('feedback events round-trip for server-side learning', async () => {
   const h = harness(); await h.setup();
   await h.store.addFeedback(OWNER, { itemId: 'a', interests: ['Raumfahrt'], action: 'like', listenedRatio: 1, createdAt: NOW.toISOString() });
   assert.deepEqual(await h.store.feedback(OWNER), [{ itemId: 'a', interests: ['Raumfahrt'], action: 'like', listenedRatio: 1, createdAt: NOW.toISOString() }]);
+});
+
+test('show config defaults to Gemini and feeds; dialogs require Gemini; defaults without feeds research the web', () => {
+  const legacy = structuredClone(config()) as any;
+  delete legacy.shows[0].textProvider; delete legacy.shows[0].sourceMode; delete legacy.shows[0].researchPrompt;
+  const parsed = parseStationConfig(legacy);
+  assert.deepEqual([parsed.shows[0].textProvider, parsed.shows[0].sourceMode, parsed.shows[0].researchPrompt], ['gemini', 'feeds', '']);
+  const dialogWithAsk = structuredClone(parsed) as any; dialogWithAsk.shows[1].textProvider = 'ask';
+  assert.throws(() => parseStationConfig(dialogWithAsk), /Dialoge schreibt nur «gemini»/);
+  const noFeeds = defaultStationConfig({ profile });
+  assert.deepEqual(noFeeds.shows.filter(show => show.enabled).map(show => [show.id, show.sourceMode]), [['entdecken', 'web']]);
+});
+
+test('web shows research with Google grounding, remember recent topics and store the search queries', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => ({ ...show, enabled: show.id === 'entdecken' }));
+  const h = harness({ station: parseStationConfig(station) }); await h.setup();
+  const requests: any[] = [];
+  h.deps.researcher = { research: async request => {
+    requests.push(request);
+    return { queries: ['neue raumsonde'], sources: [{ id: 'w1', url: 'https://example.org/sonde', title: 'example.org', excerpt: 'Die Sonde startet 2027.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }] };
+  } };
+  const generator = { generate: async () => { throw new Error('the pipeline double is used instead'); } };
+  h.deps.generator = (provider, format) => provider === 'gemini' && format === 'brief' ? generator : undefined;
+  const due = (await tick(h.deps, OWNER)).due;
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'ready');
+  assert.equal(requests[0].brief, station.shows.find(show => show.id === 'entdecken')!.researchPrompt);
+  assert.deepEqual(requests[0].interests, ['Wissenschaft', 'Raumfahrt']);
+  assert.deepEqual(requests[0].avoidTopics, []);
+  assert.equal(h.calls.feeds, 0);
+  const view = toView((await h.store.getItem(OWNER, due[0]))!, station);
+  assert.deepEqual(view.searchQueries, ['neue raumsonde']);
+  assert.deepEqual(view.sources, [{ title: 'example.org', url: 'https://example.org/sonde' }]);
+  // The next draft is told what already ran.
+  assert.equal(await produceItem(h.deps, OWNER, due[1]), 'ready');
+  assert.deepEqual(requests[1].avoidTopics, ['Beitrag über example.org']);
+  assert.deepEqual(h.calls.direction?.avoidTopics, ['Beitrag über example.org']);
+  // Without Gemini a web show fails clearly instead of silently using feeds.
+  h.deps.researcher = undefined;
+  assert.equal(await produceItem(h.deps, OWNER, due[2]), 'failed');
+  assert.equal((await h.store.getItem(OWNER, due[2]))?.error, 'GEMINI_NOT_CONFIGURED');
+});
+
+test('a show whose text provider is not configured fails with a clear reason', async () => {
+  const station = config(); station.shows[0].textProvider = 'ask';
+  const h = harness({ station }); await h.setup();
+  h.deps.generator = provider => provider === 'gemini' ? { generate: async () => ({ title: '', text: '', sourceIds: [] }) } : undefined;
+  const [id] = (await tick(h.deps, OWNER)).due;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
+  assert.equal((await h.store.getItem(OWNER, id))?.error, 'ASK_NOT_CONFIGURED');
 });

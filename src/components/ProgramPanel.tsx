@@ -16,10 +16,13 @@ const ERROR_LABELS: Record<string, string> = {
   DAILY_LIMIT: 'Tageslimit erreicht; die Produktion geht nach Mitternacht (UTC) weiter.',
   PODCAST_PROVIDER_NOT_CONFIGURED: 'Gemini ist für Dialog-Sendungen nicht konfiguriert.',
   SHOW_REMOVED: 'Die Sendung existiert nicht mehr.',
+  GEMINI_NOT_CONFIGURED: 'Gemini ist nicht konfiguriert (GEMINI_API_KEY).',
+  ASK_NOT_CONFIGURED: 'ASK ist nicht konfiguriert; stelle die Sendung auf textProvider: gemini.',
 };
 const EDITOR_HELP = [
   '# host: Moderations-Persona – name, tone, style, instructions; cohostName spricht in Dialog-Sendungen mit',
   '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
+  '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');
 const VERIFICATION_LABELS = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' } as const;
@@ -162,6 +165,8 @@ export function ProgramPanel({ player, profile, onStartProgram }: Props) {
         <small>{item.showName} · {STATE_LABELS[item.state]}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</small>
         {item.error && item.state !== 'ready' && <small className="timeline-error">{ERROR_LABELS[item.error] ?? item.error}</small>}
         {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
+        {item.searchQueries?.length ? <small className="timeline-search">Google-Suche: {item.searchQueries.map((query, index) => <span key={query}>{index ? ' · ' : ''}
+          <a href={`https://www.google.com/search?q=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer">{query}</a></span>)}</small> : null}
       </span>
     </li>)}</ol>
     <p role="status" aria-live="polite">{message}</p>
