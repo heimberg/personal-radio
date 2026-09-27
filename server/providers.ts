@@ -139,31 +139,25 @@ export class AskEditorialVerifier implements EditorialVerifier {
   }
 }
 
-// Pinned CC0 German voice reference: rhasspy/dataset-voice-kerstin.
-const KERSTIN_REFERENCE_URL = 'https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/f73127135cf80d6ef52aef6af58c49774f4fd625/verified/de_rhasspy-0019.flac';
-let kerstinReferencePromise: Promise<string> | undefined;
-async function kerstinReference(fetcher: Fetch): Promise<string> {
-  kerstinReferencePromise ??= (async () => {
-    const response = await request(fetcher, KERSTIN_REFERENCE_URL, {}, 15_000);
-    if (!response.ok) throw new ProviderError('German reference audio', response.status);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.length < 1_000 || bytes.length > 512_000) throw new Error('German reference audio size invalid');
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
-    }
-    return btoa(binary);
-  })().catch(error => { kerstinReferencePromise = undefined; throw error; });
-  return kerstinReferencePromise;
+// German CC0 sample is bundled at public/audio/kerstin-reference.flac.
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
+  }
+  return btoa(binary);
 }
 
 export class MistralSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private voiceId?: string;
   private fetcher: Fetch;
-  constructor(config: { key: string; voiceId?: string }, fetcher: Fetch = fetch) {
+  private referenceAudio?: () => Promise<Uint8Array>;
+  private referenceAudioBase64?: Promise<string>;
+  constructor(config: { key: string; voiceId?: string; referenceAudio?: () => Promise<Uint8Array> }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Mistral configuration incomplete');
     this.key = config.key; this.voiceId = config.voiceId; this.fetcher = fetcher;
+    this.referenceAudio = config.referenceAudio;
   }
   async synthesize(text: string, _turns?: Script['turns'], selectedVoiceId?: string): Promise<Uint8Array> {
     const voiceId = selectedVoiceId ?? this.voiceId;
@@ -171,9 +165,17 @@ export class MistralSpeechSynthesizer implements SpeechSynthesizer {
     if (!text.trim() || text.length > 6000 || text.trim().split(/\s+/).length > 280) {
       throw new Error('TTS text outside segment budget');
     }
-    const voice = voiceId === 'de_kerstin_cc0'
-      ? { ref_audio: await kerstinReference(this.fetcher) }
-      : { voice_id: voiceId };
+    let voice: { ref_audio: string } | { voice_id: string };
+    if (voiceId === 'de_kerstin_cc0') {
+      if (!this.referenceAudio) throw new Error('German reference audio is not configured');
+      this.referenceAudioBase64 ??= this.referenceAudio().then(bytes => {
+        if (bytes.length < 1_000 || bytes.length > 512_000) throw new Error('German reference audio size invalid');
+        return encodeBase64(bytes);
+      }).catch(error => { this.referenceAudioBase64 = undefined; throw error; });
+      voice = { ref_audio: await this.referenceAudioBase64 };
+    } else {
+      voice = { voice_id: voiceId };
+    }
     const response = await request(this.fetcher, 'https://api.mistral.ai/v1/audio/speech', {
       method: 'POST', headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'voxtral-mini-tts-2603', input: text, ...voice, response_format: 'mp3' }),
