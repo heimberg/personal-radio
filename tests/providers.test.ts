@@ -127,3 +127,26 @@ test('TTS rejects oversized input without spending money', async () => {
   const tts = new MistralSpeechSynthesizer({ key: 'test', voiceId: 'test' }, async () => { throw new Error('must not call'); });
   await assert.rejects(tts.synthesize('Wort '.repeat(281)), /budget/);
 });
+
+test('persona and show instructions reach the system prompt; dialogs name host and co-host', async () => {
+  const direction = { instructions: 'Nur Raumfahrt, keine Börse.', targetMinutes: 2, stationName: 'Nachtfunk',
+    persona: { name: 'Mira', tone: 'ruhig', style: 'Hintergrund', instructions: 'Duze den Hörer.', cohostName: 'Jonas' } };
+  let askSystem = '';
+  const ask = new AskTextGenerator({ baseUrl: 'https://ask.example/api/v1', key: 'k', model: 'm' }, async (_url, init) => {
+    askSystem = JSON.parse(String(init?.body)).messages[0].content;
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ title: 'T', text: 'Ein Test.', sourceIds: ['s1'] }) } }] });
+  });
+  await ask.generate(defaultProfile, sources, direction);
+  assert.match(askSystem, /Du sprichst als Mira, Moderation von «Nachtfunk»\. Tonfall: ruhig\. Stil: Hintergrund\. Duze den Hörer\./);
+  assert.match(askSystem, /Vorgaben des Hörers für diese Sendung: Nur Raumfahrt, keine Börse\./);
+  assert.match(askSystem, /maximal 250 Wörter/);
+  let geminiSystem = '';
+  const gemini = new GeminiPodcastGenerator({ key: 'k' }, async (_url, init) => {
+    geminiSystem = JSON.parse(String(init?.body)).systemInstruction.parts[0].text;
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: 'D', sourceIds: ['s1'],
+      turns: [{ speaker: 'host-a', text: 'Hallo Jonas.' }, { speaker: 'host-b', text: 'Hallo Mira.' }] }) }] } }] });
+  });
+  await gemini.generate(defaultProfile, sources, { ...direction, targetMinutes: 5 });
+  assert.match(geminiSystem, /host-a ist Mira, Moderation von «Nachtfunk»; host-b ist Jonas\./);
+  assert.match(geminiSystem, /etwa 650 Wörter/);
+});

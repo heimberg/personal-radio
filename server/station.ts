@@ -134,7 +134,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (!sources.length) return fail('NO_SOURCES');
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
-      const script = await deps.pipeline.draft(profile, sources, show.format, { instructions: show.instructions, targetMinutes: show.targetMinutes });
+      const script = await deps.pipeline.draft(profile, sources, show.format, { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host });
       await deps.pipeline.review(script, sources, show.verification);
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification };
       await deps.store.update(owner, row.id, patch, deps.now());

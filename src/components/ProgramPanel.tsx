@@ -17,6 +17,11 @@ const ERROR_LABELS: Record<string, string> = {
   PODCAST_PROVIDER_NOT_CONFIGURED: 'Gemini ist für Dialog-Sendungen nicht konfiguriert.',
   SHOW_REMOVED: 'Die Sendung existiert nicht mehr.',
 };
+const EDITOR_HELP = [
+  '# host: Moderations-Persona – name, tone, style, instructions; cohostName spricht in Dialog-Sendungen mit',
+  '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
+  '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
+].join('\n');
 const VERIFICATION_LABELS = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' } as const;
 
 function api(path: string) { return new URL(path, window.location.href); }
@@ -92,6 +97,21 @@ export function ProgramPanel({ player, profile, onStartProgram }: Props) {
     finally { setBusy(false); }
   }
 
+  // The YAML library is only loaded when the editor opens.
+  async function toggleEditor() {
+    if (editor !== null) { setEditor(null); return; }
+    const { stringify } = await import('yaml');
+    setEditor(`${EDITOR_HELP}\n${stringify(config, { lineWidth: 0 })}`);
+  }
+
+  async function saveEditor() {
+    const { parse } = await import('yaml');
+    let parsed: unknown;
+    try { parsed = parse(editor ?? ''); }
+    catch (error) { setMessage(`Kein gültiges YAML – ${error instanceof Error ? error.message.split('\n')[0] : 'unbekannter Fehler'}`); return; }
+    void save(parsed);
+  }
+
   function listen() {
     const ready = items.filter(item => item.state === 'ready' && item.audioUrl);
     if (!ready.length) { setMessage('Noch nichts bereit. Das Programm wird produziert; tippe auf «Jetzt planen», falls nichts geplant ist.'); return; }
@@ -128,17 +148,12 @@ export function ProgramPanel({ player, profile, onStartProgram }: Props) {
     <div className="program-actions">
       <button className="primary" onClick={listen}>▶ Programm hören</button>
       <button className="secondary" disabled={busy} onClick={() => void plan()}>Jetzt planen</button>
-      <button className="secondary" onClick={() => setEditor(editor === null ? JSON.stringify(config, null, 2) : null)}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
+      <button className="secondary" onClick={() => void toggleEditor()}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
     </div>
     {editor !== null && <div className="config-editor">
-      <label htmlFor="station-config">Sendungen, Feeds, Sendeuhr und Prompts (JSON)</label>
-      <textarea id="station-config" rows={16} spellCheck={false} value={editor} onChange={event => setEditor(event.target.value)} />
-      <p className="privacy-note">Pro Sendung: <code>instructions</code> (eigener Prompt), <code>targetMinutes</code>, <code>verification</code> (strict/light/off), <code>voiceId</code>. Sendeuhr: Wochentage 0 (So) bis 6 (Sa), Zeiten HH:MM in <code>timezone</code>.</p>
-      <button className="primary" disabled={busy} onClick={() => {
-        let parsed: unknown;
-        try { parsed = JSON.parse(editor); } catch { setMessage('Kein gültiges JSON.'); return; }
-        void save(parsed);
-      }}>Konfiguration speichern</button>
+      <label htmlFor="station-config">Moderation, Sendungen, Feeds, Sendeuhr und Prompts (YAML)</label>
+      <textarea id="station-config" rows={20} spellCheck={false} value={editor} onChange={event => setEditor(event.target.value)} />
+      <button className="primary" disabled={busy} onClick={() => void saveEditor()}>Konfiguration speichern</button>
     </div>}
     <ol className="timeline" aria-label="Programmablauf">{items.slice().reverse().slice(0, 20).reverse().map(item => <li key={item.id} data-state={item.state}>
       <span className="timeline-time">{new Date(item.plannedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}</span>

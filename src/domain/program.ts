@@ -21,8 +21,10 @@ export interface Script {
   turns?: Array<{ speaker: 'host-a' | 'host-b'; text: string }>;
   interestTags?: string[];
 }
-/** Owner-configured direction for one show; both fields are optional. */
-export interface EditorialDirection { instructions?: string; targetMinutes?: number }
+/** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
+export interface HostPersona { name: string; tone: string; style: string; instructions: string; cohostName?: string }
+/** Owner-configured direction for one show; every field is optional. */
+export interface EditorialDirection { instructions?: string; targetMinutes?: number; stationName?: string; persona?: HostPersona }
 export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;
 }

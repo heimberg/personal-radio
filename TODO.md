@@ -26,19 +26,25 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - [ ] **Live-KI-Test durchführen:** Einen kurzen ASK/Mistral-Beitrag und einen Gemini-Zwei-Stimmen-Podcast mit echten Quellen testen; Audio, Latenz, Fehlerfälle und Kostenobergrenzen prüfen.
 - [ ] **Android-Test mit dem echten Backend begleiten:** Wiedergabe bei gesperrtem Bildschirm und Verhalten bei Verbindungsabbrüchen prüfen; nötige Korrekturen umsetzen.
 
+## Pflicht-Anforderungen
+
+- **Eine App auf Android:** Hören, Feedback und Einstellungen in einer einzigen App. Spotify muss installiert und angemeldet sein, wird aber von unserer App im Hintergrund gesteuert.
+- **KI-generierter Sprechanteil in jedem Programm:** Ohne mindestens eine aktive Sprechsendung wird die Konfiguration abgelehnt; Musikblöcke bekommen immer eine generierte Moderation.
+
 ## Nächste Meilensteine
 
-- [x] Meilenstein 1 – Programm auf dem Server: Konfiguration, Timeline, Feedback und Gedächtnis in D1; Produktion über Cloudflare Queue mit Audio in R2; Cron plant nur, solange du zuhörst; Timeline-API und Programm-Panel mit durchgehender Wiedergabe im Browser.
-- [ ] Meilenstein 2 – Native Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Zugang per Cloudflare Access Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
-- [ ] Meilenstein 3 – Spotify in der Android-App über App Remote SDK; Musikblöcke: KI wählt Titel, Backend löst sie per Spotify-Suche auf, Moderation nur für gefundene Titel; harte Übergaben ohne Überlappung.
-- [ ] Meilenstein 4 – Editoren für Sendungen (Prompt-Vorlage, Stimme, Länge, Prüfstrenge), Sendeuhr und Musikregeln.
+- [x] Meilenstein 1 – Programm auf dem Server: Konfiguration, Timeline, Feedback und Gedächtnis in D1; Produktion über Cloudflare Queue mit Audio in R2; Cron plant nur, solange du zuhörst; Timeline-API und Programm-Panel mit durchgehender Wiedergabe im Browser. Dazu Moderations-Persona (Name, Ton, Stil, eigene Anweisungen, Co-Host für Dialoge) und YAML-Editor für die ganze Konfiguration.
+- [ ] Meilenstein 2 – Die eine Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Einstellungen als eingebettetes Cockpit (WebView, Login per Access-Einmal-PIN); Zugang zur API per Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
+- [ ] Meilenstein 3 – Spotify in der App über App Remote SDK; Musikblöcke mit Moderations-Triggern (Blockstart/-ende, vor/nach jedem N-ten Titel, alle X Minuten, Gruppenwechsel); KI-Titelwahl mit Anmoderation nur für KI-gewählte Titel; eigene Playlists als rotierende Gruppen mit allgemeinen Überleitungen; harte Übergaben ohne Überlappung, kein Abschneiden von Titeln.
+- [ ] Meilenstein 4 – Tools pro Sendung (Wetter über Open-Meteo, Schlagzeilen, MCP-Server) mit Platzhaltern im Prompt; Themen-Gedächtnis der letzten Beiträge; ElevenLabs als weitere Stimme; Formular-Editoren neben YAML; Musikregeln.
 - [ ] Später: durchgehender Stream-Modus ohne Spotify (Auto, Lautsprecher).
 
 ## Architekturentscheidungen übernommen (Stand 27.09.2026, Details in docs/architecture.md)
 
 - KI-generierte Beiträge sind der Kern; volle Personalisierung über editierbare Sendungen, Sendeuhr und Musikregeln.
 - Dirigent statt Mischpult: Backend plant und produziert eine Timeline, das Gerät spielt eigene Segmente und Spotify strikt abwechselnd.
-- Native Android-App als Hauptplayer; das Spotify Web Playback SDK läuft nicht in mobilen Browsern und bleibt Desktop-Option.
+- Eine native Android-App mit eingebettetem Cockpit; das Spotify Web Playback SDK läuft nicht in mobilen Browsern und bleibt Desktop-Option.
+- Übernommen aus ai-radio-station (MIT): Segment-Trigger, Playlist-Gruppen, Persona, YAML, Tools/MCP, Themen-Gedächtnis. Nicht übernommen: Ducking (Sprache über Musik), Spotify-Metadaten an die KI, librespot, Wiedergabe über Rechner-Lautsprecher.
 - Konfiguration serverseitig in D1 statt local-first, weil das Backend ohne offenen Browser produziert.
 - Spotify-Daten fliessen nie zur KI: KI → Spotify-Suche, nicht umgekehrt.
 - Prüfstrenge pro Sendung: streng (Zitatprüfung), leicht oder aus.

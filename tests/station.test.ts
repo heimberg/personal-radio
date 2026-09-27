@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activeSlot, ConfigError, defaultStationConfig, parseStationConfig } from '../src/domain/station.ts';
 import type { StationConfig } from '../src/domain/station.ts';
-import type { Profile, Script, Source } from '../src/domain/program.ts';
+import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
 import { planTimeline, produceItem, tick, toView } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
@@ -27,7 +27,7 @@ function feedItems(count: number): FeedItem[] {
 function harness(options: { items?: FeedItem[]; station?: StationConfig } = {}) {
   const db = sqliteD1(), store = new StationStore(db);
   let clock = NOW, ids = 0;
-  const calls = { draft: 0, review: 0, voice: 0, feeds: 0 };
+  const calls: { draft: number; review: number; voice: number; feeds: number; direction?: EditorialDirection } = { draft: 0, review: 0, voice: 0, feeds: 0 };
   const behaviour: { draft?: () => void; review?: () => void; voice?: () => void } = {};
   const bucket = new Map<string, Uint8Array>();
   const deps: StationDeps = {
@@ -36,8 +36,8 @@ function harness(options: { items?: FeedItem[]; station?: StationConfig } = {}) 
     reserveFeed: async () => {}, reserveGeneration: async () => {},
     audio: { put: async (key, value) => { bucket.set(key, value); }, delete: async key => { bucket.delete(key); } },
     pipeline: {
-      draft: async (_profile: Profile, sources: Source[]): Promise<Script> => {
-        calls.draft++; behaviour.draft?.();
+      draft: async (_profile: Profile, sources: Source[], _mode, direction?: EditorialDirection): Promise<Script> => {
+        calls.draft++; calls.direction = direction; behaviour.draft?.();
         return { title: `Beitrag über ${sources[0].title}`, text: 'Gesprochener Text.', sourceIds: sources.map(s => s.id), interestTags: ['Raumfahrt'] };
       },
       review: async () => { calls.review++; behaviour.review?.(); return { approved: true, reasons: [] }; },
@@ -59,6 +59,17 @@ test('station config validates references, bounds and time zones with readable p
   assert.throws(broken(c => { c.schedule[0].showIds = ['nope']; }), /unbekannte Sendung/);
   assert.throws(broken(c => { c.timezone = 'Mars/Olympus'; }), /Zeitzone/);
   assert.throws(broken(c => { c.shows[1].id = 'kurz'; }), /doppelt/);
+  assert.throws(broken(c => { c.shows.forEach((show: any) => { show.enabled = false; }); }), /KI-Sprechbeiträge sind Pflicht/);
+});
+
+test('older stored configs without name and host get the default persona; host fields are validated', () => {
+  const legacy = structuredClone(config()) as any; delete legacy.name; delete legacy.host;
+  const parsed = parseStationConfig(legacy);
+  assert.equal(parsed.name, 'Personal Radio'); assert.equal(parsed.host.name, 'Mira'); assert.equal(parsed.host.cohostName, 'Jonas');
+  assert.throws(() => parseStationConfig({ ...parsed, host: { ...parsed.host, name: '' } }), /host\.name: darf nicht leer sein/);
+  assert.throws(() => parseStationConfig({ ...parsed, host: { ...parsed.host, tone: 'x'.repeat(161) } }), /host\.tone/);
+  const solo = parseStationConfig({ ...parsed, host: { name: 'Lou', tone: 'trocken', style: 'Nachtradio', instructions: '', cohostName: ' ' } });
+  assert.equal(solo.host.cohostName, undefined);
 });
 
 test('schedule slots are evaluated in the station time zone', () => {
@@ -89,6 +100,7 @@ test('tick plans, production stores audio in the bucket and marks sources as cov
   assert.equal(result.planned, 10); // 20-minute default horizon with 2-minute shows
   assert.equal(result.due.length, 10);
   assert.equal(await produceItem(h.deps, OWNER, result.due[0]), 'ready');
+  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host });
   const ready = await h.store.getItem(OWNER, result.due[0]);
   assert.equal(ready?.state, 'ready'); assert.equal(ready?.audio_key, `segments/${result.due[0]}.mp3`);
   assert.deepEqual([...h.bucket.keys()], [`segments/${result.due[0]}.mp3`]);

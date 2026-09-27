@@ -1,5 +1,5 @@
 import { defaultProfile, parseProfile } from './program.ts';
-import type { Profile } from './program.ts';
+import type { HostPersona, Profile } from './program.ts';
 
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
 export type ShowFormat = 'brief' | 'podcast';
@@ -20,6 +20,9 @@ export interface ShowConfig {
 export interface ScheduleSlot { id: string; days: number[]; from: string; to: string; showIds: string[] }
 export interface StationConfig {
   version: 1;
+  /** Station name the host uses on air. */
+  name: string;
+  host: HostPersona;
   timezone: string;
   horizonMinutes: number;
   profile: Profile;
@@ -50,6 +53,11 @@ export interface TimelineItemView {
 export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10] };
 
 export class ConfigError extends Error {}
+
+export const DEFAULT_HOST: HostPersona = {
+  name: 'Mira', tone: 'ruhig, neugierig, präzise', style: 'persönliches Hintergrundradio',
+  instructions: 'Sprich den Hörer direkt an, ohne Floskeln. Erkläre Fachbegriffe kurz.', cohostName: 'Jonas',
+};
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
@@ -90,6 +98,15 @@ export function parseStationConfig(raw: unknown): StationConfig {
   const horizonMinutes = Number(c.horizonMinutes);
   if (!Number.isInteger(horizonMinutes) || horizonMinutes < 10 || horizonMinutes > 120) fail('horizonMinutes', 'ganze Zahl von 10 bis 120');
 
+  // Name and host were added after the first release; stored documents without them get the defaults.
+  const name = c.name === undefined ? 'Personal Radio' : text(c.name, 'name', 60);
+  const h = c.host === undefined ? DEFAULT_HOST : record(c.host, 'host');
+  const host: HostPersona = {
+    name: text(h.name, 'host.name', 40), tone: text(h.tone, 'host.tone', 160), style: text(h.style, 'host.style', 160),
+    instructions: text(h.instructions ?? '', 'host.instructions', 2000, false),
+    ...(h.cohostName !== undefined && String(h.cohostName).trim() ? { cohostName: text(h.cohostName, 'host.cohostName', 40) } : {}),
+  };
+
   const feedIds = new Set<string>();
   const feeds = list(c.feeds, 'feeds', 30).map((value, index): FeedConfig => {
     const f = record(value, `feeds[${index}]`);
@@ -119,6 +136,9 @@ export function parseStationConfig(raw: unknown): StationConfig {
     };
   });
 
+  // AI-generated speech is the core of the station: a program of music alone is not a valid configuration.
+  if (!shows.some(show => show.enabled)) fail('shows', 'mindestens eine aktive Sendung – KI-Sprechbeiträge sind Pflicht');
+
   const slotIds = new Set<string>();
   const schedule = list(c.schedule, 'schedule', 50).map((value, index): ScheduleSlot => {
     const path = `schedule[${index}]`, s = record(value, path);
@@ -138,7 +158,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     return { id: id(s.id, `${path}.id`, slotIds), days: [...new Set(days)].sort(), from: s.from, to: s.to, showIds: slotShows };
   });
 
-  return { version: 1, timezone, horizonMinutes, profile: parseProfile(c.profile), feeds, shows, schedule };
+  return { version: 1, name, host, timezone, horizonMinutes, profile: parseProfile(c.profile), feeds, shows, schedule };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */
@@ -147,7 +167,7 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
   const profile = input.profile ?? { ...defaultProfile, topics: [...defaultProfile.topics], interests: [], interestWeights: {} };
   const feedIds = feeds.map(feed => feed.id);
   return parseStationConfig({
-    version: 1, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
+    version: 1, name: 'Personal Radio', host: DEFAULT_HOST, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
     profile: { ...profile, interestWeights: {} }, feeds,
     shows: [
       { id: 'kurz', name: 'Kurzbeitrag', enabled: true, format: 'brief', feedIds, verification: 'strict',

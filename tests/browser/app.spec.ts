@@ -190,4 +190,21 @@ test('server program: import device settings, show timeline, play ready segments
   await expect(page.getByText('Wiedergabe läuft', { exact: true })).toBeVisible();
   await page.evaluate(() => { const audio = (window as unknown as { testAudio: HTMLAudioElement }).testAudio; audio.currentTime = audio.duration - 0.1; });
   await expect.poll(() => feedback).toEqual([{ action: 'complete', listenedRatio: 1 }]);
+
+  // The configuration is edited as YAML, including the host persona.
+  await page.getByRole('button', { name: 'Konfiguration bearbeiten' }).click();
+  const editor = page.getByLabel('Moderation, Sendungen, Feeds, Sendeuhr und Prompts (YAML)');
+  await expect(editor).toHaveValue(/# host: Moderations-Persona/);
+  await expect(editor).toHaveValue(/\nhost:\n  name: Mira\n/);
+  await editor.fill('shows: [unclosed');
+  await page.getByRole('button', { name: 'Konfiguration speichern' }).click();
+  await expect(page.getByText(/Kein gültiges YAML/)).toBeVisible();
+  await page.getByRole('button', { name: 'Editor schliessen' }).click();
+  await page.getByRole('button', { name: 'Konfiguration bearbeiten' }).click();
+  const yaml = (await editor.inputValue()).replace('  name: Mira\n', '  name: Lou\n');
+  await editor.fill(yaml);
+  await page.getByRole('button', { name: 'Konfiguration speichern' }).click();
+  await expect(page.getByText('Programm gespeichert.')).toBeVisible();
+  expect(stored.host.name).toBe('Lou');
+  expect(stored.shows[0].id).toBe('kurz');
 });
