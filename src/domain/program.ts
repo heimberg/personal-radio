@@ -22,7 +22,7 @@ export interface Script {
   interestTags?: string[];
 }
 /** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
-export interface HostPersona { name: string; tone: string; style: string; instructions: string; cohostName?: string }
+export interface HostPersona { name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string }
 /** Owner-configured direction for one show; every field is optional. */
 export interface EditorialDirection {
   instructions?: string;

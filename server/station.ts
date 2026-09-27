@@ -168,7 +168,8 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
     }
     const script = JSON.parse(current.script_json ?? 'null') as Script;
     const format = script.turns ? 'podcast' : 'brief';
-    const voiced = await deps.pipeline.voice(owner, script, format, format === 'brief' ? show.voiceId : undefined);
+    // The show's own voice wins; otherwise the host persona speaks.
+    const voiced = await deps.pipeline.voice(owner, script, format, format === 'brief' ? show.voiceId ?? config.host.voiceId : undefined);
     const key = `segments/${row.id}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
     await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, audio_key: key, content_type: voiced.contentType, error: null }, deps.now());
@@ -185,7 +186,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       await deps.store.update(owner, row.id, { lease_until: new Date(now.getTime() + waitMs).toISOString(), error: error.message.slice(0, 300) }, deps.now());
       return 'deferred';
     }
-    if (error instanceof PipelineError && (error.code === 'REJECTED' || error.code === 'INVALID_INPUT')) return fail(error.code);
+    if (error instanceof PipelineError && (error.code === 'REJECTED' || error.code === 'INVALID_INPUT')) return fail(error.message.slice(0, 300));
     const attempts = row.attempts + 1;
     const detail = (error instanceof Error ? error.message : 'UNKNOWN').slice(0, 160);
     if (attempts >= MAX_ATTEMPTS) {

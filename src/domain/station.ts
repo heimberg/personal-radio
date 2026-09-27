@@ -68,6 +68,7 @@ export class ConfigError extends Error {}
 export const DEFAULT_HOST: HostPersona = {
   name: 'Mira', tone: 'ruhig, neugierig, präzise', style: 'persönliches Hintergrundradio',
   instructions: 'Sprich den Hörer direkt an, ohne Floskeln. Erkläre Fachbegriffe kurz.', cohostName: 'Jonas',
+  voiceId: 'de_kerstin_cc0',
 };
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -96,6 +97,10 @@ function id(value: unknown, path: string, seen: Set<string>): string {
   seen.add(value);
   return value;
 }
+function voiceIdOf(value: unknown, path: string): string {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(value)) fail(path, 'ungültige Stimmen-ID');
+  return value;
+}
 function minutesOf(time: string) { const [h, m] = time.split(':').map(Number); return h * 60 + m; }
 export function isValidTimezone(timezone: string) {
   try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }); return true; } catch { return false; }
@@ -116,6 +121,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     name: text(h.name, 'host.name', 40), tone: text(h.tone, 'host.tone', 160), style: text(h.style, 'host.style', 160),
     instructions: text(h.instructions ?? '', 'host.instructions', 2000, false),
     ...(h.cohostName !== undefined && String(h.cohostName).trim() ? { cohostName: text(h.cohostName, 'host.cohostName', 40) } : {}),
+    ...(h.voiceId !== undefined ? { voiceId: voiceIdOf(h.voiceId, 'host.voiceId') } : {}),
   };
 
   const feedIds = new Set<string>();
@@ -184,12 +190,11 @@ export function defaultStationConfig(input: { profile?: Profile; feeds?: Array<{
   const profile = input.profile ?? { ...defaultProfile, topics: [...defaultProfile.topics], interests: [], interestWeights: {} };
   const feedIds = feeds.map(feed => feed.id);
   return parseStationConfig({
-    version: 1, name: 'Personal Radio', host: DEFAULT_HOST, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
+    version: 1, name: 'Personal Radio', host: { ...DEFAULT_HOST, ...(input.voiceId ? { voiceId: input.voiceId } : {}) }, timezone: input.timezone && isValidTimezone(input.timezone) ? input.timezone : 'Europe/Zurich', horizonMinutes: 20,
     profile: { ...profile, interestWeights: {} }, feeds,
     shows: [
       { id: 'kurz', name: 'Kurzbeitrag', enabled: feedIds.length > 0, format: 'brief', feedIds, verification: 'strict', sourceMode: 'feeds',
-        targetMinutes: Math.min(2, Math.max(1, profile.speechMinutes)), instructions: '',
-        ...(input.voiceId ? { voiceId: input.voiceId } : {}) },
+        targetMinutes: Math.min(2, Math.max(1, profile.speechMinutes)), instructions: '' },
       { id: 'dialog', name: 'Hintergrund im Dialog', enabled: false, format: 'podcast', feedIds, verification: 'light',
         targetMinutes: 5, instructions: 'Ordne ein, erkläre Begriffe und zeige Zusammenhänge.' },
       { id: 'entdecken', name: 'Entdeckungen', enabled: true, format: 'brief', feedIds: [], verification: 'strict', sourceMode: 'web',

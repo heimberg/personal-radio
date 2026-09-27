@@ -296,3 +296,17 @@ test('a manual retry retires failed items, restarts waiting ones and lifts the f
   assert.equal(await produceItem(h.deps, OWNER, due[3]), 'ready');
   assert.equal(h.calls.draft, 1); // the approved script was kept
 });
+
+test('the host persona\'s voice is used unless the show sets its own; rejections keep their reason', async () => {
+  const station = config(); station.host = { ...station.host, voiceId: 'host-voice' };
+  const h = harness({ station }); await h.setup();
+  const voices: Array<string | undefined> = [];
+  h.deps.pipeline.voice = async (_owner, _script, _format, voiceId) => { voices.push(voiceId); return { audio: new Uint8Array([1]), contentType: 'audio/mpeg', ttsCharacters: 1 }; };
+  const due = (await tick(h.deps, OWNER)).due;
+  await produceItem(h.deps, OWNER, due[0]);
+  assert.deepEqual(voices, ['host-voice']);
+  h.behaviour.review = () => { throw new PipelineError('REJECTED', 'Nicht belegt: «Mars»'); };
+  assert.equal(await produceItem(h.deps, OWNER, due[1]), 'failed');
+  assert.equal((await h.store.getItem(OWNER, due[1]))?.error, 'REJECTED: Nicht belegt: «Mars»');
+  assert.equal(defaultStationConfig().host.voiceId, 'de_kerstin_cc0');
+});

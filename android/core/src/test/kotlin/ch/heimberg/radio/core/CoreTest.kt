@@ -46,6 +46,11 @@ class TimelineTest {
         assertEquals(listOf(SourceRef("example.org", "https://example.org")), items[0].sources)
     }
 
+    @Test fun rejectionsShowTheReason() {
+        assertEquals("Quellenprüfung nicht bestanden – Nicht belegt: «X»", Labels.error("REJECTED: Nicht belegt: «X»"))
+        assertEquals("Quellenprüfung nicht bestanden.", Labels.error("REJECTED"))
+    }
+
     @Test fun queueHandsOutEachReadySegmentOnceInProgramOrder() {
         val queue = ProgramQueue()
         val items = TimelineJson.parse(body)

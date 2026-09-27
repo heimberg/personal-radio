@@ -162,7 +162,8 @@ function pipelineFor(env: Environment): SegmentPipeline {
       // The manual single-segment tool keeps ASK when present and otherwise uses Gemini.
       providers.ask ?? providers.geminiBrief ?? missing,
       new MistralSpeechSynthesizer({
-        key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID, model: env.MISTRAL_TTS_MODEL,
+        // Kerstin is the bundled German reference voice, so a missing setting never blocks speech.
+        key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID || 'de_kerstin_cc0', model: env.MISTRAL_TTS_MODEL,
         referenceAudio: async () => {
           const response = await env.ASSETS.fetch(new Request('https://assets.local/audio/kerstin-reference.flac'));
           if (!response.ok) throw new Error('German reference audio unavailable');

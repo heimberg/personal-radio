@@ -12,8 +12,10 @@ export interface CharacterBudgetStore { reserve(ownerId: string, characters: num
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
-  constructor(code: PipelineError['code']) {
-    super(code); this.code = code;
+  /** Human-readable reason, e.g. which claim the verifier could not find in the sources. */
+  readonly detail?: string;
+  constructor(code: PipelineError['code'], detail?: string) {
+    super(detail ? `${code}: ${detail}` : code); this.code = code; this.detail = detail;
   }
 }
 
@@ -123,9 +125,9 @@ export class SegmentPipeline {
     catch (error) {
       // A rate-limited verifier says nothing about the script; let the caller wait and retry.
       if ((error as { status?: unknown } | null)?.status === 429) throw error;
-      throw new PipelineError('REJECTED');
+      throw new PipelineError('REJECTED', `Prüfinstanz nicht erreichbar oder fehlerhaft (${(error instanceof Error ? error.message : 'unbekannt').slice(0, 160)})`);
     }
-    if (!decision.approved) throw new PipelineError('REJECTED');
+    if (!decision.approved) throw new PipelineError('REJECTED', decision.reasons.join('; ').slice(0, 240) || undefined);
     return decision;
   }
 
