@@ -4,24 +4,24 @@ The hosted app uses one Cloudflare Worker for the built web app and its authenti
 
 ## Cost and limits
 
-Workers and D1 have free plans. Access is free for small teams (currently up to 50 users). Free D1 has daily query/row limits; requests fail after those quotas are exhausted until reset. Cloudflare's paid Workers plan currently starts at USD 5/month. These platform limits do not include any charges from ASK or Mistral. The application independently caps one allowed email at 24 segment requests, 60 feed fetches and 12,000 TTS characters per UTC day. Tune these values in `wrangler.toml`; changes require a deploy. D1 limits are also enforced atomically in the database across Worker instances.
+Workers and D1 have free plans. Access is free for small teams (currently up to 50 users). Free D1 has daily query/row limits; requests fail after those quotas are exhausted until reset. Cloudflare's paid Workers plan currently starts at USD 5/month. These platform limits do not include any charges from ASK or Mistral. The application independently caps one allowed email at 24 segment requests, 60 feed fetches and 12,000 TTS characters per UTC day. Tune these values as Worker variables in the Cloudflare dashboard (Worker → Settings → Variables and Secrets); they take effect without a deploy. `wrangler.toml` deliberately sets no `[vars]`, because values there would overwrite the dashboard on every deploy; its comment lists all optional variables with their defaults. D1 limits are also enforced atomically in the database across Worker instances.
 
 ## One-time account setup
 
 1. Create or use a Cloudflare account. Install Node 24, then authenticate Wrangler with `npx wrangler login`.
 2. Create the persistent database with `npx wrangler d1 create personal-radio`. Copy the returned database ID into `wrangler.toml` in place of `REPLACE_WITH_D1_DATABASE_ID`.
-3. Create the audio bucket and the production queue (names must match `wrangler.toml`):
+3. Create the audio bucket and the production queue, either in the dashboard (R2 → Create bucket; Queues → Create queue) or with Wrangler. The names must match `wrangler.toml`:
 
    ```sh
    npx wrangler r2 bucket create personal-radio-audio
    npx wrangler queues create personal-radio-production
    ```
 
-   The deploy fails until both exist. The cron trigger (every 10 minutes) is registered by the deploy itself.
+   The deploy fails until both exist. These are bindings, not variables, so they stay in `wrangler.toml`. The cron trigger (every 10 minutes) is registered by the deploy itself.
 4. In the GitHub repository settings, add Actions secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts, D1, Workers R2 Storage and Queues edit permissions) and `CLOUDFLARE_ACCOUNT_ID`.
 5. Run **Actions → Deploy private Worker → Run workflow**. The workflow builds the app, applies D1 migrations, then deploys the Worker. This first deployment has no provider credentials and rejects requests until Access and its identity settings are configured.
 6. In Cloudflare, open the Worker `personal-radio-private` → **Settings → Domains & Routes**. Enable Cloudflare Access for the `workers.dev` URL. Create an allow policy for only your email. Cloudflare documents Access protection for Workers and JWT validation in the Worker itself.
-7. From the Access application, copy the team-domain hostname (without `https://`) and the Application Audience (AUD) tag. Set Worker secrets:
+7. From the Access application, copy the team-domain hostname (without `https://`) and the Application Audience (AUD) tag. Set the Worker secrets, either in the dashboard (Worker → Settings → Variables and Secrets, type *Secret*) or with Wrangler:
 
    ```sh
    npx wrangler secret put ACCESS_TEAM_DOMAIN

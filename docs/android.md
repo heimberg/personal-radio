@@ -15,7 +15,7 @@ The single app for listening: native playback of the server-produced program, lo
 
 1. **Service token:** Cloudflare Zero Trust → Access → Service Auth → *Create Service Token*, e.g. `personal-radio-app`. Copy the Client ID and Client Secret (the secret is shown only once).
 2. **Access policy:** in the Access application of the Worker add a policy with action **Service Auth** that includes this service token (next to the existing policy that allows your email).
-3. **Worker secret:** `npx wrangler secret put ACCESS_SERVICE_TOKEN_ID` with the token's **Client ID** (ends in `.access`). The Worker then treats requests with this token as the owner.
+3. **Worker secret:** add `ACCESS_SERVICE_TOKEN_ID` with the token's **Client ID** (ends in `.access`) in the dashboard (Worker → Settings → Variables and Secrets) or with `npx wrangler secret put ACCESS_SERVICE_TOKEN_ID`. The Worker then treats requests with this token as the owner.
 4. **Install:** open the latest run of **Actions → Android app**, download the artifact `personal-radio-android`, unzip it and install the APK on the phone (allow installation from this source when Android asks).
 5. **Connect:** on first start enter the Worker address (`https://…workers.dev`), Client ID and Client Secret. The app tests the connection before it saves anything.
 
