@@ -36,6 +36,7 @@ npm run build
 - User-entered RSS/Atom feeds with bounded server retrieval; the app compares saved feeds, ranks entries against interests and learned preferences, and preselects a match.
 - Optional Gemini dialog generation and two-speaker TTS, keeping source evidence verification in ASK and all API credentials in Worker secrets.
 - Server-side program (private Worker): station configuration in D1, cron planning while the owner listens, queue production with audio in R2, timeline API, a program panel that plays ready segments continuously and reports feedback, a host persona for all generated speech, a YAML editor for the whole configuration, Gemini as default writer with web research grounded in Google Search (sources and search queries shown per segment) and a topic memory. ASK is optional. See [architecture](docs/architecture.md).
+- Android app ([docs/android.md](docs/android.md)): native Media3 playback of the server program with lock-screen and Bluetooth controls, offline cache, feedback and the embedded settings cockpit; authenticates with a Cloudflare Access service token. APK built by GitHub Actions.
 - PWA manifest, Android install icons and a service worker that caches only the static app shell.
 - GitHub Actions type checks, tests, build and a downloadable web build artifact.
 

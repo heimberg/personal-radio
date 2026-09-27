@@ -161,7 +161,7 @@ Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (M
 
 ## Security
 
-Public repository, private application. Cloudflare Access protects the Worker. Browsers authenticate with an Access login (existing JWT check with email allowlist). The Android app authenticates with an Access service token; the Worker's JWT check must additionally accept that token's identity. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
+Public repository, private application. Cloudflare Access protects the Worker. Browsers authenticate with an Access login (JWT check with email allowlist). The Android app authenticates with an Access service token; the Worker accepts a JWT whose `common_name` equals `ACCESS_SERVICE_TOKEN_ID` as the owner. The app sends the token only to the configured origin; audio URLs that would leave it are rejected. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
 
 ## Adopted from ai-radio-station
 
@@ -175,13 +175,13 @@ Remaining gaps:
 
 - The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
 - Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
-- Access accepts browser logins only; the Android app needs service-token support. The embedded cockpit needs a login that works inside a WebView: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
+- The Android app (milestone 2, see [Android app](android.md)) plays our segments; Spotify handoff follows in milestone 3. The embedded cockpit needs a login that works inside a WebView when the service token alone is not enough: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
 - Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
 
 ## Milestones
 
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; import of device settings; queue production with R2 audio; cron horizon with listener gate; timeline API; cockpit timeline with continuous browser playback.
-2. **The Android app with our segments:** Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth and the embedded cockpit; 60-minute screen-off test. From here on the app is the only way to listen on the phone.
+2. **The Android app with our segments** (built; acceptance test on a device pending): Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth and the embedded cockpit; 60-minute screen-off test. From here on the app is the only way to listen on the phone.
 3. **Spotify in the app:** App Remote, the artist hour as the first music format, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
 4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, ElevenLabs as TTS option, form editors next to YAML, music rules, Google Drive archive for liked segments and artist hours.
 5. **Learning and memory:** feedback weights in the planner, deduplication, series.

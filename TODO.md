@@ -4,6 +4,7 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 
 ## Matthias
 
+- [ ] **Android-App einrichten** (Anleitung: [`docs/android.md`](docs/android.md)): Access-Service-Token erstellen, in der Access-Anwendung eine «Service Auth»-Regel dafür ergänzen, Client-ID als Worker-Secret `ACCESS_SERVICE_TOKEN_ID` setzen, APK aus «Actions → Android app» installieren und verbinden. Optional: Signierschlüssel als Repository-Secrets, damit Updates ohne Neuinstallation gehen.
 - [ ] **Gemini als Hauptanbieter:** `GEMINI_API_KEY` eines Google-Projekts mit aktivierter Abrechnung (bezahlter Tarif) als Worker-Secret setzen. ASK ist optional und prüft dann als unabhängiges zweites Modell.
 - [ ] **Vor dem nächsten Deploy (Meilenstein 1):** `npx wrangler r2 bucket create personal-radio-audio` und `npx wrangler queues create personal-radio-production` ausführen; den `CLOUDFLARE_API_TOKEN` um R2- und Queues-Rechte erweitern; Workers-Paid-Plan prüfen; `DAILY_GENERATIONS` an die gewünschte Hördauer anpassen (2-Minuten-Beiträge: ca. 30 pro Stunde). Danach in der App «Einstellungen dieses Geräts übernehmen».
 
@@ -35,7 +36,7 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 ## Nächste Meilensteine
 
 - [x] Meilenstein 1 – Programm auf dem Server: Konfiguration, Timeline, Feedback und Gedächtnis in D1; Produktion über Cloudflare Queue mit Audio in R2; Cron plant nur, solange du zuhörst; Timeline-API und Programm-Panel mit durchgehender Wiedergabe im Browser. Dazu Moderations-Persona (Name, Ton, Stil, eigene Anweisungen, Co-Host für Dialoge) und YAML-Editor für die ganze Konfiguration.
-- [ ] Meilenstein 2 – Die eine Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Einstellungen als eingebettetes Cockpit (WebView, Login per Access-Einmal-PIN); Zugang zur API per Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
+- [x] Meilenstein 2 (gebaut, Abnahmetest auf dem Gerät offen) – Die eine Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Einstellungen als eingebettetes Cockpit (WebView, Login per Access-Einmal-PIN); Zugang zur API per Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
 - [ ] Meilenstein 3 – Spotify in der App über App Remote SDK; Musikblöcke mit Moderations-Triggern (Blockstart/-ende, vor/nach jedem N-ten Titel, alle X Minuten, Gruppenwechsel); KI-Titelwahl mit Anmoderation nur für KI-gewählte Titel; eigene Playlists als rotierende Gruppen mit allgemeinen Überleitungen; harte Übergaben ohne Überlappung, kein Abschneiden von Titeln.
 - [ ] Meilenstein 4 – Tools pro Sendung (Wetter über Open-Meteo, Schlagzeilen, MCP-Server) mit Platzhaltern im Prompt; Themen-Gedächtnis der letzten Beiträge; ElevenLabs als weitere Stimme; Formular-Editoren neben YAML; Musikregeln.
 - [x] Gemini als Standard-Textanbieter (ASK optional pro Sendung und als Prüfinstanz), Web-Recherche mit Google-Suche (`sourceMode: web`), Suchanfragen und Quellen im Cockpit, Themen-Gedächtnis.

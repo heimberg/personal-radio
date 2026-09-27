@@ -31,6 +31,7 @@ Workers and D1 have free plans. Access is free for small teams (currently up to 
    npx wrangler secret put ASK_API_KEY
    npx wrangler secret put MISTRAL_API_KEY
    npx wrangler secret put GEMINI_API_KEY
+   npx wrangler secret put ACCESS_SERVICE_TOKEN_ID   # Client ID of the Android app's service token, see android.md
    ```
 
    Use the ASK HTTPS API base URL, for example `https://ask.ict-tfbern.ch/api/v1`, and the authorized ASK model credentials. The ASK endpoint must allow outbound HTTPS from Cloudflare Workers; verify connectivity and organizational authorization before use. Keep all credentials out of `wrangler.toml`, GitHub source and frontend variables. After setting `MISTRAL_API_KEY`, deploy the Worker and open the private app while signed in through Cloudflare Access. The brief-segment form loads available voices from the authenticated `/api/mistral-voices` route. Choose one there; the selection is stored on that device and sent to the Worker for each brief. No `MISTRAL_VOICE_ID` secret is needed unless you want a server-side fallback. Voxtral supports German, though the available preset voice language and accent can affect pronunciation.
