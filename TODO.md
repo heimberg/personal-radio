@@ -42,6 +42,8 @@ Stand: 27.09.2026. Das Programm läuft auf dem privaten Worker; gehört wird in 
 - [x] Gemini als Standard-Textanbieter (ASK optional pro Sendung und als Prüfinstanz), Web-Recherche mit Google-Suche (`sourceMode: web`), Suchanfragen und Quellen im Cockpit, Themen-Gedächtnis.
 - [ ] **Künstler-Stunde aktivieren:** im Cloudflare-Dashboard `SPOTIFY_CLIENT_ID` (Variable) und `SPOTIFY_CLIENT_SECRET` (Secret) der Spotify-Developer-App setzen; im Cockpit «Künstler-Stunde» wählen und «Jetzt produzieren».
 - [ ] **Spotify-Developer-App für die Android-App:** (Signierschlüssel ist hinterlegt, SHA1 im CI-Log) in der Spotify-Developer-App unter «Android packages» den Paketnamen `ch.heimberg.radio` mit dem SHA1-Fingerprint des Schlüssels eintragen und die Redirect-URI `personal-radio://spotify-callback` ergänzen.
+- [x] Lebendige Stimme: Gemini-Stimmen (z. B. Laomedeia, Puck, Fenrir) mit Sprechstil der Persona; Texte werden fürs Ohr geschrieben.
+- [ ] **Stimme umstellen:** Einstellungen → Sender und Moderation → Stimme (z. B. «Laomedeia · aufgestellt (Gemini)») und Sprechstil wählen, speichern.
 - [x] Webseite aufgeräumt: Test-, Demo- und Einzelbeitrags-Oberflächen entfernt; Programm, grafische Einstellungen und YAML.
 - [ ] GitHub Pages im Repository ausschalten (Settings → Pages), die öffentliche Demo gibt es nicht mehr.
 - [x] Genre- und Themenstunden (`genre_hour`, `theme_hour`): Genre-Geschichte in Songs; Themen in Kapiteln mit passenden Songs dazwischen.

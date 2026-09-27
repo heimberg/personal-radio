@@ -74,6 +74,9 @@ export function showInstructions(direction: EditorialDirection | undefined): str
   return instructions ? ` Redaktionelle Vorgaben des Hörers für diese Sendung: ${instructions}` : '';
 }
 /** The owner-defined on-air persona. Dialogs map host-a to the host and host-b to the co-host. */
+/** Scripts are heard, not read: this keeps them lively enough for an expressive voice. */
+const SPOKEN = ' Schreibe fürs Ohr, wie gute Radiomoderation klingt: kurze und lange Sätze im Wechsel, direkte Ansprache, ein Aufhänger am Anfang, mal eine Frage, echte Neugier und Begeisterung, wo sie passt. Keine Aufzählungen, keine Floskeln, keine Überschriften.';
+
 export function personaPrompt(direction: EditorialDirection | undefined, mode: 'brief' | 'podcast'): string {
   const persona = direction?.persona;
   if (!persona) return '';
@@ -82,7 +85,7 @@ export function personaPrompt(direction: EditorialDirection | undefined, mode: '
     ? ` host-a ist ${persona.name}, Moderation${station}; host-b ist ${persona.cohostName || 'der Co-Host'}. Die beiden dürfen sich beim Namen nennen.`
     : ` Du sprichst als ${persona.name}, Moderation${station}.`;
   const extra = persona.instructions.trim() ? ` ${persona.instructions.trim().slice(0, 2000)}` : '';
-  return `${who} Tonfall: ${persona.tone}. Stil: ${persona.style}.${extra}`;
+  return `${who} Tonfall: ${persona.tone}. Stil: ${persona.style}.${extra}${SPOKEN}`;
 }
 
 /** Topic memory: recent segment titles the next draft must not repeat. */
@@ -444,6 +447,84 @@ export class MistralSpeechSynthesizer implements SpeechSynthesizer {
     }
     const binary = atob(result.audio_data);
     return Uint8Array.from(binary, character => character.charCodeAt(0));
+  }
+}
+
+/** Gemini returns raw 16-bit mono PCM; players need a WAV header in front of it. */
+export function pcmToWav(pcm: Uint8Array, sampleRate = 24_000): Uint8Array {
+  const wav = new Uint8Array(44 + pcm.length), view = new DataView(wav.buffer);
+  const text = (offset: number, value: string) => { for (let i = 0; i < value.length; i++) wav[offset + i] = value.charCodeAt(i); };
+  text(0, 'RIFF'); view.setUint32(4, 36 + pcm.length, true); text(8, 'WAVE'); text(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, pcm.length, true);
+  wav.set(pcm, 44);
+  return wav;
+}
+
+/** Prebuilt Gemini voices with their character; the ID in the configuration is `gemini_<Name>`. */
+export const GEMINI_VOICES: Array<{ name: string; character: string; gender: 'female' | 'male' }> = [
+  { name: 'Laomedeia', character: 'aufgestellt', gender: 'female' }, { name: 'Zephyr', character: 'hell', gender: 'female' },
+  { name: 'Autonoe', character: 'hell', gender: 'female' }, { name: 'Aoede', character: 'luftig', gender: 'female' },
+  { name: 'Sulafat', character: 'warm', gender: 'female' }, { name: 'Leda', character: 'jugendlich', gender: 'female' },
+  { name: 'Kore', character: 'bestimmt', gender: 'female' }, { name: 'Pulcherrima', character: 'direkt', gender: 'female' },
+  { name: 'Despina', character: 'weich', gender: 'female' }, { name: 'Gacrux', character: 'reif', gender: 'female' },
+  { name: 'Puck', character: 'aufgestellt', gender: 'male' }, { name: 'Fenrir', character: 'aufgeregt', gender: 'male' },
+  { name: 'Sadachbia', character: 'lebhaft', gender: 'male' }, { name: 'Achird', character: 'freundlich', gender: 'male' },
+  { name: 'Zubenelgenubi', character: 'locker', gender: 'male' }, { name: 'Charon', character: 'informativ', gender: 'male' },
+  { name: 'Orus', character: 'bestimmt', gender: 'male' }, { name: 'Algenib', character: 'rau', gender: 'male' },
+];
+const GEMINI_VOICE_PREFIX = 'gemini_';
+export const isGeminiVoice = (voiceId?: string) => !!voiceId?.startsWith(GEMINI_VOICE_PREFIX);
+
+/** Single-speaker Gemini speech: expressive, and it follows a delivery instruction. */
+export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
+  private key: string;
+  private model: string;
+  private fetcher: Fetch;
+  constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
+    if (!config.key) throw new Error('Gemini TTS configuration incomplete');
+    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts'; this.fetcher = fetcher;
+    if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model)) throw new Error('Gemini TTS configuration invalid');
+  }
+  async synthesize(text: string, _turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array> {
+    const voice = (voiceId ?? '').slice(GEMINI_VOICE_PREFIX.length);
+    if (!isGeminiVoice(voiceId) || !/^[A-Za-z]{2,30}$/.test(voice)) throw new Error('Gemini voice is not selected');
+    if (!text.trim() || text.length > 8000) throw new Error('TTS text outside segment budget');
+    const delivery = (style ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'wie eine lebendige Radiomoderation: warm, mit Tempowechseln und Betonung';
+    const response = await requestWithTransientRetry(this.fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, {
+      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: `Lies den folgenden deutschen Radiotext vor, ${delivery}. Sprich nur den Text, nicht diese Anweisung.\n\n${text}` }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+      }),
+    }, 120_000);
+    if (!response.ok) throw await googleFailure('Gemini TTS', response);
+    let part: { data?: string; mimeType?: string } | undefined;
+    try {
+      const result = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }> };
+      part = result.candidates?.[0]?.content?.parts?.find(item => item.inlineData?.data)?.inlineData;
+    } catch { throw new Error('Gemini returned invalid audio data'); }
+    const encoded = part?.data;
+    if (typeof encoded !== 'string' || encoded.length < 16 || encoded.length > 24_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('Gemini returned invalid audio data');
+    const binary = atob(encoded);
+    const audio = Uint8Array.from(binary, character => character.charCodeAt(0));
+    if (String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF') return audio;
+    const rate = Number(/rate=(\d+)/.exec(part?.mimeType ?? '')?.[1]) || 24_000;
+    return pcmToWav(audio, rate);
+  }
+}
+
+/** Picks the engine by voice ID: `gemini_…` voices go to Gemini, everything else to Mistral. */
+export class VoiceRouter implements SpeechSynthesizer {
+  private mistral: SpeechSynthesizer;
+  private gemini?: SpeechSynthesizer;
+  constructor(mistral: SpeechSynthesizer, gemini?: SpeechSynthesizer) { this.mistral = mistral; this.gemini = gemini; }
+  async synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array> {
+    if (isGeminiVoice(voiceId)) {
+      if (!this.gemini) throw new Error('Gemini voice selected, but GEMINI_API_KEY is missing');
+      return this.gemini.synthesize(text, turns, voiceId, style);
+    }
+    return this.mistral.synthesize(text, turns, voiceId, style);
   }
 }
 

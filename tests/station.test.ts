@@ -308,7 +308,7 @@ test('the host persona\'s voice is used unless the show sets its own; rejections
   h.behaviour.review = () => { throw new PipelineError('REJECTED', 'Nicht belegt: «Mars»'); };
   assert.equal(await produceItem(h.deps, OWNER, due[1]), 'failed');
   assert.equal((await h.store.getItem(OWNER, due[1]))?.error, 'REJECTED: Nicht belegt: «Mars»');
-  assert.equal(defaultStationConfig().host.voiceId, 'de_kerstin_cc0');
+  assert.equal(defaultStationConfig().host.voiceId, 'gemini_Laomedeia');
 });
 
 test('failures are summarised, cleaned up on request and purged automatically after a day', async () => {
@@ -348,10 +348,11 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
       tracks: [{ index: 0, text: 'Zu Glory Box.', sourceIds: ['w1'] }, { index: 2, text: 'Zu Sour Times.', sourceIds: [] }], outro: { text: 'Danke.', sourceIds: [] } }; },
   };
   let voiceCalls = 0, failAt = 3;
-  h.deps.pipeline.voice = async (_owner, script, _format, voiceId) => {
+  h.deps.pipeline.voice = async (_owner, script, _format, voiceId, style) => {
     voiceCalls++;
     if (voiceCalls === failAt) throw new Error('Mistral request failed (503)');
-    assert.equal(voiceId, 'de_kerstin_cc0');
+    assert.equal(voiceId, 'gemini_Laomedeia');
+    assert.match(style ?? '', /begeisterte Radiomoderatorin/);
     return { audio: new TextEncoder().encode(script.text), contentType: 'audio/mpeg', ttsCharacters: script.text.length };
   };
   // The hour is not in the program clock: "Jetzt produzieren" plans it directly.

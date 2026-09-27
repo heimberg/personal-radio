@@ -93,7 +93,8 @@ export class ConfigError extends Error {}
 export const DEFAULT_HOST: HostPersona = {
   name: 'Mira', tone: 'ruhig, neugierig, präzise', style: 'persönliches Hintergrundradio',
   instructions: 'Sprich den Hörer direkt an, ohne Floskeln. Erkläre Fachbegriffe kurz.', cohostName: 'Jonas',
-  voiceId: 'de_kerstin_cc0',
+  voiceId: 'gemini_Laomedeia',
+  voiceStyle: 'wie eine begeisterte Radiomoderatorin: warm, lebendig, mit Tempowechseln, Betonung und hörbarem Lächeln',
 };
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -147,6 +148,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     instructions: text(h.instructions ?? '', 'host.instructions', 2000, false),
     ...(h.cohostName !== undefined && String(h.cohostName).trim() ? { cohostName: text(h.cohostName, 'host.cohostName', 40) } : {}),
     ...(h.voiceId !== undefined ? { voiceId: voiceIdOf(h.voiceId, 'host.voiceId') } : {}),
+    ...(h.voiceStyle !== undefined && String(h.voiceStyle).trim() ? { voiceStyle: text(h.voiceStyle, 'host.voiceStyle', 300) } : {}),
   };
 
   const feedIds = new Set<string>();

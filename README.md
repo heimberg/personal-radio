@@ -2,7 +2,7 @@
 
 A personal radio station: AI-hosted, researched spoken segments and music hours with Spotify, produced ahead of time on a private Cloudflare Worker and played in one Android app.
 
-- **Program:** the Worker plans a timeline from the station configuration (host persona, shows, program clock) and produces it in the background: web research grounded in Google Search or your feeds, scripts written by Gemini (ASK optional), source verification, voices by Mistral or Gemini. Segments show their sources and search queries.
+- **Program:** the Worker plans a timeline from the station configuration (host persona, shows, program clock) and produces it in the background: web research grounded in Google Search or your feeds, scripts written by Gemini (ASK optional), source verification, expressive Gemini voices that follow a speaking style (Mistral optional). Segments show their sources and search queries.
 - **Music hours:** artist, genre and theme hours alternate AI moderation with songs. The AI picks the songs; Spotify only resolves them to tracks. Nothing from Spotify is sent to an AI provider.
 - **Android app** ([docs/android.md](docs/android.md)): native playback with lock screen, Bluetooth and offline cache; hands over to the Spotify app for music hours; embeds the settings.
 - **Web cockpit** (the Worker's page, behind Cloudflare Access): the program with its timeline, a browser player for the spoken program, the settings as forms and the whole configuration as YAML.

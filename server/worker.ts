@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, MistralSpeechSynthesizer, ProviderError } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GEMINI_VOICES, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
 import type { TextGenerator } from '../src/domain/program.ts';
@@ -175,7 +175,7 @@ function pipelineFor(env: Environment): SegmentPipeline {
     pipeline = new SegmentPipeline(
       // The manual single-segment tool keeps ASK when present and otherwise uses Gemini.
       providers.ask ?? providers.geminiBrief ?? missing,
-      new MistralSpeechSynthesizer({
+      new VoiceRouter(new MistralSpeechSynthesizer({
         // Kerstin is the bundled German reference voice, so a missing setting never blocks speech.
         key: env.MISTRAL_API_KEY, voiceId: env.MISTRAL_VOICE_ID || 'de_kerstin_cc0', model: env.MISTRAL_TTS_MODEL,
         referenceAudio: async () => {
@@ -183,7 +183,7 @@ function pipelineFor(env: Environment): SegmentPipeline {
           if (!response.ok) throw new Error('German reference audio unavailable');
           return new Uint8Array(await response.arrayBuffer());
         },
-      }),
+      }), env.GEMINI_API_KEY ? new GeminiSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }) : undefined),
       providers.verifier,
       new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
       4,
@@ -373,7 +373,9 @@ export default {
     if (url.pathname === '/api/mistral-voices') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
-      try { return json({ voices: await listMistralVoices() }, 200); }
+      // Gemini voices are expressive and follow the host's delivery style; listed first when available.
+      const gemini = env.GEMINI_API_KEY ? GEMINI_VOICES.map(voice => ({ id: `gemini_${voice.name}`, name: `${voice.name} · ${voice.character} (Gemini)`, type: 'preset', languages: ['de-DE'], gender: voice.gender })) : [];
+      try { return json({ voices: [...gemini, ...(await listMistralVoices()).map(voice => ({ ...voice, name: `${voice.name} (Mistral)` }))] }, 200); }
       catch { return json({ error: 'voice_catalog_unavailable' }, 502); }
     }
     if (url.pathname === '/api/feed-items') {

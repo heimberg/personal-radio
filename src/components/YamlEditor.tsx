@@ -4,7 +4,8 @@ import type { StationConfig } from '../domain/station.ts';
 interface Props { config: StationConfig; onSave(next: unknown): Promise<boolean> }
 
 const HELP = [
-  '# host: Moderations-Persona – name, tone, style, instructions, voiceId (Mistral-Stimme, z. B. de_kerstin_cc0); cohostName spricht in Dialog-Sendungen mit',
+  '# host: Moderations-Persona – name, tone, style, instructions, voiceId (gemini_Laomedeia, gemini_Puck … oder Mistral de_kerstin_cc0),',
+  '#       voiceStyle = wie gesprochen wird (Gemini-Stimmen); cohostName spricht in Dialog-Sendungen mit',
   '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
   '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
   '#        format artist_hour | genre_hour | theme_hour (20–90 Min.): artist | genre | theme (leer = KI wählt),',
