@@ -50,7 +50,9 @@ object Labels {
         else -> state
     }
 
-    fun error(code: String): String = when (code) {
+    fun error(code: String): String = if (code.startsWith("REJECTED: ")) {
+        "Quellenprüfung nicht bestanden – " + code.removePrefix("REJECTED: ")
+    } else when (code) {
         "NO_SOURCES" -> "Keine neuen Quellen gefunden."
         "REJECTED" -> "Quellenprüfung nicht bestanden."
         "DAILY_LIMIT" -> "Tageslimit erreicht, morgen geht es weiter."

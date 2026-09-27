@@ -202,7 +202,15 @@ test('Gemini verifier applies the same local quote check as ASK', async () => {
   const answer = (quote: string) => new GeminiEditorialVerifier({ key: 'g' }, async () => geminiText(JSON.stringify({
     approved: true, checks: [{ claim: 'Test', sourceIds: ['s1'], quote, supported: true }], reasons: [] })));
   assert.equal((await answer('Ein Test.').verify(script, sources)).approved, true);
-  assert.deepEqual(await answer('Erfundenes Zitat.').verify(script, sources), { approved: false, reasons: ['UNSUPPORTED_OR_INVALID_EVIDENCE'] });
+  assert.deepEqual(await answer('Erfundenes Zitat.').verify(script, sources), { approved: false, reasons: ['Zitat nicht in der Quelle: «Erfundenes Zitat.»'] });
+  // Typographic differences do not fail a correct quote.
+  const typographic = [{ ...sources[0], excerpt: 'Er sagte: „Die Sonde – gebaut in Bern – startet 2027.“' }];
+  const verifier = new GeminiEditorialVerifier({ key: 'g' }, async () => geminiText(JSON.stringify({ approved: true, reasons: [],
+    checks: [{ claim: 'Start 2027', sourceIds: ['s1'], quote: '"Die Sonde - gebaut in  Bern - startet 2027."', supported: true }] })));
+  assert.equal((await verifier.verify(script, typographic)).approved, true);
+  const unsupported = new GeminiEditorialVerifier({ key: 'g' }, async () => geminiText(JSON.stringify({ approved: false, reasons: [],
+    checks: [{ claim: 'Die Sonde landet auf dem Mars', sourceIds: ['s1'], quote: '', supported: false }] })));
+  assert.deepEqual(await unsupported.verify(script, sources), { approved: false, reasons: ['Nicht belegt: «Die Sonde landet auf dem Mars»'] });
 });
 
 test('Gemini quota errors carry Google\'s explanation and retry delay and are not retried immediately', async () => {

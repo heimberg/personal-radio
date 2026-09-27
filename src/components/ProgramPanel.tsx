@@ -20,11 +20,15 @@ const ERROR_LABELS: Record<string, string> = {
   ASK_NOT_CONFIGURED: 'ASK ist nicht konfiguriert; stelle die Sendung auf textProvider: gemini.',
 };
 const EDITOR_HELP = [
-  '# host: Moderations-Persona – name, tone, style, instructions; cohostName spricht in Dialog-Sendungen mit',
+  '# host: Moderations-Persona – name, tone, style, instructions, voiceId (Mistral-Stimme, z. B. de_kerstin_cc0); cohostName spricht in Dialog-Sendungen mit',
   '# shows: instructions = eigener Prompt · format brief (1–2 Min.) oder podcast (2–10 Min.) · verification strict | light | off',
   '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');
+function errorLabel(error: string): string {
+  if (error.startsWith('REJECTED: ')) return `Quellenprüfung nicht bestanden – ${error.slice('REJECTED: '.length)}`;
+  return ERROR_LABELS[error] ?? error;
+}
 const VERIFICATION_LABELS = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' } as const;
 
 function api(path: string) { return new URL(path, window.location.href); }
@@ -180,7 +184,7 @@ export function ProgramPanel({ player, profile, onStartProgram, embedded = false
         <small>{item.showName} · {STATE_LABELS[item.state]}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</small>
         {item.error && item.state !== 'ready' && <small className="timeline-error">
           {item.updatedAt ? `${new Date(item.updatedAt).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} · ` : ''}
-          {ERROR_LABELS[item.error] ?? item.error}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</small>}
+          {errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</small>}
         {item.sources?.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
         {item.searchQueries?.length ? <small className="timeline-search">Google-Suche: {item.searchQueries.map((query, index) => <span key={query}>{index ? ' · ' : ''}
           <a href={`https://www.google.com/search?q=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer">{query}</a></span>)}</small> : null}
