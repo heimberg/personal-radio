@@ -14,6 +14,7 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     const url = String(input);
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
     if (url === 'https://news.example.test/feed.xml') return new Response('<rss><item><title>News</title><link>https://news.example.test/article</link><description>Short summary</description></item></rss>', { headers: { 'Content-Type': 'application/rss+xml' } });
+    if (url.startsWith('https://api.mistral.ai/v1/audio/voices?')) return Response.json({ items: [{ id: 'preset-de', name: 'Deutsch Test', type: 'preset', languages: ['de'] }] });
     if (url.endsWith('/chat/completions')) {
       askCalls++;
       return Response.json({ choices: [{ message: { content: JSON.stringify(askCalls === 1
@@ -59,6 +60,11 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     const unavailable = new Request('https://private.example/api/segments', { method: 'POST', headers: new Headers(podcastWithoutGemini.headers), body: JSON.stringify({ ...podcastBody, mode: 'podcast' }) });
     assert.equal((await worker.fetch(unavailable, env as never)).status, 503);
     assert.equal(requestsUsed, 0); assert.equal(askCalls, 0);
+    const voicesResponse = await worker.fetch(new Request('https://private.example/api/mistral-voices', {
+      headers: { 'Cf-Access-Jwt-Assertion': token },
+    }), env as never);
+    assert.equal(voicesResponse.status, 200);
+    assert.deepEqual((await voicesResponse.json() as { voices: Array<{ id: string }> }).voices.map(voice => voice.id), ['preset-de']);
     const response = await worker.fetch(makeRequest('request-key-0001'), env as never);
     assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'audio/mpeg');
     assert.equal(new TextDecoder().decode(await response.arrayBuffer()), 'ID3');
