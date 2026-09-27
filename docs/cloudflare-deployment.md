@@ -1,6 +1,6 @@
 # Private Cloudflare deployment
 
-The hosted app uses one Cloudflare Worker for the built web app and its authenticated API endpoints, D1 for durable daily limits, and Cloudflare Access for the login gate. The public GitHub Pages demo remains a separate static demo and never receives provider credentials.
+The hosted app uses one Cloudflare Worker for the built web app and its authenticated API endpoints, D1 for durable daily limits, and Cloudflare Access for the login gate. It serves the web cockpit and the program API behind Access.
 
 ## Cost and limits
 

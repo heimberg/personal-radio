@@ -1,4 +1,4 @@
-const VERSION = 'personal-radio-shell-v1';
+const VERSION = 'personal-radio-shell-v2';
 const SHELL = ['./', './manifest.webmanifest', './icons/radio.svg', './icons/radio-192.png', './icons/radio-512.png'];
 
 self.addEventListener('install', event => {
