@@ -107,6 +107,14 @@
             android:text="@string/plan" />
 
         <Button
+            android:id="@+id/spotify"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/spotify_connect"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/cockpit"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"

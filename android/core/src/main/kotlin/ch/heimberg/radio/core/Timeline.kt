@@ -20,21 +20,45 @@ data class TimelineItem(
     val searchQueries: List<String> = emptyList(),
     val error: String? = null,
     val audioUrl: String? = null,
+    /** Artist hour: spoken parts and Spotify tracks in playing order. */
+    val parts: List<TimelinePart> = emptyList(),
+    val artist: String? = null,
 ) {
     val displayTitle: String get() = title ?: showName
-    val isPlayable: Boolean get() = state == "ready" && audioUrl != null
+    val hasMusic: Boolean get() = parts.any { it.isTrack }
+    val isPlayable: Boolean get() = state == "ready" && (
+        if (parts.isEmpty()) audioUrl != null
+        else parts.all { if (it.isTrack) it.spotifyUri != null else it.audioUrl != null }
+    )
     val isOpen: Boolean get() = state == "planned" || state == "voicing" || state == "ready"
+}
+
+@Serializable
+data class TimelinePart(
+    val kind: String,
+    val audioUrl: String? = null,
+    val spotifyUri: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val durationMs: Long = 0,
+) {
+    val isTrack: Boolean get() = kind == "track"
 }
 
 @Serializable
 data class SourceRef(val title: String, val url: String)
 
 @Serializable
-private data class TimelineResponse(val items: List<TimelineItem>)
+data class SpotifySetup(val clientId: String)
+
+/** `GET /api/timeline`: the items plus the public Spotify client ID when the Worker has one. */
+@Serializable
+data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null)
 
 object TimelineJson {
     private val json = Json { ignoreUnknownKeys = true }
-    fun parse(body: String): List<TimelineItem> = json.decodeFromString(TimelineResponse.serializer(), body).items.sortedBy { it.seq }
+    fun parseResponse(body: String): Timeline = json.decodeFromString(Timeline.serializer(), body).let { it.copy(items = it.items.sortedBy { item -> item.seq }) }
+    fun parse(body: String): List<TimelineItem> = parseResponse(body).items
 }
 
 /** German labels shared by the app's list and notification texts; the cockpit uses the same wording. */
@@ -50,15 +74,20 @@ object Labels {
         else -> state
     }
 
-    fun error(code: String): String = if (code.startsWith("REJECTED: ")) {
-        "Quellenprüfung nicht bestanden – " + code.removePrefix("REJECTED: ")
-    } else when (code) {
+    fun error(code: String): String = when {
+        code.startsWith("REJECTED: ") -> "Quellenprüfung nicht bestanden – " + code.removePrefix("REJECTED: ")
+        code.startsWith("TOO_FEW_TRACKS: ") -> "Zu wenige Songs gefunden – " + code.removePrefix("TOO_FEW_TRACKS: ")
+        else -> known(code)
+    }
+
+    private fun known(code: String): String = when (code) {
         "NO_SOURCES" -> "Keine neuen Quellen gefunden."
         "REJECTED" -> "Quellenprüfung nicht bestanden."
         "DAILY_LIMIT" -> "Tageslimit erreicht, morgen geht es weiter."
         "GEMINI_NOT_CONFIGURED" -> "Gemini ist nicht konfiguriert."
         "ASK_NOT_CONFIGURED" -> "ASK ist nicht konfiguriert."
         "PODCAST_PROVIDER_NOT_CONFIGURED" -> "Dialoge sind nicht konfiguriert."
+        "SPOTIFY_NOT_CONFIGURED" -> "Spotify ist auf dem Server nicht eingerichtet."
         else -> code
     }
 }

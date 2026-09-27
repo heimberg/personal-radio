@@ -41,7 +41,9 @@ Stand: 26.09.2026. Die öffentliche GitHub-Pages-Demo ist weiterhin nur ein Audi
 - [ ] Meilenstein 4 – Tools pro Sendung (Wetter über Open-Meteo, Schlagzeilen, MCP-Server) mit Platzhaltern im Prompt; Themen-Gedächtnis der letzten Beiträge; ElevenLabs als weitere Stimme; Formular-Editoren neben YAML; Musikregeln.
 - [x] Gemini als Standard-Textanbieter (ASK optional pro Sendung und als Prüfinstanz), Web-Recherche mit Google-Suche (`sourceMode: web`), Suchanfragen und Quellen im Cockpit, Themen-Gedächtnis.
 - [ ] **Künstler-Stunde aktivieren:** im Cloudflare-Dashboard `SPOTIFY_CLIENT_ID` (Variable) und `SPOTIFY_CLIENT_SECRET` (Secret) der Spotify-Developer-App setzen; im Cockpit «Künstler-Stunde» wählen und «Jetzt produzieren».
-- [ ] **Vorbereitung Spotify in der App (Schritt B):** Signierschlüssel als Repository-Secrets hinterlegen (Anleitung `docs/android.md`), App neu bauen und einmal neu installieren; in der Spotify-Developer-App unter «Android packages» den Paketnamen `ch.heimberg.radio` mit dem SHA1-Fingerprint des Schlüssels eintragen und die Redirect-URI `personal-radio://spotify-callback` ergänzen.
+- [ ] **Spotify-Developer-App für die Android-App:** (Signierschlüssel ist hinterlegt, SHA1 im CI-Log) in der Spotify-Developer-App unter «Android packages» den Paketnamen `ch.heimberg.radio` mit dem SHA1-Fingerprint des Schlüssels eintragen und die Redirect-URI `personal-radio://spotify-callback` ergänzen.
+- [x] Spotify in der App (Schritt B): App Remote, Übergabe zwischen Moderation und Song, «Spotify verbinden».
+- [ ] **Übergabe testen:** Künstler-Stunde produzieren, in der App «Spotify verbinden», eine Stunde mit gesperrtem Bildschirm hören (Übergaben, Pause/Weiter auf dem Sperrbildschirm, Anruf).
 - [x] Künstler-Stunde auf dem Server (Schritt A): Dossier, KI-Songauswahl, Spotify-Suche, Moderationen, stückweise Vertonung, Songliste im Cockpit, «Jetzt produzieren».
 - [ ] Künstler-Stunde in der App hören (Schritt B): Spotify App Remote in der Android-App, Übergabe zwischen Moderation und Song ohne Überlappung.
 - [ ] Google-Drive-Archiv für 👍-Beiträge und Künstler-Stunden (Audio, Skript, Quellen). Wiedergabe bleibt auf R2.

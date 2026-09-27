@@ -62,4 +62,7 @@ dependencies {
     implementation("androidx.media3:media3-datasource:1.8.0")
     implementation("androidx.media3:media3-database:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Spotify App Remote controls the installed Spotify app; see libs/README.md.
+    implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    implementation("com.google.code.gson:gson:2.11.0")
 }

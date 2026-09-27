@@ -116,7 +116,7 @@ Production, entirely ahead of time:
 4. **Check and voice:** claims are checked against the dossier sources; unsupported sentences are rewritten or dropped. Moderations are voiced to R2.
 5. **Timeline:** opening → moderation → Spotify track → moderation → … → closing. About 45 minutes of music and 12–15 minutes of AI speech per hour, which satisfies the speech requirement by construction. One hour needs roughly 10,000–12,000 TTS characters; raise `DAILY_TTS_CHARACTERS` accordingly.
 
-Implementation: an artist hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks; the web player and the current app skip it, because the music needs the App Remote handoff (next step).
+Implementation: an artist hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock ("Jetzt produzieren" in the cockpit). The cockpit lists the hour's tracks. The Android app plays the hour with the App Remote handoff described below; the web player skips it.
 
 ## Music curation (AI → Spotify only)
 
@@ -149,6 +149,7 @@ Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (M
 - Our segment ends → start the Spotify URI via App Remote → subscribe to player state.
 - The Spotify track ends or changes → pause Spotify immediately → play the next segment through Media3.
 - Spotify may briefly start the following track or autoplay before the pause takes effect; measure this and minimize it (single-track playback, pause on track change).
+- Implementation: each track is a silent placeholder in the Media3 playlist (track title, duration plus one minute), so the media session covers music and speech alike. On a placeholder the player stops handling audio focus and App Remote plays the URI; `TrackWatch` (core, tested) decides the end from Spotify's player state; the playlist then moves to the next spoken part and the player takes focus back. The Worker hands the public client ID to the app with the timeline.
 - Our segments are prefetched from R2, so short network loss does not stop the program. News items carry an expiry and are skipped when stale.
 - Acceptance test: 60 minutes screen-off with at least 10 handoffs, lock-screen/Bluetooth controls, an incoming call and a network change. The existing [Android test](android-test.md) covers our own audio only.
 
@@ -175,7 +176,7 @@ Remaining gaps:
 
 - The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
 - Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
-- The Android app (milestone 2, see [Android app](android.md)) plays our segments; Spotify handoff follows in milestone 3. The embedded cockpit needs a login that works inside a WebView when the service token alone is not enough: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
+- The Android app (milestone 2, see [Android app](android.md)) plays our segments and, for artist hours, hands over to Spotify through App Remote. The embedded cockpit needs a login that works inside a WebView when the service token alone is not enough: Access one-time PIN by email works, Google sign-in is blocked in WebViews.
 - Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
 
 ## Milestones

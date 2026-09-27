@@ -9,7 +9,15 @@ The single app for listening: native playback of the server-produced program, lo
 - **Offline buffer:** segments are cached on the device (up to 300 MB) and the next four are downloaded ahead, so short network losses do not interrupt listening.
 - **Feedback:** a segment that plays to its end is reported as complete; skipping reports the share heard; 👍/👎 in the app are strong signals. The server learns from them.
 - **Settings:** "Programm einstellen" opens the web cockpit (persona, shows, sources, program clock as YAML, timeline with sources). Inside the app the cockpit hides its own player.
-- **Spotify** is not in the app yet (milestone 3: App Remote SDK).
+- **Spotify (artist hours):** the app controls the installed Spotify app through the App Remote SDK. An artist hour's tracks sit in the playlist as silent placeholders with the song's title, so the notification, pause and "next" work for music as for speech. When a placeholder starts, Spotify plays that one track and our player gives up audio focus; when Spotify reports the track's end (or moves on), the app pauses Spotify at once and continues with the next spoken part. If Spotify pauses on its own (a call), the app pauses too and resumes with it. Hours wait in the queue until Spotify is connected, so they never play without their music. Nothing Spotify reports leaves the phone.
+
+### Spotify
+
+1. **Spotify developer app** (the same app whose ID and secret the Worker uses): add the redirect URI `personal-radio://spotify-callback`, tick **Android**, and add the package `ch.heimberg.radio` with the SHA1 fingerprint of the signing key (the CI log prints it in the step *Prepare signing key*). In development mode, add your Spotify account under *User Management*.
+2. **Worker:** `SPOTIFY_CLIENT_ID` (variable) and `SPOTIFY_CLIENT_SECRET` (secret). The timeline response carries the client ID to the app; the secret never leaves the Worker.
+3. **Phone:** Spotify app installed and logged in (Premium). In our app tap **Spotify verbinden** once and allow access in Spotify's dialog. Afterwards the playback service connects on its own.
+
+The SDK (`app/libs/spotify-app-remote-release-0.8.0.aar`, Apache 2.0) is vendored because Spotify does not publish it to Maven; see `app/libs/README.md` for its source and checksum.
 
 ## One-time setup
 
