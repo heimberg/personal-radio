@@ -11,10 +11,13 @@ export class ProviderError extends Error {
 }
 async function request(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 45_000): Promise<Response> {
   try { return await fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); }
-  catch {
+  catch (error) {
     let provider = 'Provider';
     try { provider = new URL(url).hostname; } catch { /* Keep generic label for invalid URLs. */ }
-    throw new ProviderError(provider);
+    const cause = error instanceof Error
+      ? `: ${error.name}: ${error.message}${error.cause instanceof Error ? ` (${error.cause.name}: ${error.cause.message})` : ''}`
+      : '';
+    throw new ProviderError(`${provider}${cause}`);
   }
 }
 export class AskTextGenerator implements TextGenerator {
