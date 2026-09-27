@@ -186,7 +186,11 @@ export default {
       } });
     } catch (error) {
       const status = statusFor(error);
-      return json({ error: status === 502 ? 'generation_failed' : (error as Error).message }, status);
+      const detail = error instanceof Error ? error.message.slice(0, 160) : 'unknown_error';
+      console.error('segment generation failed', detail);
+      return json(status === 502
+        ? { error: 'generation_failed', detail }
+        : { error: (error as Error).message }, status);
     }
   },
 };
