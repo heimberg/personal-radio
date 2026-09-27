@@ -5,7 +5,7 @@ import type { Profile, Source } from '../src/domain/program.ts';
 import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
 
-interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null> }
+interface D1Statement { bind(...values: unknown[]): D1Statement; first<T>(): Promise<T | null>; run(): Promise<unknown> }
 interface D1Database { prepare(query: string): D1Statement }
 interface DailyCounter { reserve(ownerId: string, limit: number): Promise<void> }
 interface Environment {
@@ -108,6 +108,17 @@ export default {
     const owner = await authenticate(request, env);
     if (!owner) return json({ error: 'unauthorized' }, 401);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (url.pathname === '/api/testing/reset-daily-limits') {
+      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+      if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+      const utcDay = new Date().toISOString().slice(0, 10);
+      try {
+        for (const table of ['daily_requests', 'daily_usage', 'daily_feed_requests']) {
+          await env.DB.prepare(`DELETE FROM ${table} WHERE owner_id = ? AND utc_day = ?`).bind(owner, utcDay).run();
+        }
+      } catch { return json({ error: 'quota_reset_unavailable' }, 503); }
+      return json({ reset: true, utcDay }, 200);
+    }
     if (url.pathname === '/api/mistral-voices') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);

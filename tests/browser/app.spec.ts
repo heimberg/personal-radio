@@ -23,6 +23,10 @@ test('mobile playback, navigation and preferences work without provider requests
   await page.getByRole('button', { name: 'Mein Programm', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Kultur', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Audiotest', exact: true }).click();
+  await page.route('**/api/testing/reset-daily-limits', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ reset: true, utcDay: '2026-09-27' }) }));
+  page.once('dialog', dialog => void dialog.accept());
+  await page.getByRole('button', { name: 'Heutige Limits zurücksetzen' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Tageslimits für heute (2026-09-27) zurückgesetzt.' })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Testprotokoll herunterladen' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe('radio-audiotest.json');

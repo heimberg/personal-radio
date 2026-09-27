@@ -10,6 +10,7 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
   const token = await new SignJWT({ email: 'owner@example.test', type: 'app' }).setProtectedHeader({ alg: 'RS256', kid: 'worker-test-key' })
     .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
   const originalFetch = globalThis.fetch; let askCalls = 0, ttsCalls = 0, requestsUsed = 0, charactersUsed = 0, feedRequestsUsed = 0;
+  const deletedQuotaRows: Array<{ sql: string; values: unknown[] }> = [];
   globalThis.fetch = async input => {
     const url = String(input);
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
@@ -25,7 +26,7 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
   };
   const db = { prepare: (sql: string) => {
     let values: unknown[] = [];
-    const statement = { bind: (...args: unknown[]) => { values = args; return statement; }, first: async () => {
+    const statement = { bind: (...args: unknown[]) => { values = args; return statement; }, run: async () => { deletedQuotaRows.push({ sql, values }); return {}; }, first: async () => {
       if (sql.includes('daily_requests')) {
         const limit = Number(values[2]); if (requestsUsed >= limit) return null; requestsUsed++; return { requests: requestsUsed };
       }
@@ -53,6 +54,14 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     const foreignHeaders = new Headers(foreign.headers); foreignHeaders.set('Origin', 'https://attacker.example');
     assert.equal((await worker.fetch(new Request(foreign, { headers: foreignHeaders }), env as never)).status, 403);
     assert.equal(requestsUsed, 0); assert.equal(askCalls, 0);
+    const reset = await worker.fetch(new Request('https://private.example/api/testing/reset-daily-limits', {
+      method: 'POST', headers: { Origin: 'https://private.example', 'Cf-Access-Jwt-Assertion': token },
+    }), env as never);
+    assert.equal(reset.status, 200);
+    assert.deepEqual(await reset.json() as { reset: boolean; utcDay: string }, { reset: true, utcDay: new Date().toISOString().slice(0, 10) });
+    assert.equal(deletedQuotaRows.length, 3);
+    assert.ok(deletedQuotaRows.every(row => row.values[0] === 'owner@example.test' && row.values[1] === new Date().toISOString().slice(0, 10)));
+    assert.deepEqual(deletedQuotaRows.map(row => row.sql.match(/DELETE FROM (\\w+)/)?.[1]), ['daily_requests', 'daily_usage', 'daily_feed_requests']);
     const podcastWithoutGemini = makeRequest('request-key-no-gemini');
     const podcastBody = await podcastWithoutGemini.json() as Record<string, unknown>;
     podcastBody.mode = 'podcast';
