@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Personal Radio</string>
+    <string name="play">▶ Hören</string>
+    <string name="pause">Ⅱ Pause</string>
+    <string name="next">Weiter ↦</string>
+    <string name="like">👍 Mehr davon</string>
+    <string name="dislike">👎 Weniger</string>
+    <string name="plan">Jetzt planen</string>
+    <string name="cockpit">Programm einstellen</string>
+    <string name="connection">Verbindung</string>
+    <string name="upcoming">Als Nächstes</string>
+    <string name="nothing_playing">Noch nichts eingeschaltet</string>
+    <string name="nothing_planned">Noch nichts geplant. Tippe auf «Jetzt planen».</string>
+    <string name="status_waiting">Das Programm wird produziert. Der erste Beitrag kommt in wenigen Minuten.</string>
+    <string name="status_buffering">Wird geladen …</string>
+    <string name="status_ended">Warte auf den nächsten Beitrag …</string>
+    <string name="status_playing">Läuft</string>
+    <string name="status_paused">Pausiert</string>
+    <string name="liked">Gemerkt: mehr davon.</string>
+    <string name="disliked">Gemerkt: weniger davon.</string>
+    <string name="planned">Programm wird geplant und produziert.</string>
+    <string name="setup_title">Mit deinem Radio verbinden</string>
+    <string name="setup_intro">Adresse deines privaten Workers und das Cloudflare-Access-Service-Token der App. Die Angaben bleiben in dieser App.</string>
+    <string name="base_url">Adresse (https://…)</string>
+    <string name="client_id">Client-ID des Service-Tokens</string>
+    <string name="client_secret">Client-Secret des Service-Tokens</string>
+    <string name="save">Verbinden und testen</string>
+    <string name="testing">Verbindung wird getestet …</string>
+    <string name="connection_failed">Verbindung fehlgeschlagen.</string>
+</resources>

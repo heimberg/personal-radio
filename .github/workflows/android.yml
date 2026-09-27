@@ -1,0 +1,49 @@
+name: Android app
+
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Use the preinstalled Java 17
+        run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+      - name: Test program logic
+        run: ./gradlew -p core test --no-daemon
+      - name: Prepare signing key
+        # Optional: a fixed key lets every new build update the installed app.
+        env:
+          KEYSTORE_B64: ${{ secrets.RADIO_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/radio.jks"
+            echo "RADIO_KEYSTORE_PATH=$RUNNER_TEMP/radio.jks" >> "$GITHUB_ENV"
+          fi
+      - name: Build APK
+        env:
+          RADIO_KEYSTORE_PASSWORD: ${{ secrets.RADIO_KEYSTORE_PASSWORD }}
+          RADIO_KEY_ALIAS: ${{ secrets.RADIO_KEY_ALIAS }}
+          RADIO_KEY_PASSWORD: ${{ secrets.RADIO_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: personal-radio-android
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30

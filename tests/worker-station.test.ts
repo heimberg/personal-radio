@@ -151,3 +151,31 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.deepEqual(items[0].sources, [{ title: 'example.org', url: 'https://example.org/sonde' }]);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('the Android app authenticates with an Access service token and acts as the owner', async () => {
+  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const jwk = await exportJWK(publicKey); Object.assign(jwk, { kid: 'k3', alg: 'RS256', use: 'sig' });
+  const team = 'service-test.cloudflareaccess.com', aud = 'service-aud';
+  const sign = (claims: Record<string, unknown>) => new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid: 'k3' })
+    .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    if (String(input).endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
+    throw new Error(`Unexpected URL: ${String(input)}`);
+  };
+  const env = { DB: sqliteD1(), AUDIO: memoryBucket(), PRODUCTION: { send: async () => {} }, ASSETS: { fetch: async () => new Response('app') },
+    ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud, ALLOWED_EMAIL: 'Owner@Example.test', ACCESS_SERVICE_TOKEN_ID: 'radio-app.access' };
+  const station = (token: string, extra: Record<string, string> = {}) => worker.fetch(new Request(`${ORIGIN}/api/station`, {
+    headers: { 'Cf-Access-Jwt-Assertion': token, ...extra } }), env as never);
+  try {
+    const app = await sign({ type: 'app', common_name: 'radio-app.access' });
+    assert.equal((await station(app)).status, 200);
+    await (env.DB as any).raw.prepare(`INSERT INTO station_config (owner_id, config_json, updated_at) VALUES ('owner@example.test', ?, '2026-09-27')`)
+      .run(JSON.stringify(defaultStationConfig()));
+    assert.equal(((await (await station(app)).json()) as { config: { name: string } | null }).config?.name, 'Personal Radio'); // same owner as the browser login
+    assert.equal((await station(await sign({ type: 'app', common_name: 'other.access' }))).status, 401);
+    assert.equal((await station(await sign({ type: 'org', common_name: 'radio-app.access' }))).status, 401);
+    const withoutConfiguredToken = { ...env, ACCESS_SERVICE_TOKEN_ID: undefined };
+    assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), withoutConfiguredToken as never)).status, 401);
+  } finally { globalThis.fetch = originalFetch; }
+});

@@ -11,3 +11,4 @@
 .timeline-time{font-variant-numeric:tabular-nums;font-size:13px;color:#5f6b63;min-width:44px}.timeline-body{display:flex;flex-direction:column;gap:3px;min-width:0}.timeline-body strong{overflow-wrap:anywhere}
 .timeline-body small{color:#5f6b63}.timeline-body a{font-size:13px;overflow-wrap:anywhere;color:#2f6b52;text-decoration:underline}.timeline-error{color:#9b2c1f!important}
 .timeline li[data-state=ready]{border-color:#9fc4a6}.timeline li[data-state=failed],.timeline li[data-state=expired]{opacity:.7}.timeline li[data-state=played],.timeline li[data-state=skipped]{opacity:.55}
+.shell.embedded main{padding-bottom:24px}

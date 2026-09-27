@@ -210,3 +210,21 @@ test('server program: import device settings, show timeline, play ready segments
   expect(stored.host.name).toBe('Lou');
   expect(stored.shows[0].id).toBe('kurz');
 });
+
+test('inside the Android app the page is a settings cockpit without its own player', async ({ browser }) => {
+  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Linux; Android 15) PersonalRadioAndroid/1', viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  const config = { version: 1, name: 'Personal Radio', host: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' }, timezone: 'Europe/Zurich', horizonMinutes: 20,
+    profile: { topics: [], interests: [], interestWeights: {}, speechMinutes: 2, exploration: 20 }, feeds: [],
+    shows: [{ id: 'entdecken', name: 'Entdeckungen', enabled: true, format: 'brief', instructions: '', feedIds: [], targetMinutes: 2, verification: 'strict', textProvider: 'gemini', sourceMode: 'web', researchPrompt: '' }],
+    schedule: [{ id: 'immer', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['entdecken'] }] };
+  await page.route('**/api/station', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ config }) }));
+  await page.route('**/api/timeline', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Dein Programm.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Konfiguration bearbeiten' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '▶ Programm hören' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Audioplayer' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toHaveCount(0);
+  await context.close();
+});

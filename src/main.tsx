@@ -16,6 +16,8 @@ import type { FeedbackAction, FeedbackEvent } from './domain/recommendation.ts';
 import './style.css';
 
 const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
+// Inside the Android app the page is only the settings cockpit; the app itself plays the program.
+const embeddedInApp = navigator.userAgent.includes('PersonalRadioAndroid');
 const spotifyClientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? '';
 
 // Cache only the static app shell; API calls and generated audio stay online-only.
@@ -98,6 +100,12 @@ function App() {
     const a = document.createElement('a'); a.href = url; a.download = 'radio-audiotest.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  if (embeddedInApp) return <div className="shell embedded">
+    <main>
+      <div className="intro"><p className="eyebrow">EINSTELLUNGEN</p><h1>Dein Programm.</h1><p>Moderation, Sendungen, Quellen und Sendeuhr. Gehört wird in der App.</p></div>
+      <ProgramPanel player={player} profile={profile} embedded onStartProgram={() => {}} />
+    </main>
+  </div>;
   return <div className="shell">
     <header><a className="brand" href="#" aria-label="Personal Radio Start" onClick={() => setTab('radio')}><span className="brand-icon">◒</span> personal radio<span className="dot">.</span></a><span className="badge">{publicDemo ? 'Öffentliche Demo' : 'Privater Test'}</span></header>
     <main>

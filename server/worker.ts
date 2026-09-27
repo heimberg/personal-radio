@@ -29,6 +29,8 @@ interface Environment {
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   ALLOWED_EMAIL: string;
+  /** Client ID of the Access service token used by the Android app; its requests act as the owner. */
+  ACCESS_SERVICE_TOKEN_ID?: string;
   DAILY_TTS_CHARACTERS?: string;
   DAILY_GENERATIONS?: string;
   DAILY_FEED_REQUESTS?: string;
@@ -107,9 +109,13 @@ async function authenticate(request: Request, env: Environment): Promise<string 
     let jwks = jwksByIssuer.get(issuer);
     if (!jwks) { jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)); jwksByIssuer.set(issuer, jwks); }
     const { payload } = await jwtVerify(assertion, jwks, { issuer, audience: env.ACCESS_AUD });
+    if (payload.type !== 'app') return null;
     const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
-    if (!email || email !== env.ALLOWED_EMAIL.toLowerCase() || payload.type !== 'app') return null;
-    return email;
+    if (email) return email === env.ALLOWED_EMAIL.toLowerCase() ? email : null;
+    // Service tokens carry no email; Access puts the token's client ID into common_name.
+    const serviceToken = typeof payload.common_name === 'string' ? payload.common_name : '';
+    if (serviceToken && env.ACCESS_SERVICE_TOKEN_ID && serviceToken === env.ACCESS_SERVICE_TOKEN_ID) return env.ALLOWED_EMAIL.toLowerCase();
+    return null;
   } catch { return null; }
 }
 

@@ -4,7 +4,7 @@ import { defaultStationConfig } from '../domain/station.ts';
 import type { StationConfig, TimelineItemView, TimelineState } from '../domain/station.ts';
 import type { RadioPlayer, Track } from '../audio/player.ts';
 
-interface Props { player: RadioPlayer; profile: Profile; onStartProgram(tracks: Track[]): void }
+interface Props { player: RadioPlayer; profile: Profile; onStartProgram(tracks: Track[]): void; embedded?: boolean }
 
 const STATE_LABELS: Record<TimelineState, string> = {
   planned: 'Geplant', voicing: 'Wird vertont', ready: 'Bereit', played: 'Gehört', skipped: 'Übersprungen', failed: 'Fehlgeschlagen', expired: 'Abgelaufen',
@@ -49,7 +49,7 @@ function readDeviceFeeds(): Array<{ name: string; url: string }> {
   } catch { return []; }
 }
 
-export function ProgramPanel({ player, profile, onStartProgram }: Props) {
+export function ProgramPanel({ player, profile, onStartProgram, embedded = false }: Props) {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [config, setConfig] = useState<StationConfig | null>(null);
   const [items, setItems] = useState<TimelineItemView[]>([]);
@@ -149,7 +149,7 @@ export function ProgramPanel({ player, profile, onStartProgram }: Props) {
     <div className="section-heading"><h2>Dein Programm</h2><span>{readyCount} bereit · {open.length} offen</span></div>
     <p>{config.shows.filter(show => show.enabled).map(show => show.name).join(' · ') || 'Keine Sendung aktiv'} – {config.horizonMinutes} Minuten im Voraus.</p>
     <div className="program-actions">
-      <button className="primary" onClick={listen}>▶ Programm hören</button>
+      {!embedded && <button className="primary" onClick={listen}>▶ Programm hören</button>}
       <button className="secondary" disabled={busy} onClick={() => void plan()}>Jetzt planen</button>
       <button className="secondary" onClick={() => void toggleEditor()}>{editor === null ? 'Konfiguration bearbeiten' : 'Editor schliessen'}</button>
     </div>
