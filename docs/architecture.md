@@ -176,7 +176,7 @@ Public repository, private application. Cloudflare Access protects the Worker. B
 
 ## Current state and gaps
 
-Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning. Milestone 1 adds the server-side program described above, plus the host persona, the YAML editor, Gemini as default writer, web research with Google Search grounding and the topic memory.
+Built in PR #10: Worker with Access, D1 quotas, feed retrieval and ranking, ASK brief and Gemini dialog pipelines, ASK quote verifier, Mistral voices, Spotify PKCE with the Web Playback SDK, local feedback learning. Milestone 1 adds the server-side program described above, plus the host persona, the YAML editor, Gemini as default writer, web research with Google Search grounding and the topic memory. The web cockpit now has form editors next to the YAML view; the early prototype screens (audio test, public Pages demo, single-segment generator, desktop Spotify player) were removed.
 
 Remaining gaps:
 
@@ -190,7 +190,7 @@ Remaining gaps:
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; import of device settings; queue production with R2 audio; cron horizon with listener gate; timeline API; cockpit timeline with continuous browser playback.
 2. **The Android app with our segments** (built; acceptance test on a device pending): Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth and the embedded cockpit; 60-minute screen-off test. From here on the app is the only way to listen on the phone.
 3. **Spotify in the app:** App Remote, the artist hour as the first music format, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
-4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, ElevenLabs as TTS option, form editors next to YAML, music rules, Google Drive archive for liked segments and artist hours.
+4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, ElevenLabs as TTS option, music rules, Google Drive archive for liked segments and artist hours.
 5. **Learning and memory:** feedback weights in the planner, deduplication, series.
 6. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
 

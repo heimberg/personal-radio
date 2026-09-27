@@ -17,7 +17,7 @@ export function connectMediaSession(player: RadioPlayer) {
   return player.subscribe(() => {
     const title = player.tracks[player.state.index]?.title ?? 'Personal Radio';
     if (title !== lastTitle) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Personal Radio · Audiolabor' }); lastTitle = title;
+      navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Personal Radio' }); lastTitle = title;
     }
     navigator.mediaSession.playbackState = player.state.status === 'playing' ? 'playing' : 'paused';
     if (player.state.duration > 0) {

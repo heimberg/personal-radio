@@ -21,7 +21,7 @@ Record device, Android/browser versions, installed/browser mode, battery saver s
 | Installed PWA | Install from Chrome menu and repeat locked playback tests | Pending |
 | Spotify/moderation transition | NOT implemented or authorized by this test | Pending |
 
-Export the JSON log from Audiotest after each run. Events include wall-clock timestamps, segment numbers, play/pause/error/ended, visibility and online/offline changes. An “ended” event counts a completed segment; manually skipped tracks do not. Browser events can be delayed during suspension, and success in the log does not prove audible output: record your listening observations too. Profiles/file names are not included; logs still contain browser details and timestamps, so review before sharing publicly.
+Note the time of every interruption, skipped handoff or unexpected pause, and what you were doing (screen off, call, network change, Bluetooth). Record your listening observations: a clean log does not prove audible output.
 
 If the required background test fails, do not declare PWA a fix. Diagnose from the log, reproduce and decide on native media-service playback.
 
