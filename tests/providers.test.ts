@@ -30,6 +30,21 @@ test('Gemini creates a validated, source-cited two-host script from the official
   assert.equal(result.text, 'Erste Aussage. Zweite Aussage.');
   assert.equal(result.turns?.[1]?.speaker, 'host-b');
 });
+test('Gemini text generation retries a transient 503 once and succeeds', async () => {
+  let attempts = 0;
+  const generator = new GeminiPodcastGenerator({ key: 'test-key' }, async () => {
+    attempts++;
+    if (attempts === 1) return Response.json({ error: { message: 'temporarily overloaded' } }, { status: 503 });
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+      title: 'Zwei Hosts', turns: [
+        { speaker: 'host-a', text: 'Erste Aussage.' }, { speaker: 'host-b', text: 'Zweite Aussage.' },
+      ], sourceIds: ['s1'], interestTags: ['Wissenschaft'],
+    }) }] } }] });
+  });
+  const result = await generator.generate(defaultProfile, sources);
+  assert.equal(attempts, 2);
+  assert.equal(result.title, 'Zwei Hosts');
+});
 test('Gemini TTS sends two configured voices and accepts only WAV audio', async () => {
   const wav = Buffer.alloc(48); wav.write('RIFF', 0); wav.write('WAVE', 8);
   const synth = new GeminiPodcastSpeechSynthesizer({ key: 'test-key', voiceA: 'Kore', voiceB: 'Puck' }, async (url, init) => {
