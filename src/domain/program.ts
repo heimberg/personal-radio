@@ -25,7 +25,7 @@ export interface TextGenerator {
   generate(profile: Profile, sources: Source[]): Promise<Script>;
 }
 export interface SpeechSynthesizer {
-  synthesize(text: string, turns?: Script['turns']): Promise<Uint8Array>;
+  synthesize(text: string, turns?: Script['turns'], voiceId?: string): Promise<Uint8Array>;
 }
 
 export const defaultProfile: Profile = {
