@@ -12,7 +12,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "personal-radio"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "d76d06b3-cb52-4c4c-88ff-b05329bac327"
 migrations_dir = "migrations"
 
 [vars]
