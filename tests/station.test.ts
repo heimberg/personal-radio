@@ -7,6 +7,7 @@ import { StationStore } from '../server/station-store.ts';
 import { planTimeline, produceItem, tick, toView } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { PipelineError } from '../server/segment-pipeline.ts';
+import { ProviderError } from '../server/providers.ts';
 import type { FeedItem } from '../server/feed.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
 
@@ -244,4 +245,34 @@ test('a show whose text provider is not configured fails with a clear reason', a
   const [id] = (await tick(h.deps, OWNER)).due;
   assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
   assert.equal((await h.store.getItem(OWNER, id))?.error, 'ASK_NOT_CONFIGURED');
+});
+
+test('rate limits defer the item for the requested time without using an attempt or pausing planning', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => ({ ...show, enabled: show.id === 'entdecken' }));
+  const h = harness({ station: parseStationConfig(station) }); await h.setup();
+  let limited = true;
+  h.deps.researcher = { research: async () => {
+    if (limited) throw new ProviderError('Gemini research', 429, { detail: 'Quota exceeded', retryAfterMs: 30 * 60_000 });
+    return { queries: [], sources: [{ id: 'w1', url: 'https://example.org/a', title: 'example.org', excerpt: 'Satz.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }] };
+  } };
+  const due = (await tick(h.deps, OWNER)).due;
+  for (const id of due.slice(0, 4)) assert.equal(await produceItem(h.deps, OWNER, id), 'deferred');
+  const waiting = await h.store.getItem(OWNER, due[0]);
+  assert.equal(waiting?.state, 'planned'); assert.equal(waiting?.attempts, 0);
+  assert.equal(waiting?.lease_until, '2026-09-27T08:30:00.000Z');
+  assert.equal(waiting?.error, 'Gemini research request failed (429): Quota exceeded');
+  assert.equal(await h.store.recentFailures(OWNER, new Date(0)), 0);
+  assert.equal((await tick(h.deps, OWNER)).due.length, due.length - 4); // deferred items wait for their lease
+  // A short provider delay still waits at least two minutes; afterwards production resumes.
+  limited = false; h.advance(31);
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'ready');
+});
+
+test('a rate-limited verifier defers instead of rejecting the draft', async () => {
+  const h = harness(); await h.setup();
+  const [id] = (await tick(h.deps, OWNER)).due;
+  h.behaviour.review = () => { throw new ProviderError('Gemini verification', 429); };
+  assert.equal(await produceItem(h.deps, OWNER, id), 'deferred');
+  assert.equal((await h.store.getItem(OWNER, id))?.lease_until, '2026-09-27T08:02:00.000Z');
 });

@@ -204,3 +204,21 @@ test('Gemini verifier applies the same local quote check as ASK', async () => {
   assert.equal((await answer('Ein Test.').verify(script, sources)).approved, true);
   assert.deepEqual(await answer('Erfundenes Zitat.').verify(script, sources), { approved: false, reasons: ['UNSUPPORTED_OR_INVALID_EVIDENCE'] });
 });
+
+test('Gemini quota errors carry Google\'s explanation and retry delay and are not retried immediately', async () => {
+  let calls = 0;
+  const researcher = new GeminiResearcher({ key: 'secret-key' }, async () => {
+    calls++;
+    return Response.json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED',
+      message: 'You exceeded your current quota.\n* Quota exceeded for metric: generate_content_free_tier_requests, limit: 0, model: gemini-3.8-flash',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '37s' }] } }, { status: 429 });
+  });
+  await assert.rejects(researcher.research({ brief: '', interests: [], avoidTopics: [], now: new Date() }), (error: any) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterMs, 37_000);
+    assert.match(error.message, /^Gemini research request failed \(429\): You exceeded your current quota\. \* Quota exceeded for metric: generate_content_free_tier_requests, limit: 0/);
+    assert.ok(!error.message.includes('secret-key'));
+    return true;
+  });
+  assert.equal(calls, 1);
+});

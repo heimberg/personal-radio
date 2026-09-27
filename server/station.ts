@@ -4,6 +4,7 @@ import type { ShowConfig, StationConfig, TextProvider, TimelineItemView, Verific
 import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
+import { ProviderError } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
@@ -175,6 +176,13 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   } catch (error) {
     if (error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED') {
       await deps.store.update(owner, row.id, { lease_until: nextUtcMidnight(now).toISOString(), error: 'DAILY_LIMIT' }, deps.now());
+      return 'deferred';
+    }
+    if (error instanceof ProviderError && error.status === 429) {
+      // Rate limit or exhausted quota: wait as long as the provider asks (at least 2 minutes, at most 1 hour).
+      // It is not the item's fault, so it neither uses up an attempt nor counts towards the failure pause.
+      const waitMs = Math.min(Math.max(error.retryAfterMs ?? 0, 2 * 60_000), 60 * 60_000);
+      await deps.store.update(owner, row.id, { lease_until: new Date(now.getTime() + waitMs).toISOString(), error: error.message.slice(0, 300) }, deps.now());
       return 'deferred';
     }
     if (error instanceof PipelineError && (error.code === 'REJECTED' || error.code === 'INVALID_INPUT')) return fail(error.code);
