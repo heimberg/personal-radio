@@ -51,6 +51,12 @@ async function fakeWorker(page: Page, initial: unknown) {
   return state;
 }
 
+/** Settings open as an overview; each area opens on its own. */
+async function openArea(page: Page, title: string) {
+  if (await page.getByRole('button', { name: '← Alle Einstellungen' }).count()) await page.getByRole('button', { name: '← Alle Einstellungen' }).click();
+  await page.getByRole('button', { name: new RegExp(`^${title}: `) }).click();
+}
+
 test('first visit sets up the station and plans the program', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -121,14 +127,25 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await page.goto('/');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Alles gespeichert');
+  // The overview says what is set in each area.
+  await expect(page.getByRole('button', { name: /^Sendungen: \d+ aktiv von \d+$/ })).toBeVisible();
 
+  await openArea(page, 'Sender und Moderation');
   await page.getByLabel('Moderation', { exact: true }).fill('Lou');
   await page.getByRole('combobox', { name: 'Stimme' }).first().selectOption('fr_marie_neutral');
+  // The place for {ort} and {wetter} is found by name.
+  await page.getByLabel('Ort suchen').fill('Bern');
+  await page.getByRole('button', { name: 'Suchen' }).click();
+  await page.getByRole('button', { name: 'Bern, Bern, Schweiz' }).click();
+  await expect(page.getByText('Ort: Bern')).toBeVisible();
+
+  await openArea(page, 'Interessen');
   await page.getByRole('button', { name: 'Kultur' }).click();
   await page.getByPlaceholder('Eigenes Interesse, z. B. Geologie').fill('Vulkane');
   await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
   await page.getByRole('button', { name: 'Geologie entfernen' }).click();
 
+  await openArea(page, 'Sendungen');
   await page.getByLabel('Format der neuen Sendung').selectOption('theme_hour');
   await page.getByRole('button', { name: 'Sendung hinzufügen' }).click();
   const theme = page.getByRole('article', { name: 'Sendung Themen-Stunde' });
@@ -145,19 +162,16 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await hour.getByLabel('Produktion').selectOption('agents');
   await hour.getByRole('checkbox').check();
 
+  await openArea(page, 'Sendeuhr');
   const slot = page.getByRole('group', { name: 'Wochentage' }).first();
   await slot.getByRole('button', { name: 'So' }).click();
   await page.getByLabel('Zeitfenster 1').getByRole('button', { name: 'Themen-Stunde' }).click();
 
+  await openArea(page, 'Musik');
   const music = page.getByRole('region', { name: 'Musik' });
   await expect(music.getByRole('group', { name: 'Spotify-Hörprofil' })).toContainText('Nine Inch Nails, Protomartyr');
   await music.getByRole('slider').fill('2');
   await music.getByRole('textbox').fill('Industrial, Indie, Rock');
-  // The place for {ort} and {wetter} is found by name.
-  await page.getByLabel('Ort suchen').fill('Bern');
-  await page.getByRole('button', { name: 'Suchen' }).click();
-  await page.getByRole('button', { name: 'Bern, Bern, Schweiz' }).click();
-  await expect(page.getByText('Ort: Bern')).toBeVisible();
 
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Ungespeicherte Änderungen');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
@@ -174,6 +188,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });
 
   // Invalid input is explained before anything is sent.
+  await openArea(page, 'Sendeuhr');
   await page.getByLabel('Zeitfenster 1').getByLabel('Von').fill('25:00');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Bitte korrigieren – schedule[0].from');
@@ -186,6 +201,7 @@ test('settings: a music block with a playlist group, an AI group, rotation and m
   const worker = await fakeWorker(page, station());
   await page.goto('/');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await openArea(page, 'Sendungen');
   await page.getByLabel('Format der neuen Sendung').selectOption('music_block');
   await page.getByRole('button', { name: 'Sendung hinzufügen' }).click();
   const block = page.getByRole('article', { name: 'Sendung Musikblock' });
@@ -235,14 +251,15 @@ test('YAML view saves valid documents and explains broken ones', async ({ page }
   expect(worker.stored.host.name).toBe('Lou');
 });
 
-test('inside the Android app the page is the cockpit without its own player', async ({ browser }) => {
+test('inside the Android app the page is the settings, without tabs or its own player', async ({ browser }) => {
   const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Linux; Android 15) PersonalRadioAndroid/1', viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await fakeWorker(page, station());
   await page.goto('/');
-  await expect(page.getByRole('list', { name: 'Programmablauf' })).toBeVisible();
+  // Program and player are native in the app: the page opens on the settings, without tabs.
+  await expect(page.getByRole('navigation', { name: 'Bereiche' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Audioplayer' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await openArea(page, 'Sendungen');
   await expect(page.getByRole('region', { name: 'Sendungen' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await context.close();

@@ -43,7 +43,8 @@ function sendFeedback(timelineId: string, action: FeedbackAction, listenedRatio:
 }
 
 function App() {
-  const [view, setView] = useState<View>(spotifyReturn ? 'settings' : 'program');
+  // Inside the Android app the program and the player are native: the page is the settings.
+  const [view, setView] = useState<View>(spotifyReturn || embeddedInApp ? 'settings' : 'program');
   const [available, setAvailable] = useState<boolean | null>(null);
   const [config, setConfig] = useState<StationConfig | null>(null);
   const [items, setItems] = useState<TimelineItemView[]>([]);
@@ -142,7 +143,7 @@ function App() {
       <span className="brand"><span className="brand-mark" aria-hidden="true">◒</span>{config?.name ?? 'personal radio'}<span className="dot">.</span></span>
       {config && <span className="host">mit {config.host.name}</span>}
     </header>
-    {config && <nav className="tabs" aria-label="Bereiche">{views.map(([id, label]) =>
+    {config && !embeddedInApp && <nav className="tabs" aria-label="Bereiche">{views.map(([id, label]) =>
       <button key={id} aria-current={view === id || (id === 'settings' && view === 'yaml') ? 'page' : undefined} onClick={() => setView(id)}>{label}</button>)}</nav>}
     <main>
       {notice && <p className="notice" role="status" onClick={() => setNotice('')}>{notice}</p>}
