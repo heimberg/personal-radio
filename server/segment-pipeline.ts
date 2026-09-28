@@ -2,6 +2,7 @@
 import { parseProfile, parseScript } from '../src/domain/program.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
 import type { VerificationPolicy } from '../src/domain/station.ts';
+import { normalizeSpeech } from './audio.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 export interface EditorialVerifier { verify(script: Script, sources: Source[]): Promise<EditorialDecision> }
@@ -139,8 +140,8 @@ export class SegmentPipeline {
     await this.budget.reserve(ownerId, characters);
     const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
-    // Mistral returns MP3; Gemini voices return WAV.
+    // Mistral returns MP3; Gemini voices return WAV, which is brought to one speech level with trimmed edges.
     const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
-    return { audio, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
+    return { audio: wav ? normalizeSpeech(audio) : audio, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
   }
 }

@@ -166,7 +166,11 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
         calls.push('verify');
         return reply(JSON.stringify({ approved: true, checks: [{ claim: 'Start 2027', sourceIds: ['w1'], quote: 'Die Sonde startet 2027.', supported: true }], reasons: [] }));
       }
-      calls.push('draft');
+      if (system.startsWith('Du bist die Qualitätsjury')) {
+        calls.push('jury');
+        return reply(JSON.stringify({ hook: 4, clarity: 4, facts: 5, novelty: 4, length: 4, notes: 'gut' }));
+      }
+      calls.push(system.startsWith('Du bist Schlussredaktion') ? 'edit' : 'draft');
       return reply(JSON.stringify({ title: 'Start 2027', text: 'Die Sonde startet 2027.', sourceIds: ['w1'] }));
     }
     if (url.endsWith('/v1/audio/speech')) { calls.push('tts'); return Response.json({ audio_data: 'SUQz' }); }
@@ -184,7 +188,8 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
     await call('/api/timeline/plan', { method: 'POST' });
     await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
-    assert.deepEqual(calls, ['research', 'draft', 'verify', 'tts']);
+    // The final edit and the jury run between the draft and the evidence check.
+    assert.deepEqual(calls, ['research', 'draft', 'edit', 'jury', 'verify', 'tts']);
     const { items } = await (await call('/api/timeline')).json() as { items: Array<{ state: string; title?: string; searchQueries?: string[]; sources?: unknown[] }> };
     assert.equal(items[0].state, 'ready'); assert.equal(items[0].title, 'Start 2027');
     assert.deepEqual(items[0].searchQueries, ['sonde 2027']);

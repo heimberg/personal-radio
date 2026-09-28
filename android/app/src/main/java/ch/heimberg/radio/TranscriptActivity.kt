@@ -47,7 +47,11 @@ class TranscriptActivity : AppCompatActivity() {
             return
         }
         findViewById<TextView>(R.id.title).text = transcript.title
-        status.text = if (transcript.lines.isEmpty()) getString(R.string.transcript_empty) else ""
+        status.text = when {
+            transcript.lines.isEmpty() -> getString(R.string.transcript_empty)
+            transcript.quality != null -> getString(R.string.transcript_quality, String.format(java.util.Locale.GERMAN, "%.1f", transcript.quality!!.overall), transcript.quality!!.notes).trimEnd(' ', '·')
+            else -> ""
+        }
         lines.removeAllViews()
         sources.removeAllViews()
         val space = resources.getDimensionPixelSize(R.dimen.space_3)

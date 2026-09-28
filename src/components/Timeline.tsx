@@ -106,7 +106,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
         <span className="timeline-time">{clockTime(item.plannedAt)}</span>
         <div className={`timeline-body ${item.showId === MUSIC_SHOW_ID ? 'song' : ''}`}>
           <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.title ?? item.showName}</strong>
-          <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</span>
+          <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}{item.quality ? ` · ★ ${item.quality.toLocaleString('de-CH')}` : ''}</span>
           {item.error && item.state !== 'ready' && <span className="timeline-error">
             {item.updatedAt ? `${clockTime(item.updatedAt)} · ` : ''}{errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</span>}
           {item.team && <span className="timeline-team">Redaktionsteam: {item.team.songs} Songs einzeln recherchiert{item.team.specialists ? ` · ${item.team.specialists} Fachrecherchen` : ''} · {item.team.corrections === 0 ? 'Faktencheck ohne Beanstandung' : `${item.team.corrections} Korrekturen im Faktencheck`}</span>}

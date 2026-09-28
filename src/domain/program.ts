@@ -20,7 +20,10 @@ export interface Script {
   sourceIds: string[];
   turns?: Array<{ speaker: 'host-a' | 'host-b'; text: string }>;
   interestTags?: string[];
+  /** The jury's marks (1–5) after the final edit. */
+  quality?: QualityScore;
 }
+export interface QualityScore { hook: number; clarity: number; facts: number; novelty: number; length: number; overall: number; notes: string }
 /** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
 export interface HostPersona {
   name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string;

@@ -1,0 +1,36 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizeSpeech, speechLevel } from '../server/audio.ts';
+import { pcmToWav } from '../server/providers.ts';
+
+/** A quiet 440 Hz tone framed by a second of silence on both sides, as 16-bit mono PCM at 24 kHz. */
+function quietTone(amplitude: number, seconds = 1) {
+  const rate = 24_000, silence = rate, tone = rate * seconds;
+  const pcm = new Uint8Array((silence * 2 + tone) * 2);
+  const view = new DataView(pcm.buffer);
+  for (let i = 0; i < tone; i++) view.setInt16((silence + i) * 2, Math.round(Math.sin(2 * Math.PI * 440 * i / rate) * amplitude * 32767), true);
+  return pcmToWav(pcm, rate);
+}
+
+test('speech is brought to one level, silent edges are trimmed, peaks stay below full scale', () => {
+  const quiet = quietTone(0.02), loud = quietTone(0.9);
+  const a = normalizeSpeech(quiet), b = normalizeSpeech(loud);
+  const levelA = speechLevel(a)!, levelB = speechLevel(b)!;
+  assert.ok(Math.abs(levelA - -19) < 1.5, `quiet speech at ${levelA} dBFS`);
+  assert.ok(Math.abs(levelA - levelB) < 2, `levels ${levelA} and ${levelB}`);
+  // Three seconds in, a bit more than one second of tone plus short pads out.
+  const seconds = (a.length - 44) / 2 / 24_000;
+  assert.ok(seconds > 1 && seconds < 1.4, `${seconds} s after trimming`);
+  const view = new DataView(b.buffer, 44);
+  let peak = 0;
+  for (let i = 0; i < (b.length - 44) / 2; i++) peak = Math.max(peak, Math.abs(view.getInt16(i * 2, true)));
+  assert.ok(peak < 32767);
+  assert.equal(new TextDecoder().decode(a.subarray(0, 4)), 'RIFF');
+});
+
+test('audio that is not 16-bit PCM WAV passes unchanged', () => {
+  const mp3 = new Uint8Array([73, 68, 51, 4, 0, 0, 0, 0, 0, 0]);
+  assert.equal(normalizeSpeech(mp3), mp3);
+  const silent = pcmToWav(new Uint8Array(48_000), 24_000);
+  assert.equal(normalizeSpeech(silent), silent);
+});
