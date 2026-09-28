@@ -120,8 +120,8 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(
                 listOf(
-                    CommandButton.Builder(CommandButton.ICON_THUMB_DOWN).setDisplayName(getString(R.string.dislike)).setSessionCommand(DISLIKE).build(),
-                    CommandButton.Builder(CommandButton.ICON_THUMB_UP).setDisplayName(getString(R.string.like)).setSessionCommand(LIKE).build(),
+                    CommandButton.Builder(CommandButton.ICON_THUMB_DOWN_UNFILLED).setDisplayName(getString(R.string.dislike)).setSessionCommand(DISLIKE).build(),
+                    CommandButton.Builder(CommandButton.ICON_THUMB_UP_UNFILLED).setDisplayName(getString(R.string.like)).setSessionCommand(LIKE).build(),
                 ),
             )
             .build()
