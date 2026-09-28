@@ -11,6 +11,8 @@ const HELP = [
   '#        format artist_hour | genre_hour | theme_hour (20–90 Min.): artist | genre | theme (leer = KI wählt),',
   '#          tracks 3–15, talkSeconds 20–180 – Musik über Spotify zwischen den Moderationen',
   '#          production standard | agents (Redaktionsteam: Regie, Song-Recherche, Faktencheck, Schlussredaktion)',
+  '#        Platzhalter in instructions und researchPrompt: {datum} {wochentag} {uhrzeit} {ort} {wetter} (Wetter von Open-Meteo, braucht location)',
+  '# location: name, latitude, longitude – Ort für {ort} und {wetter}',
   '# music: between 0–3 Songs nach jedem Wortbeitrag · announce true/false (kurze Ansage) · taste = dein Musikgeschmack',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');

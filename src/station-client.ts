@@ -36,6 +36,8 @@ const ERROR_LABELS: Record<string, string> = {
   SHOW_REMOVED: 'Die Sendung existiert nicht mehr.',
   GEMINI_NOT_CONFIGURED: 'Gemini ist nicht konfiguriert (GEMINI_API_KEY).',
   ASK_NOT_CONFIGURED: 'ASK ist nicht konfiguriert; stelle die Sendung auf Gemini.',
+  NO_LOCATION: 'Für {wetter} fehlt der Ort (Einstellungen → Sendeuhr → Ort).',
+  WEATHER_NOT_CONFIGURED: 'Das Wetter-Tool ist nicht verfügbar.',
   SPOTIFY_NOT_CONFIGURED: 'Spotify-Suche ist nicht konfiguriert (SPOTIFY_CLIENT_ID und SPOTIFY_CLIENT_SECRET im Worker).',
 };
 

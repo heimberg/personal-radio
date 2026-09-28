@@ -5,6 +5,7 @@ import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMus
 import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ScheduleSlot, ShowConfig, ShowFormat, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
+import { LocationPicker } from './LocationPicker.tsx';
 
 interface Props { config: StationConfig; onSave(next: StationConfig): Promise<boolean> }
 interface Voice { id: string; name: string }
@@ -297,7 +298,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
           {!block && (focus || show.sourceMode === 'web') && <Field label={focus ? 'Zusätzlicher Rechercheauftrag' : 'Rechercheauftrag'} hint="Wonach die Websuche suchen soll.">
             <textarea rows={2} maxLength={1000} value={show.researchPrompt} onChange={event => changeShow(index, current => ({ ...current, researchPrompt: event.target.value }))} />
           </Field>}
-          <Field label="Redaktionelle Anweisungen" hint="Dein eigener Prompt für diese Sendung.">
+          <Field label="Redaktionelle Anweisungen" hint="Dein eigener Prompt für diese Sendung. Platzhalter: {datum}, {wochentag}, {uhrzeit}, {ort}, {wetter}.">
             <textarea rows={2} maxLength={2000} value={show.instructions} onChange={event => changeShow(index, current => ({ ...current, instructions: event.target.value }))} />
           </Field>
           <div className="row-end"><button type="button" className="button ghost small danger" onClick={() => change(next => {
@@ -342,6 +343,9 @@ export function StationEditor({ config: stored, onSave }: Props) {
           <input type="range" min={10} max={120} step={5} value={draft.horizonMinutes} onChange={event => change(next => { next.horizonMinutes = Number(event.target.value); })} />
         </Field>
       </div>
+      <fieldset className="spaced"><legend>Ort für {'{ort}'} und {'{wetter}'}</legend>
+        <LocationPicker value={draft.location} onChange={location => change(next => { if (location) next.location = location; else delete next.location; })} />
+      </fieldset>
     </Section>
 
     <Section title="Feeds" description="RSS- oder Atom-Feeds für Sendungen mit der Quelle «Meine Feeds».">

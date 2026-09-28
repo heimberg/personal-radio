@@ -9,6 +9,7 @@ import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
+import { OpenMeteo } from './tools.ts';
 import { AUDIO_RETENTION_DAYS, arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
@@ -226,6 +227,7 @@ function stationDeps(env: Environment): StationDeps {
       return format === 'podcast' ? providers.geminiDialog : providers.geminiBrief;
     },
     researcher: providersFor(env).researcher,
+    weather: new OpenMeteo(),
     musicWriter: musicFor(env).writer,
     ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
     agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
@@ -327,6 +329,13 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
     return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify }, 200);
+  }
+  if (url.pathname === '/api/places') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const name = (url.searchParams.get('name') ?? '').trim().slice(0, 80);
+    if (name.length < 2) return json({ places: [] }, 200);
+    try { return json({ places: await new OpenMeteo().places(name) }, 200); }
+    catch { return json({ error: 'places_unavailable' }, 502); }
   }
   if (url.pathname === '/api/library') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

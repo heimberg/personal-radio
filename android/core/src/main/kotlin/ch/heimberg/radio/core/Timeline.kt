@@ -98,6 +98,8 @@ object Labels {
         "GEMINI_NOT_CONFIGURED" -> "Gemini ist nicht konfiguriert."
         "ASK_NOT_CONFIGURED" -> "ASK ist nicht konfiguriert."
         "PODCAST_PROVIDER_NOT_CONFIGURED" -> "Dialoge sind nicht konfiguriert."
+        "NO_LOCATION" -> "Für das Wetter fehlt der Ort (Programm einstellen → Sendeuhr → Ort)."
+        "WEATHER_NOT_CONFIGURED" -> "Das Wetter-Tool ist nicht verfügbar."
         "SPOTIFY_NOT_CONFIGURED" -> "Spotify ist auf dem Server nicht eingerichtet."
         else -> code
     }
