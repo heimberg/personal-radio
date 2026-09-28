@@ -7,6 +7,7 @@ import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
 import { LocationPicker } from './LocationPicker.tsx';
 import { DayPlan } from './DayPlan.tsx';
+import { AgentDesk } from './AgentDesk.tsx';
 
 interface Props { config: StationConfig; onSave(next: StationConfig): Promise<boolean> }
 interface Voice { id: string; name: string }
@@ -143,6 +144,12 @@ function Section({ id, title, description, summary, open, onOpen, children }: Se
     <button type="button" className="back-link" onClick={() => onOpen(null)}>← Alle Einstellungen</button>
     <h2>{title}</h2><p className="muted">{description}</p>{children}
   </section>;
+}
+
+function agentSummary(config: StationConfig): string {
+  const own = Object.values(config.agents ?? {});
+  const off = own.filter(settings => settings?.enabled === false).length, changed = own.length;
+  return changed ? `${changed} angepasst${off ? `, ${off} aus` : ''}` : 'Standard';
 }
 
 /** Fields added after a configuration was stored get their defaults, as on the server. */
@@ -378,6 +385,10 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <button type="button" className="button" disabled={draft.feeds.length >= 30} onClick={() => change(next => {
         next.feeds.push({ id: uniqueId('feed', next.feeds.map(feed => feed.id)), name: 'Neuer Feed', url: 'https://' });
       })}>Feed hinzufügen</button>
+    </Section>
+
+    <Section {...nav} id="redaktion" summary={agentSummary(draft)} title="Redaktion" description="Die KI-Agenten hinter deinem Radio: was sie tun, ihre Anweisungen und wie frei sie schreiben. Quellenregeln und Antwortformat bleiben fest, damit nichts Unbelegtes gesendet wird.">
+      <AgentDesk value={draft.agents} onChange={agents => change(next => { if (agents) next.agents = agents; else delete next.agents; })} />
     </Section>
 
     <div className={`savebar ${dirty ? 'visible' : ''}`} role="region" aria-label="Änderungen">

@@ -9,6 +9,8 @@ import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './t
 import { finishScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
 import { BLOCKS, BLOCK_PREFIX, blockOf, blockShow } from '../src/domain/blocks.ts';
+import { agentOf, resolveAgents } from '../src/domain/agents.ts';
+import type { AgentConfig } from '../src/domain/agents.ts';
 import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
@@ -197,7 +199,7 @@ async function headlines(deps: StationDeps, owner: string, config: StationConfig
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 6)
     .map((item, index) => ({ id: `h${index + 1}`, url: item.url, title: item.title, excerpt: item.excerpt.slice(0, 1500), publishedAt: item.publishedAt, retrievedAt: now.toISOString() }));
   if (!sources.length && deps.researcher) {
-    const found = await deps.researcher.research({ brief: `Die wichtigsten Nachrichten von heute${date ? `, ${date}` : ''}: sechs Schlagzeilen aus der Schweiz und der Welt, jeweils mit einem Satz Einordnung.`, interests: [], avoidTopics: [], now });
+    const found = await deps.researcher.research({ brief: `Die wichtigsten Nachrichten von heute${date ? `, ${date}` : ''}: sechs Schlagzeilen aus der Schweiz und der Welt, jeweils mit einem Satz Einordnung.`, interests: [], avoidTopics: [], now, agent: agentOf(resolveAgents(config.agents), 'research') });
     sources = found.sources.slice(0, 6).map((source, index) => ({ ...source, id: `h${index + 1}` }));
   }
   return { text: sources.map(source => `– ${source.title}`).join('\n'), sources };
@@ -225,6 +227,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const now = deps.now();
   const config = await deps.store.getConfig(owner);
   if (!config) return 'skipped';
+  const agents = resolveAgents(config.agents);
   const row = await deps.store.lease(owner, itemId, now, minutes(now, LEASE_MINUTES));
   if (!row) return 'skipped';
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
@@ -277,18 +280,18 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       const avoidTopics = await recentTopics(deps, owner);
       let sources: Source[], queries: string[] = [];
       if (show.sourceMode === 'web') {
-        ({ sources, queries } = await deps.researcher!.research({ brief: show.researchPrompt, interests: [...profile.topics, ...profile.interests], avoidTopics, now }));
+        ({ sources, queries } = await deps.researcher!.research({ brief: show.researchPrompt, interests: [...profile.topics, ...profile.interests], avoidTopics, now, agent: agentOf(agents, 'research') }));
       } else sources = await collectSources(deps, owner, config, show, profile);
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
       // Tool results are evidence too; a show can live on them alone (a weather report).
       sources = [...toolSources, ...sources];
       if (!sources.length) return fail('NO_SOURCES');
-      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics };
+      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents };
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
       if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, await stationContext(deps, owner, config, row, now));
-      await deps.pipeline.review(script, sources, show.verification);
+      await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: queries.length ? JSON.stringify({ queries }) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
@@ -377,7 +380,7 @@ async function recentSubjects(deps: StationDeps, owner: string, focus: HourFocus
  */
 async function produceMusicHour(deps: StationDeps, owner: string, config: StationConfig, show: ShowConfig, row: TimelineRow,
   fail: (error: string) => Promise<'failed'>): Promise<ProduceOutcome> {
-  const now = deps.now();
+  const now = deps.now(), agents = resolveAgents(config.agents);
   let pkg: HourPackage;
   if (row.state === 'planned') {
     if (!deps.researcher || !deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
@@ -395,10 +398,10 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     const brief = `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim();
     let sources: Source[] = [], queries: string[] = [];
     if (show.production !== 'agents') {
-      ({ sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now }));
-      if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now }));
+      ({ sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
+      if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
     }
-    const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner) };
+    const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner), agents };
     let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }>;
     let hour: HourScript;
     let team: { songs: number; specialists: number; corrections: number } | undefined;
@@ -407,7 +410,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       if (!deps.agentModel) return fail('GEMINI_NOT_CONFIGURED');
       const steps = deps.agentSteps?.(owner, row.id) ?? memorySteps();
       const result = await produceWithTeam({ runId: row.id, ownerId: owner, steps,
-        tools: { model: deps.agentModel, researcher: deps.researcher, catalog: deps.catalog, now: deps.now },
+        tools: { model: deps.agentModel, researcher: deps.researcher, catalog: deps.catalog, now: deps.now, agents },
         request: { focus, subject, count: show.tracks ?? 10, talkSeconds: show.talkSeconds ?? 60, instructions: show.instructions, researchPrompt: show.researchPrompt, direction } });
       if (!result.ok) { await steps.clear(); return fail(result.error); }
       sources = result.sources; queries = result.queries; hour = result.script;
@@ -427,7 +430,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       // song-specific evidence, rather than asking it to improvise from a broad artist dossier.
       const songDossier = await deps.researcher.research({
         brief: `Recherchiere gezielt für jede dieser bestätigten Aufnahmen eine eigene, belegbare Geschichte. Suche konkrete Hintergründe zu Entstehung, Aufnahme, Album, Text oder Motiv, beteiligten Musikerinnen und Musikern und damaligem Kontext. Liefere unterschiedliche Details pro Song; keine allgemeine Künstlerbiografie.\n${resolved.map((item, index) => `${index + 1}. ${item.pick.artist} – ${item.pick.title}${item.pick.album ? `, Album ${item.pick.album}` : ''}${item.pick.year ? ` (${item.pick.year})` : ''}: ${item.pick.reason}`).join('\n')}`,
-        interests: [subject], avoidTopics: [], now,
+        interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research'),
       });
       const knownUrls = new Set(sources.map(source => source.url));
       const songSources = songDossier.sources.flatMap((source, index) => {
@@ -443,7 +446,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
     const sourceIds = [...new Set(spoken.flatMap(part => part.sourceIds))];
     const text = spoken.map(part => part.text).join(' ');
-    await deps.pipeline.review({ title: hour.title, text, sourceIds }, sources, verification);
+    await deps.pipeline.review({ title: hour.title, text, sourceIds }, sources, verification, agentOf(agents, 'verifier').instructions);
     const speech = (part: { text: string; sourceIds: string[] }): SpeechPart[] => splitSpeech(part.text).map(chunk => ({ kind: 'speech', text: chunk, sourceIds: part.sourceIds }));
     const parts: Array<SpeechPart | TrackPart> = [...speech(hour.intro)];
     resolved.forEach((item, index) => {
@@ -527,7 +530,7 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
       liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens,
-      direction: { stationName: config.name, persona: config.host },
+      direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let chosen: { pick: SongPick; uri: string; durationMs: number } | null = null;
     for (const pick of picks) {
@@ -633,7 +636,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
     const picks = await deps.musicWriter!.pickSongs({
       taste: group.taste || config.music.taste, interests: [...config.profile.topics, ...config.profile.interests],
       avoid: [...history.names.slice(-60), ...[...queues.values()].flat().filter(track => track.picked === 'ai').map(track => `${track.artist} – ${track.title}`)], liked: reactions.liked, disliked: reactions.disliked,
-      listens, announce: false, count: Math.min(15, wanted + 2), direction: { stationName: config.name, persona: config.host },
+      listens, announce: false, count: Math.min(15, wanted + 2), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let found = 0;
     for (const pick of picks) {
@@ -695,7 +698,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
     blockName: show.name, groups: groupNames, nextShow: nextShowName(config, show, new Date(row.planned_at)),
     daytime: daytime(new Date(row.planned_at), config.timezone), talkSeconds: show.talkSeconds ?? 20,
     moments: positions.map(position => moments.get(position)!),
-    direction: { instructions: show.instructions, stationName: config.name, persona: config.host },
+    direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
   });
   if (!texts.some(Boolean)) throw new Error('Gemini block moderation returned nothing');
   const speechAt = new Map(positions.map((position, index) => [position, texts[index]]));
@@ -888,4 +891,56 @@ function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineIte
       ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),
   };
+}
+
+export type TrialOutcome =
+  | { ok: true; itemTitle: string; before: { text: string; quality?: QualityScore }; after: { text: string; quality?: QualityScore } }
+  | { ok: false; error: 'NO_ITEM' | 'NOT_CONFIGURED' | 'FAILED'; detail?: string };
+
+const scriptText = (script: Script) => script.turns ? script.turns.map(turn => `${turn.speaker === 'host-b' ? 'B' : 'A'}: ${turn.text}`).join('\n') : script.text;
+
+/**
+ * Tries an agent with unsaved settings on the last produced spoken item and returns before and after;
+ * nothing is stored. The writer drafts anew from the same sources, the editor rewrites (and the jury
+ * scores) the final text, the jury only scores it.
+ */
+export async function trialAgent(deps: StationDeps, owner: string, agent: 'writer' | 'editor' | 'jury', draft: AgentConfig | undefined): Promise<TrialOutcome> {
+  const config = await deps.store.getConfig(owner);
+  if (!config) return { ok: false, error: 'NO_ITEM' };
+  const agents = resolveAgents(draft);
+  let found: { row: TimelineRow; script: Script; sources: Source[]; show: ShowConfig } | undefined;
+  for (const row of (await deps.store.recentItems(owner, 40)).reverse()) {
+    if (!row.script_json || !row.sources_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(row.state)) continue;
+    const show = config.shows.find(item => item.id === row.show_id) ?? (blockOf(row.show_id) ? blockShow(blockOf(row.show_id)!, config) : undefined);
+    if (!show || (show.format !== 'brief' && show.format !== 'podcast')) continue;
+    try {
+      const script = JSON.parse(row.script_json) as Script, sources = JSON.parse(row.sources_json) as Source[];
+      if (typeof script.text === 'string' && script.text.trim() && Array.isArray(script.sourceIds) && sources.length) { found = { row, script, sources, show }; break; }
+    } catch { /* Skip corrupt rows. */ }
+  }
+  if (!found) return { ok: false, error: 'NO_ITEM' };
+  const { row, script, sources, show } = found;
+  const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, agents };
+  const before = { text: scriptText(script), ...(script.quality ? { quality: script.quality } : {}) };
+  try {
+    if (agent === 'writer') {
+      const generator = deps.generator ? deps.generator(show.textProvider, show.format) : undefined;
+      if (deps.generator && !generator) return { ok: false, error: 'NOT_CONFIGURED' };
+      await deps.reserveGeneration(owner);
+      const fresh = await deps.pipeline.draft(config.profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
+      return { ok: true, itemTitle: script.title, before, after: { text: scriptText(fresh) } };
+    }
+    if (!deps.editor) return { ok: false, error: 'NOT_CONFIGURED' };
+    await deps.reserveGeneration(owner);
+    if (agent === 'jury') {
+      const { interestTags: _tags, quality: _quality, ...plain } = script;
+      const scored = await finishScript(deps.editor, plain, sources, { ...direction, agents: { ...agents, editor: { ...agents.editor, enabled: false }, jury: { ...agents.jury, enabled: true } } }, await stationContext(deps, owner, config, row, deps.now()));
+      return { ok: true, itemTitle: script.title, before, after: { text: before.text, ...(scored.quality ? { quality: scored.quality } : {}) } };
+    }
+    const { quality: _quality, ...plain } = script;
+    const edited = await finishScript(deps.editor, plain, sources, { ...direction, agents: { ...agents, editor: { ...agents.editor, enabled: true } } }, await stationContext(deps, owner, config, row, deps.now()));
+    return { ok: true, itemTitle: script.title, before, after: { text: scriptText(edited), ...(edited.quality ? { quality: edited.quality } : {}) } };
+  } catch (error) {
+    return { ok: false, error: 'FAILED', detail: (error instanceof Error ? error.message : 'unbekannt').slice(0, 200) };
+  }
 }

@@ -258,6 +258,45 @@ test('settings: a music block with a playlist group, an AI group, rotation and m
   });
 });
 
+test('Redaktion: agents are edited as cards, switched off, reset and tried on the last item without saving', async ({ page }) => {
+  const worker = await fakeWorker(page, station());
+  const trials: any[] = [];
+  await page.route('**/api/agents/trial', async route => {
+    trials.push(JSON.parse(route.request().postData() ?? '{}'));
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, itemTitle: 'Gletscher', before: { text: 'Alt.', quality: { hook: 3, clarity: 3, facts: 3, novelty: 3, length: 3, overall: 3, notes: '' } },
+      after: { text: 'Neu mit Pfiff.', quality: { hook: 4, clarity: 4, facts: 4, novelty: 4, length: 4, overall: 4, notes: 'gut' } } }) });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Redaktion: Standard' })).toBeVisible();
+  await openArea(page, 'Redaktion');
+  const editor = page.getByRole('article', { name: 'Agent Schlussredaktion' });
+  await editor.getByRole('button', { name: 'Schlussredaktion bearbeiten' }).click();
+  await expect(editor.getByLabel('Anweisungen')).toHaveValue(/^Schreibe fürs Hören/);
+  await editor.getByLabel('Anweisungen').fill('Mit Pfiff und kurzen Sätzen.');
+  await editor.getByLabel('Schlussredaktion: genau bis frei').fill('0.7');
+  await expect(editor.getByText('angepasst')).toBeVisible();
+  await editor.getByRole('button', { name: 'Probelauf am letzten Beitrag' }).click();
+  await expect(editor.getByText('Neu mit Pfiff.')).toBeVisible();
+  await expect(editor.getByText(/Am Beitrag «Gletscher»/)).toBeVisible();
+  expect(trials[0]).toEqual({ agent: 'editor', agents: { editor: { instructions: 'Mit Pfiff und kurzen Sätzen.', temperature: 0.7 } } });
+
+  const jury = page.getByRole('article', { name: 'Agent Qualitäts-Jury' });
+  await jury.getByRole('checkbox').uncheck();
+  const writer = page.getByRole('article', { name: 'Agent Autorin' });
+  await writer.getByRole('button', { name: 'Autorin bearbeiten' }).click();
+  await writer.getByLabel('Anweisungen').fill('Knapp.');
+  await writer.getByRole('button', { name: 'Standard wiederherstellen' }).click();
+  await expect(writer.getByLabel('Anweisungen')).toHaveValue(/^Kennzeichne Unsicherheit/);
+  await expect(page.getByRole('heading', { name: 'Redaktionsteam der Musikstunde' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(page.getByText(/^Gespeichert\./)).toBeVisible();
+  expect(worker.saved.at(-1).agents).toEqual({ editor: { instructions: 'Mit Pfiff und kurzen Sätzen.', temperature: 0.7 }, jury: { enabled: false } });
+  await page.getByRole('button', { name: '← Alle Einstellungen' }).click();
+  await expect(page.getByRole('button', { name: 'Redaktion: 2 angepasst, 1 aus' })).toBeVisible();
+});
+
 test('YAML view saves valid documents and explains broken ones', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
