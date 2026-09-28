@@ -30,6 +30,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.media3.session.SessionToken
+import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
@@ -110,6 +111,7 @@ class MainActivity : AppCompatActivity() {
             setOnRefreshListener {
                 lifecycleScope.launch {
                     refreshTimeline()
+                    loadBlocks()
                     controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
                     isRefreshing = false
                 }
@@ -134,7 +136,6 @@ class MainActivity : AppCompatActivity() {
         titleView.setOnClickListener { openTranscript() }
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
         spotifyButton.setOnClickListener { connectSpotify() }
-        findViewById<Button>(R.id.produce_now).setOnClickListener { chooseShowToProduce() }
         findViewById<Button>(R.id.archive).setOnClickListener { archive.launch(Intent(this, LibraryActivity::class.java)) }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
         findViewById<Button>(R.id.connection).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
@@ -142,6 +143,7 @@ class MainActivity : AppCompatActivity() {
         sleepButton.setOnClickListener { chooseSleep() }
         updater = AppUpdater(this, api)
         lifecycleScope.launch { updater.available()?.let(::offerUpdate) }
+        lifecycleScope.launch { loadBlocks() }
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -388,70 +390,56 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** One tap on a show produces it; music hours first ask for an optional subject. */
-    private fun chooseShowToProduce() {
-        lifecycleScope.launch {
-            val shows = runCatching { api.shows() }.getOrElse {
-                statusView.text = it.message ?: getString(R.string.production_failed)
-                return@launch
-            }
-            if (shows.isEmpty()) {
-                statusView.text = getString(R.string.no_shows)
-                return@launch
-            }
-            AlertDialog.Builder(this@MainActivity)
-                .setTitle(R.string.produce_now_title)
-                .setItems(shows.map { "${it.name} · ${formatLabel(it.format)}" }.toTypedArray()) { _, which ->
-                    val show = shows[which]
-                    if (show.format in MUSIC_HOURS) askSubject(show) else produce(show, "")
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+    /** Loads the building blocks: the catalog, a song and the owner's own shows. */
+    private suspend fun loadBlocks() {
+        val blocks = runCatching { api.blocks() }.getOrNull() ?: return
+        val row = findViewById<LinearLayout>(R.id.blocks)
+        row.removeAllViews()
+        for (block in blocks) {
+            row.addView(layoutInflater.inflate(R.layout.item_block, row, false).apply {
+                findViewById<TextView>(R.id.name).text = if (block.music) "${block.name} ♫" else block.name
+                findViewById<TextView>(R.id.description).text = block.description
+                contentDescription = "${block.name}: ${block.description}"
+                setOnClickListener { chooseBlock(block) }
+            })
         }
     }
 
-    private fun askSubject(show: ApiClient.ShowOption) {
-        val subject = EditText(this).apply {
+    /** One tap adds the block as the next item; a block that takes a word asks for it, empty lets the AI choose. */
+    private fun chooseBlock(block: BlockView) {
+        if (block.music && spotifyClientId != null && !RadioSettings(this).spotifyLinked) {
+            Toast.makeText(this, R.string.block_needs_spotify, Toast.LENGTH_LONG).show()
+        }
+        val input = block.input ?: return addBlock(block, "")
+        val word = EditText(this).apply {
             maxLines = 1
             filters = arrayOf(InputFilter.LengthFilter(200))
-            hint = getString(
-                when (show.format) {
-                    "artist_hour" -> R.string.subject_artist
-                    "genre_hour" -> R.string.subject_genre
-                    else -> R.string.subject_theme
-                },
-            )
+            hint = getString(R.string.block_subject_hint, input.label, input.example)
         }
         val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
             val inset = (24 * resources.displayMetrics.density).toInt()
             setPadding(inset, inset / 3, inset, 0)
-            addView(TextView(context).apply { text = getString(R.string.produce_subject_intro) })
-            addView(subject)
+            addView(word, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
         AlertDialog.Builder(this)
-            .setTitle(show.name)
+            .setTitle(block.name)
             .setView(content)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.produce_now_action) { _, _ -> produce(show, subject.text.toString().trim()) }
+            .setNeutralButton(R.string.block_ai_picks) { _, _ -> addBlock(block, "") }
+            .setPositiveButton(R.string.block_add) { _, _ -> addBlock(block, word.text.toString().trim()) }
             .show()
     }
 
-    private fun produce(show: ApiClient.ShowOption, subject: String) {
+    private fun addBlock(block: BlockView, subject: String) {
+        statusView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         lifecycleScope.launch {
-            statusView.text = getString(R.string.production_starting)
-            statusView.text = runCatching { api.produceNow(show, subject) }
-                .fold({ getString(R.string.production_queued, show.name) }, { it.message ?: getString(R.string.production_failed) })
+            val result = runCatching { api.addBlock(block.id, subject, currentItemId) }
+            statusView.text = result.fold(
+                { if (subject.isBlank()) getString(R.string.block_added, block.name) else getString(R.string.block_added_subject, block.name, subject) },
+                { it.message ?: getString(R.string.production_failed) },
+            )
+            controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
             refreshTimeline()
         }
-    }
-
-    private fun formatLabel(format: String): String = when (format) {
-        "artist_hour" -> getString(R.string.format_artist_hour)
-        "genre_hour" -> getString(R.string.format_genre_hour)
-        "theme_hour" -> getString(R.string.format_theme_hour)
-        "podcast" -> getString(R.string.format_podcast)
-        else -> getString(R.string.format_brief)
     }
 
     private suspend fun refreshTimeline() {
@@ -523,7 +511,4 @@ class MainActivity : AppCompatActivity() {
         return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
     }
 
-    private companion object {
-        val MUSIC_HOURS = setOf("artist_hour", "genre_hour", "theme_hour")
-    }
 }

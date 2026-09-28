@@ -2,6 +2,7 @@ package ch.heimberg.radio
 
 import ch.heimberg.radio.core.AccessDiagnosis
 import ch.heimberg.radio.core.AppBuild
+import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.Library
@@ -78,6 +79,21 @@ class ApiClient(private val connection: Connection) {
 
     /** The text of an item and its sources, for reading along. */
     suspend fun transcript(itemId: String): Transcript = withContext(Dispatchers.IO) { TimelineJson.parseTranscript(request("GET", "api/timeline/$itemId/script")) }
+
+    /** Ready-made building blocks and the owner's own shows. */
+    suspend fun blocks(): List<BlockView> = withContext(Dispatchers.IO) { TimelineJson.parseBlocks(request("GET", "api/blocks")) }
+
+    /** Adds a block right after [after] (what is playing); [subject] is the one optional word. */
+    suspend fun addBlock(blockId: String, subject: String, after: String?) {
+        val body = JSONObject().apply {
+            if (subject.isNotBlank()) put("subject", subject.trim())
+            if (after != null) put("after", after)
+        }.toString()
+        withContext(Dispatchers.IO) { request("POST", "api/blocks/${java.net.URLEncoder.encode(blockId, "UTF-8")}/add", body) }
+    }
+
+    /** Retires failed productions and starts waiting ones again. */
+    suspend fun retry() { withContext(Dispatchers.IO) { request("POST", "api/timeline/retry") } }
 
     /** Deletes a production from the archive (or takes it out of the program). */
     suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }

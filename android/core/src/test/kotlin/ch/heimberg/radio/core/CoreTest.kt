@@ -211,3 +211,38 @@ class AppBuildTest {
         assertTrue(!build.copy(size = 0).newerThan(1))
     }
 }
+
+class BlockTest {
+    @Test fun readsBlocksAndFailures() {
+        val blocks = TimelineJson.parseBlocks(
+            """{"blocks":[{"id":"wetter","name":"Wetter","description":"Heute und morgen","minutes":1,"music":false,"own":false},
+               {"id":"kuenstler","name":"Künstler-Stunde","description":"Eine Band","minutes":60,"music":true,"own":false,
+                "input":{"kind":"artist","label":"Künstler oder Band","example":"z. B. Portishead"}},{"id":"x","name":"X","description":"","new":1}]}""",
+        )
+        assertEquals(listOf("wetter", "kuenstler", "x"), blocks.map { it.id })
+        assertEquals(null, blocks[0].input)
+        assertEquals("Künstler oder Band", blocks[1].input?.label)
+        val timeline = TimelineJson.parseResponse("""{"items":[],"failures":{"count":2,"latestError":"NO_SOURCES","latestAt":"2026-09-28T08:00:00Z"}}""")
+        assertEquals(2, timeline.failures.count)
+        assertEquals(0, TimelineJson.parseResponse("""{"items":[]}""").failures.count)
+    }
+}
+
+class NoticeTrackerTest {
+    private fun item(id: String, state: String, minutes: Double) = TimelineItem(id, 1, "s", "Show", "2026-09-28T08:00:00Z", state, minutes, title = id)
+
+    @Test fun reportsLongProductionsThatBecameReadyAndNewFailuresOnly() {
+        val tracker = NoticeTracker()
+        val old = FailureSummary(1, "NO_SOURCES", "2026-09-28T07:00:00Z")
+        // The first sync only records: nothing is reported.
+        assertEquals(NoticeTracker.Notices(emptyList(), null), tracker.update(Timeline(listOf(item("hour", "voicing", 60.0), item("brief", "planned", 2.0)), failures = old)))
+        val next = tracker.update(Timeline(listOf(item("hour", "ready", 60.0), item("brief", "ready", 2.0)), failures = old))
+        assertEquals(listOf("hour"), next.ready.map { it.id })
+        assertEquals(null, next.failure)
+        val failed = FailureSummary(2, "REJECTED", "2026-09-28T08:05:00Z")
+        val after = tracker.update(Timeline(listOf(item("hour", "ready", 60.0)), failures = failed))
+        assertEquals(emptyList(), after.ready)
+        assertEquals("REJECTED", after.failure?.latestError)
+        assertEquals(null, tracker.update(Timeline(emptyList(), failures = failed)).failure)
+    }
+}

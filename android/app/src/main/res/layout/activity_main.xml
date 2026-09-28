@@ -253,6 +253,35 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Building blocks: tap one and it comes next; at most one word to type. -->
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_6"
+            android:accessibilityHeading="true"
+            android:text="@string/blocks" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:text="@string/blocks_hint" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_2"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/blocks"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
         <!-- Program list -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -331,20 +360,11 @@
 
         <!-- Actions -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/produce_now"
-            style="@style/Widget.PersonalRadio.Button.Primary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_8"
-            android:text="@string/produce_now_action"
-            app:icon="@drawable/ic_lightning" />
-
-        <com.google.android.material.button.MaterialButton
             android:id="@+id/spotify"
             style="@style/Widget.PersonalRadio.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
+            android:layout_marginTop="@dimen/space_6"
             android:text="@string/spotify_connect"
             android:visibility="gone"
             app:icon="@drawable/ic_spotify" />
@@ -363,7 +383,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
+            android:layout_marginTop="@dimen/space_6"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
