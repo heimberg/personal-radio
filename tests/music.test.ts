@@ -123,3 +123,46 @@ test('long moderations are split into parts Mistral can speak', () => {
   assert.ok(chunks.every(chunk => chunk.split(' ').length <= 250));
   assert.equal(chunks.join(' '), sentence.repeat(60).trim());
 });
+
+test('playlist tracks: owner token or app token, /items with fallback to /tracks, pages, local and broken entries skipped', async () => {
+  const seen: string[] = [];
+  let itemsMissing = true;
+  const catalog = new SpotifyCatalog({ clientId: 'id', clientSecret: 'secret' }, async (input, init) => {
+    const url = String(input);
+    if (url === 'https://accounts.spotify.com/api/token') return Response.json({ access_token: 'app', expires_in: 3600 });
+    seen.push(`${new Headers(init?.headers).get('Authorization')} ${url.replace('https://api.spotify.com/v1/playlists/37i9dQZF1DX4sWSpwq3LiO/', '')}`);
+    if (url.includes('/items') && itemsMissing) return new Response('', { status: 404 });
+    if (url.includes('offset=100')) return Response.json({ items: [{ track: { uri: 'spotify:track:c', name: 'C', duration_ms: 3, artists: [{ name: 'Z' }] } }], next: null });
+    return Response.json({ next: 'https://api.spotify.com/v1/playlists/37i9dQZF1DX4sWSpwq3LiO/tracks?offset=100', items: [
+      { track: { uri: 'spotify:track:a', name: 'A', duration_ms: 1, artists: [{ name: 'X' }, { name: 'Y' }] } },
+      { track: { uri: 'spotify:local:x', name: 'Lokal', duration_ms: 2, is_local: true, artists: [] } },
+      { track: null },
+      { item: { uri: 'spotify:track:b', name: 'B', duration_ms: 2, artists: [{ name: 'Y' }] } },
+    ] });
+  });
+  assert.deepEqual(await catalog.playlistTracks('37i9dQZF1DX4sWSpwq3LiO', 'owner'), [
+    { uri: 'spotify:track:a', title: 'A', artist: 'X, Y', durationMs: 1 }, { uri: 'spotify:track:b', title: 'B', artist: 'Y', durationMs: 2 },
+    { uri: 'spotify:track:c', title: 'C', artist: 'Z', durationMs: 3 },
+  ]);
+  assert.deepEqual(seen, ['Bearer owner items?limit=100&market=CH', 'Bearer owner tracks?limit=100&market=CH', 'Bearer owner tracks?offset=100']);
+  itemsMissing = false; seen.length = 0;
+  assert.equal((await catalog.playlistTracks('37i9dQZF1DX4sWSpwq3LiO')).length, 3);
+  assert.deepEqual(seen.map(call => call.split(' ').slice(1, 3).join(' ')), ['app items?limit=100&market=CH', 'app tracks?offset=100']);
+  await assert.rejects(catalog.playlistTracks('../x'), /invalid playlist id/);
+});
+
+test('block moderation: one text per moment, only the AI\'s own picks are named, missing texts stay empty', async () => {
+  let body: any;
+  const writer = new GeminiMusicWriter({ key: 'g' }, async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ moderationen: [{ index: 1, text: 'Weiter mit Neu!' }, { index: 0, text: 'Guten Morgen.' }, { index: 7, text: 'x' }] }) }] } }] });
+  });
+  const texts = await writer.writeBlock({ blockName: 'Morgenmusik', groups: ['Kaffee', 'Entdeckungen'], nextShow: 'Kurzbeitrag', daytime: 'Morgen', talkSeconds: 20,
+    moments: [{ triggers: ['block_start'] }, { triggers: ['group_transition', 'before_track'], fromGroup: 'Kaffee', toGroup: 'Entdeckungen', next: { artist: 'Neu!', title: 'Hallogallo' } }, { triggers: ['block_end'] }],
+    direction: { persona: { name: 'Mira', tone: 'lebhaft', style: 'Radio', instructions: '' } } });
+  assert.deepEqual(texts, ['Guten Morgen.', 'Weiter mit Neu!', '']);
+  const input = JSON.parse(body.contents[0].parts[0].text);
+  assert.deepEqual(input.momente[1], { index: 1, anlässe: ['group_transition', 'before_track'], danach: { artist: 'Neu!', title: 'Hallogallo' }, von: 'Kaffee', nach: 'Entdeckungen' });
+  assert.equal(input['nächste Sendung'], 'Kurzbeitrag');
+  assert.match(body.systemInstruction.parts[0].text, /über andere Songs weisst du nichts[\s\S]*Du sprichst als Mira/);
+});

@@ -1,5 +1,5 @@
 // Server-only program runtime: plans the timeline and produces its segments without an open browser.
-import { HOUR_FOCUS, MUSIC_SHOW_ID, SONG_MINUTES, activeSlot, hourSubject, isMusicHour } from '../src/domain/station.ts';
+import { HOUR_FOCUS, MUSIC_SHOW_ID, SONG_MINUTES, activeSlot, bringsOwnMusic, hourSubject, isMusicHour, localClock } from '../src/domain/station.ts';
 import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
 import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
@@ -11,7 +11,7 @@ import type { SegmentPipeline } from './segment-pipeline.ts';
 import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
 import { HOUR_KINDS } from './music.ts';
-import type { MusicCatalog, MusicWriter, SongPick, TrackPick } from './music.ts';
+import type { BlockMoment, MusicCatalog, MusicWriter, PlaylistSource, PlaylistTrack, SongPick, TrackPick } from './music.ts';
 
 export interface AudioBucket {
   put(key: string, value: Uint8Array, options: { httpMetadata: { contentType: string } }): Promise<unknown>;
@@ -32,6 +32,8 @@ export interface StationDeps {
   /** Artist hours: Gemini picks and writes, Spotify resolves picks to tracks. */
   musicWriter?: MusicWriter;
   catalog?: MusicCatalog;
+  /** Music blocks: the owner's Spotify playlists. */
+  playlists?: PlaylistSource;
   /** The owner's Spotify top artists, when the owner connected the listening profile. */
   listening?: { topArtists(owner: string, now: Date): Promise<string[]> };
   now(): Date;
@@ -55,7 +57,7 @@ export interface PlannedItem { id: string; seq: number; showId: string; plannedA
 /** Spoken items need songs after them; music hours bring their own music. */
 function needsSongsAfter(config: StationConfig, showId: string | undefined): boolean {
   const show = config.shows.find(item => item.id === showId);
-  return !!show && !isMusicHour(show.format);
+  return !!show && !bringsOwnMusic(show.format);
 }
 
 /**
@@ -175,6 +177,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   try {
     if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
+    if (show.format === 'music_block') return await produceMusicBlock(deps, owner, config, show, row, fail);
     let current = row;
     if (current.state === 'planned') {
       if (show.format === 'podcast' && !deps.podcastAvailable) return fail('PODCAST_PROVIDER_NOT_CONFIGURED');
@@ -233,9 +236,13 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
 
 /** Stored in script_json: the hour's speech and tracks in playing order. */
 interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
-interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string }
+interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string; group?: string; picked?: 'ai' | 'playlist' }
 /** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
-interface HourPackage { kind: 'music_hour' | 'artist_hour' | 'song'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
+interface HourPackage {
+  kind: 'music_hour' | 'artist_hour' | 'song' | 'music_block'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart>;
+  /** Music blocks: the group the next block of this show starts with. */
+  nextGroup?: number;
+}
 const packageFocus = (pkg: Partial<HourPackage>): HourFocus => pkg.focus ?? 'artist';
 const packageSubject = (pkg: Partial<HourPackage>): string => pkg.subject ?? pkg.artist ?? '';
 function requestedHourSubject(row: TimelineRow): string | undefined {
@@ -414,6 +421,175 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
   return voiceParts(deps, owner, config, config.host.voiceId, row, pkg);
 }
 
+const MAX_BLOCK_TRACKS = 30;
+const MAX_AI_BATCHES = 4;
+/** Speech takes part of a block's length; the music fills the rest. */
+const BLOCK_MUSIC_SHARE = 0.85;
+
+function daytime(date: Date, timezone: string): string {
+  const hour = Math.floor(localClock(date, timezone).minutes / 60);
+  return hour < 5 ? 'Nacht' : hour < 11 ? 'Morgen' : hour < 14 ? 'Mittag' : hour < 18 ? 'Nachmittag' : hour < 22 ? 'Abend' : 'Nacht';
+}
+
+/** The show that follows in the schedule slot, for the host's hand-over at the end of a block. */
+function nextShowName(config: StationConfig, show: ShowConfig, at: Date): string | undefined {
+  const rotation = (activeSlot(config, at)?.showIds ?? []).map(id => config.shows.find(item => item.id === id)).filter((item): item is ShowConfig => !!item?.enabled);
+  const index = rotation.findIndex(item => item.id === show.id);
+  const next = index >= 0 && rotation.length > 1 ? rotation[(index + 1) % rotation.length] : undefined;
+  return next?.name;
+}
+
+/** Recent Spotify URIs of songs and blocks, and where the last block of this show left the group rotation. */
+async function blockHistory(deps: StationDeps, owner: string, showId: string): Promise<{ uris: Set<string>; names: string[]; nextGroup: number }> {
+  const uris = new Set<string>(), names: string[] = [];
+  let nextGroup = 0;
+  for (const row of await deps.store.recentItems(owner, 120)) {
+    if (!row.script_json) continue;
+    try {
+      const pkg = JSON.parse(row.script_json) as Partial<HourPackage>;
+      if (pkg.kind !== 'music_block' && pkg.kind !== 'song') continue;
+      for (const part of pkg.parts ?? []) if (part.kind === 'track') {
+        uris.add(part.uri);
+        if (part.picked !== 'playlist') names.push(`${part.artist} – ${part.title}`);
+      }
+      if (pkg.kind === 'music_block' && row.show_id === showId && Number.isInteger(pkg.nextGroup)) nextGroup = pkg.nextGroup!;
+    } catch { /* Skip corrupt rows. */ }
+  }
+  return { uris, names: [...new Set(names)].reverse(), nextGroup };
+}
+
+interface BlockTrack extends PlaylistTrack { group: number; picked: 'ai' | 'playlist' }
+
+/**
+ * A music block: songs from rotating groups – the owner's playlists or AI picks from a taste – with
+ * short moderations where the triggers fire. Playlist tracks are shuffled in code and never reach an AI
+ * provider; the host names only the AI's own picks. The whole block is produced ahead of time.
+ */
+async function produceMusicBlock(deps: StationDeps, owner: string, config: StationConfig, show: ShowConfig, row: TimelineRow,
+  fail: (error: string) => Promise<'failed'>): Promise<ProduceOutcome> {
+  if (row.state !== 'planned') return voiceParts(deps, owner, config, show.voiceId ?? config.host.voiceId, row, JSON.parse(row.script_json ?? 'null') as HourPackage);
+  const groups = show.groups ?? [], triggers = show.triggers!;
+  if (!deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
+  if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
+  if (groups.some(group => group.playlists.length) && !deps.playlists) return fail('SPOTIFY_NOT_CONFIGURED');
+  await deps.reserveGeneration(owner);
+  const random = deps.random ?? Math.random;
+  const history = await blockHistory(deps, owner, show.id);
+  const reactions = await songHistory(deps, owner);
+  const used = new Set(history.uris);
+  const problems: string[] = [];
+
+  // Each group's queue is filled when the group comes up: playlists are loaded and shuffled once,
+  // AI groups ask for a batch of picks and keep those Spotify resolves.
+  const queues = new Map<number, BlockTrack[]>(), exhausted = new Set<number>();
+  let aiBatches = 0;
+  const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
+  const refill = async (index: number, wanted: number) => {
+    const group = groups[index], queue = queues.get(index) ?? [];
+    queues.set(index, queue);
+    if (group.playlists.length) {
+      if (exhausted.has(index)) return;
+      exhausted.add(index); // A playlist group is loaded once per block.
+      const pool: PlaylistTrack[] = [];
+      for (const id of group.playlists) {
+        try { pool.push(...await deps.playlists!.tracks(owner, id)); }
+        catch (error) { problems.push(`Playlist ${id}: ${error instanceof Error ? error.message : 'nicht lesbar'}`.slice(0, 120)); }
+      }
+      const fresh = [...new Map(pool.filter(track => track.durationMs > 0).map(track => [track.uri, track])).values()];
+      // Unheard tracks first; when a playlist has been played through, it starts over.
+      const unheard = fresh.filter(track => !used.has(track.uri));
+      const candidates = unheard.length ? unheard : fresh;
+      for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
+      queue.push(...candidates.map(track => ({ ...track, group: index, picked: 'playlist' as const })));
+      return;
+    }
+    if (aiBatches >= MAX_AI_BATCHES) { exhausted.add(index); return; }
+    aiBatches++;
+    const picks = await deps.musicWriter!.pickSongs({
+      taste: group.taste || config.music.taste, interests: [...config.profile.topics, ...config.profile.interests],
+      avoid: [...history.names.slice(-60), ...[...queues.values()].flat().filter(track => track.picked === 'ai').map(track => `${track.artist} – ${track.title}`)], liked: reactions.liked, disliked: reactions.disliked,
+      listens, announce: false, count: Math.min(15, wanted + 2), direction: { stationName: config.name, persona: config.host },
+    });
+    let found = 0;
+    for (const pick of picks) {
+      const track = await deps.catalog!.find(pick);
+      if (!track || used.has(track.uri) || queue.some(item => item.uri === track.uri)) continue;
+      queue.push({ ...track, title: pick.title, artist: pick.artist, group: index, picked: 'ai' }); found++;
+    }
+    if (!found) exhausted.add(index);
+  };
+
+  const musicTarget = show.targetMinutes * 60_000 * BLOCK_MUSIC_SHARE;
+  const tracks: BlockTrack[] = [];
+  const perGroup = show.switchAfterTracks || Math.ceil(show.targetMinutes / SONG_MINUTES);
+  let current = history.nextGroup % groups.length, inGroup = 0, groupMs = 0, musicMs = 0;
+  const switchGroup = () => { current = (current + 1) % groups.length; inGroup = 0; groupMs = 0; };
+  while (musicMs < musicTarget && tracks.length < MAX_BLOCK_TRACKS) {
+    if (groups.length > 1 && inGroup > 0 && ((show.switchAfterTracks && inGroup >= show.switchAfterTracks) || (show.switchAfterMinutes && groupMs >= show.switchAfterMinutes * 60_000))) switchGroup();
+    let queue = queues.get(current);
+    if (!queue?.length && !exhausted.has(current)) { await refill(current, Math.max(1, perGroup - inGroup)); queue = queues.get(current); }
+    const track = queue?.shift();
+    if (!track) {
+      exhausted.add(current);
+      if (groups.every((_, index) => exhausted.has(index) && !queues.get(index)?.length)) break;
+      switchGroup();
+      continue;
+    }
+    used.add(track.uri);
+    const ms = track.durationMs || SONG_MINUTES * 60_000;
+    tracks.push(track); inGroup++; groupMs += ms; musicMs += ms;
+  }
+  if (!tracks.length) return fail(`TOO_FEW_TRACKS: keine Songs für den Block${problems.length ? ` (${problems.join('; ')})` : ''}`);
+
+  // Moments: index i means "before track i"; tracks.length is after the last track.
+  const moments = new Map<number, BlockMoment>();
+  const at = (index: number) => { let moment = moments.get(index); if (!moment) moments.set(index, moment = { triggers: [] }); return moment; };
+  const named = (track: BlockTrack) => ({ artist: track.artist, title: track.title });
+  if (triggers.blockStart) at(0).triggers.push('block_start');
+  let aiCount = 0, sinceSpeech = 0;
+  tracks.forEach((track, index) => {
+    if (index > 0 && track.group !== tracks[index - 1].group && triggers.groupTransition) {
+      Object.assign(at(index), { fromGroup: groups[tracks[index - 1].group].name, toGroup: groups[track.group].name }).triggers.push('group_transition');
+    }
+    if (triggers.everyMinutes && sinceSpeech >= triggers.everyMinutes * 60_000 && !moments.has(index)) at(index).triggers.push('interval');
+    if (track.picked === 'ai') {
+      if (triggers.beforeTrack && aiCount % triggers.beforeTrack === 0) Object.assign(at(index), { next: named(track) }).triggers.push('before_track');
+      if (triggers.afterTrack && aiCount % triggers.afterTrack === triggers.afterTrack - 1) Object.assign(at(index + 1), { previous: named(track) }).triggers.push('after_track');
+      aiCount++;
+    }
+    if (moments.has(index)) sinceSpeech = 0;
+    sinceSpeech += track.durationMs;
+  });
+  if (triggers.blockEnd) at(tracks.length).triggers.push('block_end');
+  // Every block has generated speech, even when no configured trigger fired (e.g. only playlist tracks).
+  if (!moments.size) at(0).triggers.push('block_start');
+
+  const positions = [...moments.keys()].sort((a, b) => a - b);
+  const groupNames = [...new Set(tracks.map(track => groups[track.group].name))];
+  const texts = await deps.musicWriter.writeBlock({
+    blockName: show.name, groups: groupNames, nextShow: nextShowName(config, show, new Date(row.planned_at)),
+    daytime: daytime(new Date(row.planned_at), config.timezone), talkSeconds: show.talkSeconds ?? 20,
+    moments: positions.map(position => moments.get(position)!),
+    direction: { instructions: show.instructions, stationName: config.name, persona: config.host },
+  });
+  if (!texts.some(Boolean)) throw new Error('Gemini block moderation returned nothing');
+  const speechAt = new Map(positions.map((position, index) => [position, texts[index]]));
+  const parts: Array<SpeechPart | TrackPart> = [];
+  const speak = (position: number) => { const body = speechAt.get(position); if (body) parts.push(...splitSpeech(body).map(chunk => ({ kind: 'speech' as const, text: chunk, sourceIds: [] }))); };
+  tracks.forEach((track, index) => {
+    speak(index);
+    parts.push({ kind: 'track', uri: track.uri, title: track.title, artist: track.artist, durationMs: track.durationMs, group: groups[track.group].name, picked: track.picked });
+  });
+  speak(tracks.length);
+  const text = parts.flatMap(part => part.kind === 'speech' ? [part.text] : []).join(' ');
+  const pkg: HourPackage = { kind: 'music_block', title: show.name, subject: groupNames.join(' → '), text, sourceIds: [], parts,
+    nextGroup: (tracks.at(-1)!.group + 1) % groups.length };
+  const spokenMs = text.split(/\s+/).length / 130 * 60_000;
+  await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), verification: 'off',
+    estimated_minutes: Math.max(1, Math.round((musicMs + spokenMs) / 60_000)) }, deps.now());
+  return voiceParts(deps, owner, config, show.voiceId ?? config.host.voiceId, { ...row, state: 'voicing' }, pkg);
+}
+
 /** Plans one item of a show (or a song) right away, outside the program clock ("Jetzt produzieren"). */
 export async function scheduleShowNow(deps: StationDeps, owner: string, showId: string, subjectOverride?: string): Promise<string | null> {
   const config = await deps.store.getConfig(owner);
@@ -499,10 +675,10 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
 }
 
 function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'focus' | 'subject' | 'artist'> | null {
-  if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour' && pkg.kind !== 'song') || !Array.isArray(pkg.parts)) return null;
+  if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour' && pkg.kind !== 'song' && pkg.kind !== 'music_block') || !Array.isArray(pkg.parts)) return null;
   const playable = row.state !== 'expired', focus = packageFocus(pkg), subject = packageSubject(pkg);
   return {
-    ...(pkg.kind === 'song' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
+    ...(pkg.kind === 'song' || pkg.kind === 'music_block' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
     parts: pkg.parts.map((part, index) => part.kind === 'track'
       ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),

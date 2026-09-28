@@ -26,7 +26,7 @@ test('listening profile: code exchange stores the refresh token; top artists are
     return Response.json({ items: new URL(url).searchParams.get('time_range') === 'short_term'
       ? [{ name: 'Nine Inch Nails' }, { name: 'Protomartyr' }] : [{ name: 'Protomartyr' }, { name: 'Einstürzende Neubauten' }] });
   });
-  assert.match(listening.authorizeUrl('https://radio.example/api/spotify/callback', 's1'), /scope=user-top-read&state=s1$/);
+  assert.match(listening.authorizeUrl('https://radio.example/api/spotify/callback', 's1'), /scope=user-top-read\+playlist-read-private\+playlist-read-collaborative&state=s1$/);
   assert.deepEqual(await listening.status(OWNER), { connected: false, artists: [] });
   assert.deepEqual(await listening.topArtists(OWNER, NOW), []);
 

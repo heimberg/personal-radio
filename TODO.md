@@ -37,7 +37,7 @@ Stand: 28.09.2026. Das Programm läuft auf dem privaten Worker; gehört wird in 
 
 - [x] Meilenstein 1 – Programm auf dem Server: Konfiguration, Timeline, Feedback und Gedächtnis in D1; Produktion über Cloudflare Queue mit Audio in R2; Cron plant nur, solange du zuhörst; Timeline-API und Programm-Panel mit durchgehender Wiedergabe im Browser. Dazu Moderations-Persona (Name, Ton, Stil, eigene Anweisungen, Co-Host für Dialoge) und YAML-Editor für die ganze Konfiguration.
 - [x] Meilenstein 2 (gebaut, Abnahmetest auf dem Gerät offen) – Die eine Android-App (Kotlin, Media3) spielt die Timeline mit eigenen Segmenten; Einstellungen als eingebettetes Cockpit (WebView, Login per Access-Einmal-PIN); Zugang zur API per Service Token; 60-Minuten-Test bei gesperrtem Bildschirm.
-- [ ] Meilenstein 3 – Spotify in der App über App Remote SDK; Musikblöcke mit Moderations-Triggern (Blockstart/-ende, vor/nach jedem N-ten Titel, alle X Minuten, Gruppenwechsel); KI-Titelwahl mit Anmoderation nur für KI-gewählte Titel; eigene Playlists als rotierende Gruppen mit allgemeinen Überleitungen; harte Übergaben ohne Überlappung, kein Abschneiden von Titeln.
+- [x] Meilenstein 3 – Spotify in der App über App Remote SDK; Musikblöcke mit Moderations-Triggern (Blockstart/-ende, vor/nach jedem N-ten Titel, alle X Minuten, Gruppenwechsel); KI-Titelwahl mit Anmoderation nur für KI-gewählte Titel; eigene Playlists als rotierende Gruppen mit allgemeinen Überleitungen; harte Übergaben ohne Überlappung, kein Abschneiden von Titeln.
 - [ ] Meilenstein 4 – Tools pro Sendung (Wetter über Open-Meteo, Schlagzeilen, MCP-Server) mit Platzhaltern im Prompt; Themen-Gedächtnis der letzten Beiträge; ElevenLabs als weitere Stimme; Formular-Editoren neben YAML; Musikregeln.
 - [x] Gemini als Standard-Textanbieter (ASK optional pro Sendung und als Prüfinstanz), Web-Recherche mit Google-Suche (`sourceMode: web`), Suchanfragen und Quellen im Cockpit, Themen-Gedächtnis.
 - [x] **Künstler-Stunde aktivieren:** im Cloudflare-Dashboard `SPOTIFY_CLIENT_ID` (Variable) und `SPOTIFY_CLIENT_SECRET` (Secret) der Spotify-Developer-App setzen; im Cockpit «Künstler-Stunde» wählen und «Jetzt produzieren».
@@ -56,6 +56,8 @@ Stand: 28.09.2026. Das Programm läuft auf dem privaten Worker; gehört wird in 
 - [x] Künstler-Stunde auf dem Server (Schritt A): Dossier, KI-Songauswahl, Spotify-Suche, Moderationen, stückweise Vertonung, Songliste im Cockpit, «Jetzt produzieren».
 - [x] Künstler-Stunde in der App hören (Schritt B): Spotify App Remote in der Android-App, Übergabe zwischen Moderation und Song ohne Überlappung.
 - [ ] Google-Drive-Archiv für 👍-Beiträge und Künstler-Stunden (Audio, Skript, Quellen). Wiedergabe bleibt auf R2.
+- [x] Musikblöcke (Format «Musikblock»): Gruppen aus eigenen Spotify-Playlists oder KI-Auswahl nach Geschmack, Wechsel nach X Songs/Minuten, Moderation zu Blockbeginn/-ende, vor/nach jedem N-ten KI-Song, alle X Minuten und beim Gruppenwechsel. Playlist-Titel gehen nie an die KI.
+- [ ] **Musikblock ausprobieren:** Einstellungen → Sendungen → «Musikblock» hinzufügen, Playlist-Links einfügen, in ein Zeitfenster nehmen oder im Programm «Jetzt produzieren». Für private Playlists im Cockpit Spotify einmal neu verbinden (Einstellungen → Musik), damit die Playlist-Berechtigung dazukommt; ohne das liest der Worker nur öffentliche Playlists.
 - [ ] Später: durchgehender Stream-Modus ohne Spotify (Auto, Lautsprecher).
 
 ## Architekturentscheidungen übernommen (Stand 27.09.2026, Details in docs/architecture.md)

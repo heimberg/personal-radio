@@ -172,6 +172,38 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await expect(page.getByLabel('Zeitfenster 1').getByLabel('Von')).toHaveValue('00:00');
 });
 
+test('settings: a music block with a playlist group, an AI group, rotation and moderation triggers', async ({ page }) => {
+  const worker = await fakeWorker(page, station());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByLabel('Format der neuen Sendung').selectOption('music_block');
+  await page.getByRole('button', { name: 'Sendung hinzufügen' }).click();
+  const block = page.getByRole('article', { name: 'Sendung Musikblock' });
+  const first = block.getByLabel('Gruppe 1');
+  await first.getByLabel('Name der Gruppe').fill('Kaffee');
+  // Typing a second line keeps the blank line while typing; stored are the playlist IDs.
+  const links = first.getByLabel('Spotify-Playlists');
+  await links.fill('https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO?si=x\n');
+  await links.press('End');
+  await links.pressSequentially('spotify:playlist:0vvXsWCC9xrXsKd4FyS8kM');
+  await expect(first.getByLabel('Geschmack dieser Gruppe')).toHaveCount(0);
+  await block.getByRole('button', { name: 'Gruppe hinzufügen' }).click();
+  await block.getByLabel('Gruppe 2').getByLabel('Geschmack dieser Gruppe').fill('Krautrock');
+  await block.getByLabel('Gruppe wechseln nach: 3 Songs').fill('4');
+  await block.getByRole('checkbox', { name: 'Am Ende, mit Überleitung zur nächsten Sendung' }).uncheck();
+  await block.getByLabel('Zwischendurch: aus').fill('10');
+  await expect(block.getByText('Zwischendurch: alle 10 Min.')).toBeVisible();
+  await expect(block.getByLabel('Quellenprüfung')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(page.getByText(/^Gespeichert\./)).toBeVisible();
+  expect(worker.saved.at(-1).shows.find((show: any) => show.format === 'music_block')).toMatchObject({
+    id: 'musikblock', targetMinutes: 30, switchAfterTracks: 4, switchAfterMinutes: 0, talkSeconds: 20,
+    groups: [{ name: 'Kaffee', playlists: ['37i9dQZF1DX4sWSpwq3LiO', '0vvXsWCC9xrXsKd4FyS8kM'], taste: '' }, { name: 'Gruppe 2', playlists: [], taste: 'Krautrock' }],
+    triggers: { blockStart: true, blockEnd: false, beforeTrack: 1, afterTrack: 0, everyMinutes: 10, groupTransition: true },
+  });
+});
+
 test('YAML view saves valid documents and explains broken ones', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');

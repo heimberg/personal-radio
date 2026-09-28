@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Topic } from '../domain/program.ts';
-import { ConfigError, HOUR_FOCUS, MINUTES_LIMITS, isMusicHour, parseStationConfig } from '../domain/station.ts';
-import type { FeedConfig, HourFocus, ScheduleSlot, ShowConfig, ShowFormat, StationConfig } from '../domain/station.ts';
+import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId } from '../domain/station.ts';
+import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ScheduleSlot, ShowConfig, ShowFormat, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
 
@@ -25,25 +25,100 @@ function uniqueId(base: string, taken: string[]): string {
   return id;
 }
 
+const BLOCK_DEFAULTS: Pick<ShowConfig, 'groups' | 'switchAfterTracks' | 'switchAfterMinutes' | 'triggers' | 'talkSeconds'> = {
+  groups: [{ name: 'Mein Geschmack', playlists: [], taste: '' }], switchAfterTracks: 3, switchAfterMinutes: 0, triggers: { ...DEFAULT_TRIGGERS }, talkSeconds: 20,
+};
+
 /** A new show of the given format with sensible defaults, so it validates right away. */
 function newShow(format: ShowFormat, taken: string[]): ShowConfig {
   const focus = HOUR_FOCUS[format];
   return {
     id: uniqueId(FORMAT_LABELS[format], taken), name: FORMAT_LABELS[format], enabled: true, format, instructions: '', feedIds: [],
-    targetMinutes: focus ? 60 : format === 'podcast' ? 5 : 2, verification: focus ? 'light' : 'strict', textProvider: 'gemini',
+    targetMinutes: focus ? 60 : format === 'music_block' ? 30 : format === 'podcast' ? 5 : 2, verification: focus ? 'light' : format === 'music_block' ? 'off' : 'strict', textProvider: 'gemini',
     sourceMode: 'web', researchPrompt: '', ...(focus ? { tracks: focus === 'theme' ? 8 : 10, talkSeconds: focus === 'theme' ? 120 : 60 } : {}),
+    ...(format === 'music_block' ? structuredClone(BLOCK_DEFAULTS) : {}),
   };
 }
 
 /** Switching the format keeps what still fits and brings the rest within the new limits. */
 function withFormat(show: ShowConfig, format: ShowFormat): ShowConfig {
   const [min, max] = MINUTES_LIMITS[format], focus = HOUR_FOCUS[format];
-  const { artist: _a, genre: _g, theme: _t, tracks: _n, talkSeconds: _s, ...rest } = show;
+  const { artist: _a, genre: _g, theme: _t, tracks: _n, talkSeconds: _s, groups: _gr, switchAfterTracks: _st, switchAfterMinutes: _sm, triggers: _tr, ...rest } = show;
   return {
     ...rest, format, targetMinutes: Math.min(max, Math.max(min, show.targetMinutes)),
-    ...(format === 'podcast' || focus ? { textProvider: 'gemini' as const } : {}),
+    ...(format === 'podcast' || focus || format === 'music_block' ? { textProvider: 'gemini' as const } : {}),
+    ...(format === 'music_block' ? { ...structuredClone(BLOCK_DEFAULTS), ...(show.format === 'music_block' ? { groups: show.groups, switchAfterTracks: show.switchAfterTracks, switchAfterMinutes: show.switchAfterMinutes, triggers: show.triggers, talkSeconds: show.talkSeconds } : {}) } : {}),
     ...(focus ? { sourceMode: 'web' as const, tracks: show.tracks ?? (focus === 'theme' ? 8 : 10), talkSeconds: show.talkSeconds ?? (focus === 'theme' ? 120 : 60) } : {}),
   };
+}
+
+const linesOf = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean).slice(0, 5);
+/** Stored playlists are bare IDs; the owner sees and pastes links. */
+const asLink = (value: string) => /^[A-Za-z0-9]{22}$/.test(value) ? `https://open.spotify.com/playlist/${value}` : value;
+
+/** Keeps the typed text (blank lines included) while the configuration gets the cleaned list. */
+function PlaylistLinks({ value, onChange }: { value: string[]; onChange(playlists: string[]): void }) {
+  const [text, setText] = useState(() => value.map(asLink).join('\n'));
+  useEffect(() => {
+    // Reset only when the list changed from outside (discard, save), not while typing.
+    setText(current => JSON.stringify(linesOf(current)) === JSON.stringify(value) || JSON.stringify(linesOf(current).map(line => playlistId(line) ?? line)) === JSON.stringify(value) ? current : value.map(asLink).join('\n'));
+  }, [value]);
+  return <textarea rows={3} value={text} placeholder="https://open.spotify.com/playlist/…"
+    onChange={event => { setText(event.target.value); onChange(linesOf(event.target.value)); }} />;
+}
+
+/** Groups, rotation and moderation triggers of a music block. */
+function BlockSettings({ show, onChange }: { show: ShowConfig; onChange(update: (show: ShowConfig) => ShowConfig): void }) {
+  const groups = show.groups ?? [], triggers = show.triggers ?? DEFAULT_TRIGGERS;
+  const setGroup = (index: number, patch: Partial<PlaylistGroup>) => onChange(current => ({ ...current, groups: (current.groups ?? []).map((group, i) => i === index ? { ...group, ...patch } : group) }));
+  const setTrigger = (patch: Partial<BlockTriggers>) => onChange(current => ({ ...current, triggers: { ...(current.triggers ?? DEFAULT_TRIGGERS), ...patch } }));
+  const every = (value: number, unit: string) => value === 0 ? 'aus' : value === 1 ? `jede${unit === 'Min.' ? ' Minute' : 'n Song'}` : `alle ${value} ${unit}`;
+  return <>
+    <fieldset className="block-groups"><legend>Gruppen</legend>
+      <small className="muted">Mit Playlists spielt Spotify deine eigenen Songs gemischt – die KI erfährt nichts über sie und moderiert allgemein. Ohne Playlists wählt die KI nach dem Geschmack der Gruppe und nennt ihre Songs.</small>
+      {groups.map((group, index) => <div key={index} className="block-group" aria-label={`Gruppe ${index + 1}`}>
+        <div className="group-head">
+          <input aria-label="Name der Gruppe" value={group.name} maxLength={60} onChange={event => setGroup(index, { name: event.target.value })} />
+          <button type="button" className="button ghost small danger" aria-label={`${group.name} entfernen`} disabled={groups.length <= 1}
+            onClick={() => onChange(current => ({ ...current, groups: (current.groups ?? []).filter((_, i) => i !== index) }))}>×</button>
+        </div>
+        <Field label="Spotify-Playlists" hint="Ein Link pro Zeile (Teilen → Link kopieren). Leer: die KI wählt.">
+          <PlaylistLinks value={group.playlists} onChange={playlists => setGroup(index, { playlists })} />
+        </Field>
+        {!group.playlists.length && <Field label="Geschmack dieser Gruppe" hint="Leer: dein allgemeiner Musikgeschmack.">
+          <input value={group.taste} maxLength={500} placeholder="z. B. Krautrock und frühe Elektronik" onChange={event => setGroup(index, { taste: event.target.value })} />
+        </Field>}
+      </div>)}
+      <button type="button" className="button small" disabled={groups.length >= 6} onClick={() => onChange(current => ({ ...current, groups: [...(current.groups ?? []), { name: `Gruppe ${(current.groups ?? []).length + 1}`, playlists: [], taste: '' }] }))}>Gruppe hinzufügen</button>
+    </fieldset>
+    {groups.length > 1 && <div className="grid">
+      <Field label={`Gruppe wechseln nach: ${show.switchAfterTracks ? `${show.switchAfterTracks} Songs` : 'aus'}`}>
+        <input type="range" min={0} max={20} value={show.switchAfterTracks ?? 3} onChange={event => onChange(current => ({ ...current, switchAfterTracks: Number(event.target.value) }))} />
+      </Field>
+      <Field label={`oder nach: ${show.switchAfterMinutes ? `${show.switchAfterMinutes} Min.` : 'aus'}`}>
+        <input type="range" min={0} max={60} step={5} value={show.switchAfterMinutes ?? 0} onChange={event => onChange(current => ({ ...current, switchAfterMinutes: Number(event.target.value) }))} />
+      </Field>
+    </div>}
+    <fieldset className="block-triggers"><legend>Wann moderiert wird</legend>
+      <label className="check"><input type="checkbox" checked={triggers.blockStart} onChange={event => setTrigger({ blockStart: event.target.checked })} />Zu Beginn des Blocks</label>
+      <label className="check"><input type="checkbox" checked={triggers.blockEnd} onChange={event => setTrigger({ blockEnd: event.target.checked })} />Am Ende, mit Überleitung zur nächsten Sendung</label>
+      <label className="check"><input type="checkbox" checked={triggers.groupTransition} onChange={event => setTrigger({ groupTransition: event.target.checked })} />Beim Wechsel der Gruppe</label>
+      <div className="grid">
+        <Field label={`Ansage vor KI-Songs: ${every(triggers.beforeTrack, 'Songs')}`}>
+          <input type="range" min={0} max={10} value={triggers.beforeTrack} onChange={event => setTrigger({ beforeTrack: Number(event.target.value) })} />
+        </Field>
+        <Field label={`Absage nach KI-Songs: ${every(triggers.afterTrack, 'Songs')}`}>
+          <input type="range" min={0} max={10} value={triggers.afterTrack} onChange={event => setTrigger({ afterTrack: Number(event.target.value) })} />
+        </Field>
+        <Field label={`Zwischendurch: ${every(triggers.everyMinutes, 'Min.')}`} hint="Nach so viel Musik ohne Moderation.">
+          <input type="range" min={0} max={60} step={5} value={triggers.everyMinutes} onChange={event => setTrigger({ everyMinutes: Number(event.target.value) })} />
+        </Field>
+        <Field label={`Länge einer Moderation: ${show.talkSeconds ?? 20} s`}>
+          <input type="range" min={10} max={120} step={5} value={show.talkSeconds ?? 20} onChange={event => onChange(current => ({ ...current, talkSeconds: Number(event.target.value) }))} />
+        </Field>
+      </div>
+    </fieldset>
+  </>;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -153,9 +228,9 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <label className="check"><input type="checkbox" checked={draft.music.announce} onChange={event => change(next => { next.music.announce = event.target.checked; })} />Kurze Ansage vor jedem Song</label>
     </Section>
 
-    <Section title="Sendungen" description="Jede Sendung ist ein Format mit eigenem Auftrag. Musikstunden wechseln Moderation und Songs über Spotify ab.">
+    <Section title="Sendungen" description="Jede Sendung ist ein Format mit eigenem Auftrag. Musikstunden und Musikblöcke wechseln Moderation und Songs über Spotify ab.">
       <div className="shows">{draft.shows.map((show, index) => {
-        const focus = HOUR_FOCUS[show.format];
+        const focus = HOUR_FOCUS[show.format], block = show.format === 'music_block';
         const [min, max] = MINUTES_LIMITS[show.format];
         const subject = focus ? SUBJECT[focus] : null;
         const open = expanded.includes(show.id);
@@ -163,7 +238,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
           <header className="show-head">
             <button type="button" className="show-toggle" aria-expanded={open} aria-label={`${show.name} ${open ? 'zuklappen' : 'bearbeiten'}`} onClick={() => toggle(show.id)}>
               <strong>{show.name || 'Ohne Namen'}</strong>
-              <small>{FORMAT_LABELS[show.format]} · {show.targetMinutes} Min.{subject && show[subject.key] ? ` · ${show[subject.key]}` : ''}</small>
+              <small>{FORMAT_LABELS[show.format]} · {show.targetMinutes} Min.{subject && show[subject.key] ? ` · ${show[subject.key]}` : ''}{block && show.groups?.length ? ` · ${show.groups.map(group => group.name).join(', ')}` : ''}</small>
             </button>
             <label className="switch"><input type="checkbox" checked={show.enabled} onChange={event => changeShow(index, current => ({ ...current, enabled: event.target.checked }))} /><span>{show.enabled ? 'Aktiv' : 'Pausiert'}</span></label>
           </header>
@@ -176,7 +251,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
               </select>
             </Field>
             <Field label={`Länge: ${show.targetMinutes} Min.`} hint={`${min}–${max} Minuten`}>
-              <input type="range" min={min} max={max} step={focus ? 5 : 1} value={show.targetMinutes} onChange={event => changeShow(index, current => ({ ...current, targetMinutes: Number(event.target.value) }))} />
+              <input type="range" min={min} max={max} step={focus || block ? 5 : 1} value={show.targetMinutes} onChange={event => changeShow(index, current => ({ ...current, targetMinutes: Number(event.target.value) }))} />
             </Field>
             {subject && <Field label={subject.label} hint="Leer lassen: die KI wählt aus deinen Interessen.">
               <input value={show[subject.key] ?? ''} maxLength={200} placeholder={subject.example} onChange={event => changeShow(index, current => ({ ...current, [subject.key]: event.target.value }))} />
@@ -187,7 +262,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
             {focus && <Field label={`Moderation vor jedem Song: ${show.talkSeconds ?? 60} s`}>
               <input type="range" min={20} max={180} step={10} value={show.talkSeconds ?? 60} onChange={event => changeShow(index, current => ({ ...current, talkSeconds: Number(event.target.value) }))} />
             </Field>}
-            {!focus && <Field label="Quellen">
+            {!focus && !block && <Field label="Quellen">
               <select value={show.sourceMode} onChange={event => changeShow(index, current => ({ ...current, sourceMode: event.target.value as ShowConfig['sourceMode'] }))}>
                 <option value="web">Websuche (Google)</option><option value="feeds">Meine Feeds</option>
               </select>
@@ -197,23 +272,24 @@ export function StationEditor({ config: stored, onSave }: Props) {
                 <option value="gemini">Gemini</option><option value="ask">ASK</option>
               </select>
             </Field>}
-            <Field label="Quellenprüfung">
+            {!block && <Field label="Quellenprüfung">
               <select value={show.verification} onChange={event => changeShow(index, current => ({ ...current, verification: event.target.value as ShowConfig['verification'] }))}>
                 <option value="strict">Streng – jede Aussage belegt</option><option value="light">Leicht – quellenbasiert</option><option value="off">Aus</option>
               </select>
-            </Field>
+            </Field>}
             {show.format !== 'podcast' && <Field label="Stimme">
               <select value={show.voiceId ?? ''} onChange={event => changeShow(index, current => { const { voiceId: _v, ...rest } = current; return event.target.value ? { ...rest, voiceId: event.target.value } : rest; })}>
                 <option value="">Wie die Moderation</option>{voiceOptions(show.voiceId)}
               </select>
             </Field>}
           </div>
-          {!focus && show.sourceMode === 'feeds' && <fieldset className="feed-picks"><legend>Feeds dieser Sendung</legend>
+          {block && <BlockSettings show={show} onChange={update => changeShow(index, update)} />}
+          {!focus && !block && show.sourceMode === 'feeds' && <fieldset className="feed-picks"><legend>Feeds dieser Sendung</legend>
             {draft.feeds.length === 0 ? <small className="muted">Noch keine Feeds – unten hinzufügen.</small> : draft.feeds.map(feed => <label key={feed.id} className="check">
               <input type="checkbox" checked={show.feedIds.includes(feed.id)} onChange={event => changeShow(index, current => ({ ...current,
                 feedIds: event.target.checked ? [...current.feedIds, feed.id] : current.feedIds.filter(id => id !== feed.id) }))} />{feed.name}</label>)}
           </fieldset>}
-          {(focus || show.sourceMode === 'web') && <Field label={focus ? 'Zusätzlicher Rechercheauftrag' : 'Rechercheauftrag'} hint="Wonach die Websuche suchen soll.">
+          {!block && (focus || show.sourceMode === 'web') && <Field label={focus ? 'Zusätzlicher Rechercheauftrag' : 'Rechercheauftrag'} hint="Wonach die Websuche suchen soll.">
             <textarea rows={2} maxLength={1000} value={show.researchPrompt} onChange={event => changeShow(index, current => ({ ...current, researchPrompt: event.target.value }))} />
           </Field>}
           <Field label="Redaktionelle Anweisungen" hint="Dein eigener Prompt für diese Sendung.">
@@ -229,7 +305,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <div className="inline add">
         <label className="sr-only" htmlFor="new-format">Format der neuen Sendung</label>
         <select id="new-format" value={newFormat} onChange={event => setNewFormat(event.target.value as ShowFormat)}>
-          {(Object.keys(FORMAT_LABELS) as ShowFormat[]).map(format => <option key={format} value={format}>{FORMAT_LABELS[format]}{isMusicHour(format) ? ' ♫' : ''}</option>)}
+          {(Object.keys(FORMAT_LABELS) as ShowFormat[]).map(format => <option key={format} value={format}>{FORMAT_LABELS[format]}{bringsOwnMusic(format) ? ' ♫' : ''}</option>)}
         </select>
         <button type="button" className="button" disabled={draft.shows.length >= 20} onClick={() => {
           const show = newShow(newFormat, draft.shows.map(item => item.id));
