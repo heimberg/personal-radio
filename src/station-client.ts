@@ -18,7 +18,7 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const STATE_LABELS: Record<TimelineState, string> = {
-  planned: 'Geplant', voicing: 'Wird vertont', ready: 'Bereit', played: 'Gehört', skipped: 'Übersprungen', failed: 'Fehlgeschlagen', expired: 'Abgelaufen',
+  planned: 'Geplant', voicing: 'Wird vertont', ready: 'Bereit', played: 'Gehört', skipped: 'Übersprungen', archived: 'Im Archiv', failed: 'Fehlgeschlagen', expired: 'Abgelaufen',
 };
 
 export const VERIFICATION_LABELS: Record<VerificationPolicy, string> = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' };

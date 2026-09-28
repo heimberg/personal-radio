@@ -95,6 +95,16 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'complete', listenedRatio: 1 }) })).status, 200);
     const after = await (await call('/api/timeline')).json() as { items: Array<{ state: string }> };
     assert.equal(after.items[0].state, 'played');
+    // The archive lists what can still be heard; listening again does not count twice, a rating does.
+    const library = await (await call('/api/library')).json() as { items: Array<{ id: string; state: string; audioUrl?: string }>; retentionDays: number };
+    assert.deepEqual(library.items.map(item => [item.id, item.state, item.audioUrl]), [[items[0].id, 'played', items[0].audioUrl]]);
+    assert.equal(library.retentionDays, 7);
+    assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'skip', listenedRatio: 0.1 }) })).status, 200);
+    assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 1);
+    assert.equal(((await (await call('/api/timeline')).json()) as { items: Array<{ state: string }> }).items[0].state, 'played');
+    assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'like', listenedRatio: 1 }) })).status, 200);
+    assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 2);
+    env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('like');
     // Failures are summarised, not listed, and the cleanup route deletes them.
     (env.DB as any).raw.prepare(`UPDATE timeline_items SET state = 'failed', error = 'NO_SOURCES' WHERE id = ?`).run(items[1].id);
     const withFailure = await (await call('/api/timeline')).json() as { items: Array<{ id: string }>; failures: { count: number; latestError: string } };

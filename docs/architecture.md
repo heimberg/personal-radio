@@ -79,7 +79,7 @@ Android app (the single app)
 | `Source` | Feed URL, web page or manual note/topic list; weight, blocked terms, fetch interval, owner's rights check. |
 | `Schedule` | The program clock: per weekday and time window an ordered list of slots — a show, a music block (n tracks + music rule) or a moderation — plus a speech/music ratio. |
 | `MusicRule` | Free-text taste description, genres, eras, seed artists, exclusions, no-repeat window, discovery share. |
-| `TimelineItem` | Position, kind (`segment`, `spotify-track`, `moderation`), references, planned time, state `planned → producing → ready → played / skipped / failed / expired`. |
+| `TimelineItem` | Position, kind (`segment`, `spotify-track`, `moderation`), references, planned time, state `planned → producing → ready → played / skipped / archived / failed / expired`. |
 | `Segment` | Script, cited sources, R2 audio key, measured duration, cost, provider/model/prompt versions, verification result. |
 | `FeedbackEvent` | like, dislike, skip (with listened ratio), complete, "already known", "go deeper". |
 | `Memory` | What was played, covered-story fingerprints for deduplication, series state ("part 3 of …"). |
@@ -177,6 +177,10 @@ Implementation: a music hour is one timeline item whose `script_json` holds the 
 ## Arranging the program
 
 The Android app arranges the open items (planned, being voiced, ready): `POST /api/timeline/arrange` with the full new order (a stale order is refused with 409), `POST /api/timeline/{id}/remove` (expires the item and releases its audio), `POST /api/timeline/shuffle` (shuffles and spreads songs so that at least `max(1, music.between)` sit between two spoken items, adding and producing missing songs) and `POST /api/shows/_musik/produce` (one more song). Arranging gives the items fresh sequence numbers after all existing ones, so the planner continues after the new tail. The app rebuilds its playlist after the current item whenever the server order differs; the item that is playing is never interrupted.
+
+## Archive: listening freely
+
+Finished productions do not disappear when they leave the program. A ready item that nobody heard within 12 hours becomes `archived` instead of `expired` and keeps its audio; heard (`played`, `skipped`) and archived items keep their audio for 7 days after they left the program, then it is released from R2 and the item drops out of the archive. `GET /api/library` lists the productions that can still be heard (newest first, single songs left out) with `retentionDays`. The app plays any of them on request (a custom Media3 session command), after the current step; the program continues afterwards. Feedback on an item that is neither `ready` nor `archived` records only ratings, so listening again does not skew learning.
 
 ## Music curation (AI → Spotify only)
 

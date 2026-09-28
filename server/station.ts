@@ -52,7 +52,7 @@ const MAX_ATTEMPTS = 3;
 const MAX_NEW_ITEMS = 12;
 const STALE_HOURS = 12;
 const ACTIVE_LISTENER_HOURS = 3;
-const AUDIO_RETENTION_DAYS = 7;
+export const AUDIO_RETENTION_DAYS = 7;
 const PURGE_AFTER_HOURS = 24;
 const MAX_SOURCE_AGE_DAYS = 30;
 const minutes = (date: Date, amount: number) => new Date(date.getTime() + amount * 60_000);
@@ -109,7 +109,9 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const config = await deps.store.getConfig(owner);
   if (!config) return { planned: 0, due: [], expired: 0 };
   const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now);
-  for (const row of [...expired, ...await deps.store.audioToRelease(owner, minutes(now, -AUDIO_RETENTION_DAYS * 24 * 60))]) {
+  // Archived items keep their audio for the retention period, so they can still be heard.
+  const stale = expired.filter(row => row.state === 'expired');
+  for (const row of [...stale, ...await deps.store.audioToRelease(owner, minutes(now, -AUDIO_RETENTION_DAYS * 24 * 60))]) {
     const keys = audioKeysOf(row);
     if (!keys.length) continue;
     for (const key of keys) await deps.audio.delete(key);
@@ -157,7 +159,7 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
 async function recentTopics(deps: StationDeps, owner: string): Promise<string[]> {
   const titles: string[] = [];
   for (const row of (await deps.store.recentItems(owner, 30)).reverse()) {
-    if (!row.script_json || !['voicing', 'ready', 'played', 'skipped'].includes(row.state)) continue;
+    if (!row.script_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(row.state)) continue;
     try { const title = (JSON.parse(row.script_json) as Script).title; if (title) titles.push(title); } catch { /* Skip corrupt rows. */ }
     if (titles.length >= 15) break;
   }
@@ -717,7 +719,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
 
 function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'focus' | 'subject' | 'artist'> | null {
   if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour' && pkg.kind !== 'song' && pkg.kind !== 'music_block') || !Array.isArray(pkg.parts)) return null;
-  const playable = row.state !== 'expired', focus = packageFocus(pkg), subject = packageSubject(pkg);
+  // Released audio (after the retention period) leaves the parts without URLs.
+  const playable = row.state !== 'expired' && !!row.audio_key, focus = packageFocus(pkg), subject = packageSubject(pkg);
   return {
     ...(pkg.kind === 'song' || pkg.kind === 'music_block' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
     parts: pkg.parts.map((part, index) => part.kind === 'track'

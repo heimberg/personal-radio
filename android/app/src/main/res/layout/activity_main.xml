@@ -308,6 +308,15 @@
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/archive"
+            style="@style/Widget.PersonalRadio.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_2"
+            android:text="@string/archive_open"
+            app:icon="@drawable/ic_archive" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/cockpit"
             style="@style/Widget.PersonalRadio.Button"
             android:layout_width="match_parent"

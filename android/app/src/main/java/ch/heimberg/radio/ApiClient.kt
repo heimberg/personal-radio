@@ -3,6 +3,7 @@ package ch.heimberg.radio
 import ch.heimberg.radio.core.AccessDiagnosis
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
+import ch.heimberg.radio.core.Library
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -23,6 +24,9 @@ class ApiClient(private val connection: Connection) {
 
     /** The timeline plus the public Spotify client ID, when the Worker has one. */
     suspend fun response(): Timeline = withContext(Dispatchers.IO) { TimelineJson.parseResponse(request("GET", "api/timeline")) }
+
+    /** Productions that can still be heard, newest first. */
+    suspend fun library(): Library = withContext(Dispatchers.IO) { TimelineJson.parseLibrary(request("GET", "api/library")) }
 
     /** Plans and queues production right away instead of waiting for the next cron tick. */
     suspend fun plan() { withContext(Dispatchers.IO) { request("POST", "api/timeline/plan") } }

@@ -100,7 +100,8 @@ export interface StationConfig {
   schedule: ScheduleSlot[];
 }
 
-export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'failed' | 'expired';
+/** `archived`: produced but not heard before it left the program; it can still be played from the archive. */
+export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'archived' | 'failed' | 'expired';
 export const OPEN_STATES: readonly TimelineState[] = ['planned', 'voicing', 'ready'];
 export type TimelinePartView =
   | { kind: 'speech'; audioUrl?: string }
