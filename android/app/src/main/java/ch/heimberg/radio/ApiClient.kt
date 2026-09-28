@@ -47,6 +47,15 @@ class ApiClient(private val connection: Connection) {
         withContext(Dispatchers.IO) { request("POST", "api/shows/${show.id}/produce", payload) }
     }
 
+    /** A new order for all open items; a stale order (the program changed) is refused with 409. */
+    suspend fun arrange(order: List<String>) {
+        val body = JSONObject().put("order", org.json.JSONArray(order)).toString()
+        withContext(Dispatchers.IO) { request("POST", "api/timeline/arrange", body) }
+    }
+
+    /** Deletes a production from the archive (or takes it out of the program). */
+    suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }
+
     suspend fun send(feedback: Feedback) {
         withContext(Dispatchers.IO) { request("POST", "api/timeline/${feedback.itemId}/feedback", feedback.toJson()) }
     }

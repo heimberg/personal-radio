@@ -9,11 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.text.InputFilter
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +26,8 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionResult
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.Program
@@ -37,9 +37,6 @@ import com.google.android.material.button.MaterialButton
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /** Tune in: what is playing, controls, feedback and what comes next. */
 class MainActivity : AppCompatActivity() {
@@ -55,12 +52,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: WaveformView
     private lateinit var timeView: TextView
     private lateinit var playPause: MaterialButton
-    private lateinit var upcomingView: LinearLayout
+    private lateinit var upcomingView: RecyclerView
+    private val program = ProgramAdapter(onPlay = { playItem(it) }, onArranged = { arrange(it) })
     private lateinit var upcomingCount: TextView
     private lateinit var upcomingEmpty: TextView
     private lateinit var notice: View
     private lateinit var noticeText: TextView
     private var upcomingItems: List<TimelineItem> = emptyList()
+    private var lastMinute = -1L
     private var currentItemId: String? = null
     /** Chosen in the archive while the player connection is being rebuilt; sent once it is connected. */
     private var pendingPlay: TimelineItem? = null
@@ -96,7 +95,13 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         timeView = findViewById(R.id.time)
         playPause = findViewById(R.id.play_pause)
-        upcomingView = findViewById(R.id.upcoming)
+        upcomingView = findViewById<RecyclerView>(R.id.upcoming).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = program
+            // The page scrolls as a whole; the list shows all its rows.
+            isNestedScrollingEnabled = false
+        }
+        program.touchHelper.attachToRecyclerView(upcomingView)
         upcomingCount = findViewById(R.id.upcoming_count)
         upcomingEmpty = findViewById(R.id.upcoming_empty)
         notice = findViewById(R.id.notice)
@@ -114,7 +119,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.like).setOnClickListener { rate(true) }
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
         spotifyButton.setOnClickListener { connectSpotify() }
-        findViewById<Button>(R.id.plan).setOnClickListener { planNow() }
         findViewById<Button>(R.id.produce_now).setOnClickListener { chooseShowToProduce() }
         findViewById<Button>(R.id.archive).setOnClickListener { archive.launch(Intent(this, LibraryActivity::class.java)) }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
@@ -131,6 +135,12 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     while (true) {
                         renderProgress()
+                        // Start times say when an item would begin from now; they move on every minute.
+                        val minute = System.currentTimeMillis() / 60_000
+                        if (minute != lastMinute) {
+                            lastMinute = minute
+                            program.refreshTimes(currentRemainingMs())
+                        }
                         delay(500)
                     }
                 }
@@ -194,7 +204,8 @@ class MainActivity : AppCompatActivity() {
             spotifyStatus.text = error ?: getString(R.string.spotify_connected)
             Toast.makeText(this, error ?: getString(R.string.spotify_connected), Toast.LENGTH_LONG).show()
             if (error == null) {
-                spotifyButton.text = getString(R.string.spotify_connected_button)
+                RadioSettings(this).spotifyLinked = true
+                spotifyButton.visibility = View.GONE
                 lifecycleScope.launch { refreshTimeline() }
             }
         }
@@ -285,6 +296,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** One tap on a show produces it; music hours first ask for an optional subject. */
     private fun chooseShowToProduce() {
         lifecycleScope.launch {
             val shows = runCatching { api.shows() }.getOrElse {
@@ -295,60 +307,50 @@ class MainActivity : AppCompatActivity() {
                 statusView.text = getString(R.string.no_shows)
                 return@launch
             }
-
-            val labels = shows.map { "${it.name} · ${formatLabel(it.format)}" }
-            val picker = Spinner(this@MainActivity).apply {
-                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, labels)
-            }
-            val subject = EditText(this@MainActivity).apply {
-                maxLines = 1
-                filters = arrayOf(InputFilter.LengthFilter(200))
-                hint = getString(R.string.production_subject_hint)
-            }
-            val explanation = TextView(this@MainActivity).apply {
-                text = getString(R.string.production_subject_optional)
-                setPadding(0, 8, 0, 8)
-            }
-            val content = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                val inset = (24 * resources.displayMetrics.density).toInt()
-                setPadding(inset, 0, inset, 0)
-                addView(picker)
-                addView(subject)
-                addView(explanation)
-            }
-            fun updateSubjectVisibility() {
-                val musicHour = shows.getOrNull(picker.selectedItemPosition)?.format in setOf("artist_hour", "genre_hour", "theme_hour")
-                subject.visibility = if (musicHour) View.VISIBLE else View.GONE
-                explanation.visibility = if (musicHour) View.VISIBLE else View.GONE
-                subject.hint = when (shows.getOrNull(picker.selectedItemPosition)?.format) {
-                    "artist_hour" -> getString(R.string.subject_artist)
-                    "genre_hour" -> getString(R.string.subject_genre)
-                    "theme_hour" -> getString(R.string.subject_theme)
-                    else -> getString(R.string.production_subject_hint)
-                }
-            }
-            picker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) = updateSubjectVisibility()
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-            }
-            updateSubjectVisibility()
-
             AlertDialog.Builder(this@MainActivity)
                 .setTitle(R.string.produce_now_title)
-                .setView(content)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.produce_now_action) { _, _ ->
-                    val selected = shows.getOrNull(picker.selectedItemPosition) ?: return@setPositiveButton
-                    val requestedSubject = subject.text.toString().trim().takeIf { subject.visibility == View.VISIBLE }.orEmpty()
-                    lifecycleScope.launch {
-                        statusView.text = getString(R.string.production_starting)
-                        statusView.text = runCatching { api.produceNow(selected, requestedSubject) }
-                            .fold({ getString(R.string.production_queued, selected.name) }, { it.message ?: getString(R.string.production_failed) })
-                        refreshTimeline()
-                    }
+                .setItems(shows.map { "${it.name} · ${formatLabel(it.format)}" }.toTypedArray()) { _, which ->
+                    val show = shows[which]
+                    if (show.format in MUSIC_HOURS) askSubject(show) else produce(show, "")
                 }
+                .setNegativeButton(android.R.string.cancel, null)
                 .show()
+        }
+    }
+
+    private fun askSubject(show: ApiClient.ShowOption) {
+        val subject = EditText(this).apply {
+            maxLines = 1
+            filters = arrayOf(InputFilter.LengthFilter(200))
+            hint = getString(
+                when (show.format) {
+                    "artist_hour" -> R.string.subject_artist
+                    "genre_hour" -> R.string.subject_genre
+                    else -> R.string.subject_theme
+                },
+            )
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val inset = (24 * resources.displayMetrics.density).toInt()
+            setPadding(inset, inset / 3, inset, 0)
+            addView(TextView(context).apply { text = getString(R.string.produce_subject_intro) })
+            addView(subject)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(show.name)
+            .setView(content)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.produce_now_action) { _, _ -> produce(show, subject.text.toString().trim()) }
+            .show()
+    }
+
+    private fun produce(show: ApiClient.ShowOption, subject: String) {
+        lifecycleScope.launch {
+            statusView.text = getString(R.string.production_starting)
+            statusView.text = runCatching { api.produceNow(show, subject) }
+                .fold({ getString(R.string.production_queued, show.name) }, { it.message ?: getString(R.string.production_failed) })
+            refreshTimeline()
         }
     }
 
@@ -364,9 +366,11 @@ class MainActivity : AppCompatActivity() {
         runCatching { api.response() }
             .onSuccess { timeline ->
                 spotifyClientId = timeline.spotify?.clientId
-                spotifyButton.visibility = if (spotifyClientId != null) View.VISIBLE else View.GONE
+                // Needed once: after the owner allowed it, the playback service connects on its own.
+                spotifyButton.visibility = if (spotifyClientId != null && !RadioSettings(this).spotifyLinked) View.VISIBLE else View.GONE
                 notice.visibility = View.GONE
-                upcomingItems = timeline.items.filter { it.isOpen }.take(12)
+                // All open items: a new order always covers the whole program.
+                upcomingItems = timeline.items.filter { it.isOpen }
                 renderUpcoming()
             }
             .onFailure {
@@ -380,13 +384,33 @@ class MainActivity : AppCompatActivity() {
         val items = upcomingItems
         upcomingEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         upcomingCount.text = if (items.isEmpty()) "" else resources.getQuantityString(R.plurals.upcoming_count, items.size, items.size)
-        upcomingView.removeAllViews()
-        val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-        for (item in items) {
-            val playing = item.id == currentItemId
-            val planned = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
-            // Finished productions can be heard right away with a tap.
-            upcomingView.addView(TimelineRows.inflate(layoutInflater, upcomingView, item, planned, playing, if (item.isPlayable && !playing) ::playItem else null))
+        program.submit(items, currentItemId, currentRemainingMs())
+    }
+
+    /** How long the playing item still runs: the rest of this step plus its later parts (songs, spoken parts). */
+    private fun currentRemainingMs(): Long? {
+        val player = controller ?: return null
+        val itemId = player.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return null
+        val item = upcomingItems.firstOrNull { it.id == itemId }
+        var remaining = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it - player.currentPosition.coerceAtLeast(0) } ?: return null
+        val steps = (0 until player.mediaItemCount).filter { Program.itemIdOf(player.getMediaItemAt(it).mediaId) == itemId }
+        val later = steps.filter { it > player.currentMediaItemIndex }
+        // Spoken parts not loaded yet: an even share of the item's estimated length.
+        val perStep = item?.let { (it.estimatedMinutes * 60_000 / steps.size.coerceAtLeast(1)).toLong() } ?: 60_000L
+        for (index in later) remaining += player.getMediaItemAt(index).mediaMetadata.durationMs ?: perStep
+        return remaining
+    }
+
+    /** Saves a new order from the list; the player follows it right away. */
+    private fun arrange(items: List<TimelineItem>) {
+        lifecycleScope.launch {
+            val result = runCatching { api.arrange(items.map { it.id }) }
+            statusView.text = result.fold(
+                { getString(R.string.arrange_saved) },
+                { if (it is ApiException && it.status == 409) getString(R.string.arrange_stale) else it.message ?: getString(R.string.connection_failed) },
+            )
+            controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
+            refreshTimeline()
         }
     }
 
@@ -405,5 +429,9 @@ class MainActivity : AppCompatActivity() {
     private fun clock(ms: Long): String {
         val seconds = ms / 1000
         return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+    }
+
+    private companion object {
+        val MUSIC_HOURS = setOf("artist_hour", "genre_hour", "theme_hour")
     }
 }

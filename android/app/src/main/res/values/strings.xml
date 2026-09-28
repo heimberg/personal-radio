@@ -9,15 +9,12 @@
     <string name="next">Weiter</string>
     <string name="like">Mehr davon</string>
     <string name="dislike">Weniger</string>
-    <string name="plan">Jetzt planen</string>
     <string name="produce_now_action">Sendung sofort produzieren</string>
     <string name="produce_now_title">Sendung auswählen</string>
     <string name="production_starting">Produktion wird gestartet …</string>
     <string name="production_queued">«%1$s» wird produziert.</string>
     <string name="production_failed">Produktion konnte nicht gestartet werden.</string>
     <string name="no_shows">Keine Sendungen konfiguriert.</string>
-    <string name="production_subject_hint">Thema oder Künstler (optional)</string>
-    <string name="production_subject_optional">Leer lassen, damit die KI ein passendes Thema auswählt.</string>
     <string name="subject_artist">Künstler oder Band</string>
     <string name="subject_genre">Genre oder Szene</string>
     <string name="subject_theme">Thema</string>
@@ -34,7 +31,7 @@
         <item quantity="other">%1$d Beiträge</item>
     </plurals>
     <string name="nothing_playing">Noch nichts eingeschaltet</string>
-    <string name="nothing_planned">Noch nichts geplant. Tippe auf «Jetzt planen».</string>
+    <string name="nothing_planned">Noch nichts geplant. Tippe auf Play, dann wird das Programm produziert.</string>
     <string name="status_waiting">Das Programm wird produziert. Der erste Beitrag kommt in wenigen Minuten.</string>
     <string name="status_buffering">Wird geladen …</string>
     <string name="status_ended">Warte auf den nächsten Beitrag …</string>
@@ -56,11 +53,9 @@
     <string name="spotify_connected">Spotify verbunden. Künstlerstunden laufen jetzt mit Musik.</string>
     <string name="spotify_not_configured">Spotify ist auf dem Server nicht eingerichtet (SPOTIFY_CLIENT_ID im Worker).</string>
     <string name="version">Version %1$s</string>
-    <string name="spotify_connected_button">Spotify verbunden ✓</string>
     <string name="spotify_missing">Installiere die Spotify-App und melde dich dort an.</string>
     <string name="spotify_tracks">%1$d Songs über Spotify</string>
     <string name="archive">Archiv</string>
-    <string name="archive_open">Archiv · frei hören</string>
     <string name="archive_intro">Tippe auf eine Produktion, um sie sofort zu hören. Danach geht das Programm weiter. Gehörtes bleibt %1$d Tage abrufbar.</string>
     <string name="archive_empty">Noch nichts im Archiv. Sobald eine Produktion fertig ist, steht sie hier.</string>
     <string name="archive_loading">Archiv wird geladen …</string>
@@ -70,4 +65,16 @@
     <string name="playing_now">Spielt jetzt: %1$s</string>
     <string name="play_unavailable">Der Player ist noch nicht bereit. Versuche es gleich nochmals.</string>
     <string name="play_item">%1$s jetzt hören</string>
+    <string name="settings">Einstellungen</string>
+    <string name="produce_subject_intro">Worüber? Leer lassen, dann wählt die KI passend zu deinen Interessen.</string>
+    <string name="move">Verschieben</string>
+    <string name="now_playing_short">läuft</string>
+    <string name="arrange_saved">Reihenfolge gespeichert.</string>
+    <string name="arrange_stale">Das Programm hat sich inzwischen geändert – bitte nochmals verschieben.</string>
+    <string name="upcoming_hint">Tippen: sofort hören · am Griff ziehen: verschieben</string>
+    <string name="archive_hint_delete">Lange drücken: löschen</string>
+    <string name="delete">Löschen</string>
+    <string name="delete_title">«%1$s» löschen?</string>
+    <string name="delete_message">Die Produktion und ihr Audio werden endgültig entfernt.</string>
+    <string name="deleted">Gelöscht.</string>
 </resources>

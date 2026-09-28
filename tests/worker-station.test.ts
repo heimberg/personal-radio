@@ -105,6 +105,13 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'like', listenedRatio: 1 }) })).status, 200);
     assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 2);
     env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('like');
+    // Deleting from the archive removes the item and its audio; it can no longer be played.
+    const kept = new Map(env.AUDIO.objects);
+    assert.equal((await call(`/api/timeline/${items[0].id}/delete`, { method: 'POST' })).status, 200);
+    assert.deepEqual(((await (await call('/api/library')).json()) as { items: unknown[] }).items, []);
+    assert.equal((await call(`/${items[0].audioUrl}`)).status, 404);
+    assert.ok(env.AUDIO.objects.size < kept.size);
+    assert.equal((await call(`/api/timeline/${items[0].id}/delete`, { method: 'POST' })).status, 404);
     // Failures are summarised, not listed, and the cleanup route deletes them.
     (env.DB as any).raw.prepare(`UPDATE timeline_items SET state = 'failed', error = 'NO_SOURCES' WHERE id = ?`).run(items[1].id);
     const withFailure = await (await call('/api/timeline')).json() as { items: Array<{ id: string }>; failures: { count: number; latestError: string } };
