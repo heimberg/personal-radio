@@ -159,6 +159,11 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
 .show-toggle[aria-expanded=true] { margin-bottom: 12px; }
 .slots { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 .slot { border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--bg); }
+.block-groups, .block-triggers { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 12px 0; display: grid; gap: 10px; }
+.block-group { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.block-group:first-of-type { border-top: 0; padding-top: 0; }
+.group-head { display: flex; gap: 8px; align-items: center; }
+.group-head input { flex: 1; min-width: 0; }
 .days { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .days button { min-width: 44px; }
 .times .field { flex: 1; }

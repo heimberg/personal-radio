@@ -24,7 +24,7 @@ export const STATE_LABELS: Record<TimelineState, string> = {
 export const VERIFICATION_LABELS: Record<VerificationPolicy, string> = { strict: 'quellengeprüft', light: 'quellenbasiert', off: 'frei' };
 
 export const FORMAT_LABELS: Record<ShowFormat, string> = {
-  brief: 'Kurzbeitrag', podcast: 'Dialog', artist_hour: 'Künstler-Stunde', genre_hour: 'Genre-Stunde', theme_hour: 'Themen-Stunde',
+  brief: 'Kurzbeitrag', podcast: 'Dialog', artist_hour: 'Künstler-Stunde', genre_hour: 'Genre-Stunde', theme_hour: 'Themen-Stunde', music_block: 'Musikblock',
 };
 
 const ERROR_LABELS: Record<string, string> = {

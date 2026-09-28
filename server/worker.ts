@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
-import type { MusicCatalog, MusicWriter } from './music.ts';
+import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
@@ -228,6 +228,21 @@ function stationDeps(env: Environment): StationDeps {
     musicWriter: musicFor(env).writer,
     catalog: musicFor(env).catalog,
     ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
+    ...(musicFor(env).catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(musicFor(env).catalog as SpotifyCatalog, listeningFor(env)) } : {}),
+  };
+}
+
+/** The owner's token reads private playlists; without a connection (or when refused) the app token reads public ones. */
+function playlistsFor(catalog: SpotifyCatalog, listening: SpotifyListening | null): PlaylistSource {
+  return {
+    tracks: async (owner, id) => {
+      const token = listening ? await listening.accessToken(owner) : null;
+      if (token) {
+        try { return await catalog.playlistTracks(id, token); }
+        catch (error) { if (!(error instanceof ProviderError) || ![401, 403, 404].includes(error.status ?? 0)) throw error; }
+      }
+      return catalog.playlistTracks(id);
+    },
   };
 }
 
