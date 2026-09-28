@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GeminiMusicWriter, SpotifyCatalog, matchesPick, normalizeMusic } from '../server/music.ts';
+import { GeminiMusicWriter, SpotifyCatalog, matchesPick, normalizeMusic, parseHourScript } from '../server/music.ts';
 import { splitSpeech } from '../server/station.ts';
 
 const sources = [{ id: 'w1', url: 'https://example.org/p', title: 'example.org', excerpt: 'Dummy erschien 1994.', publishedAt: '2026-09-27', retrievedAt: '2026-09-27' }];
@@ -64,6 +64,28 @@ test('the Gemini music writer requires one moderation per song and drops unknown
   assert.doesNotMatch(body.systemInstruction.parts[0].text, /keine Quellen geliefert/);
   assert.deepEqual(hour.intro, { text: 'Willkommen.', sourceIds: ['w1'] });
   assert.deepEqual(hour.tracks, [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }, { index: 1, text: 'Roads entstand als eigener Song.', sourceIds: [] }]);
+  assert.match(body.systemInstruction.parts[0].text, /genau 2 Einträge mit index 0 bis 1/);
+});
+
+test('hour scripts tolerate 1-based, duplicate and a few missing moderations, but not a broken script', () => {
+  const frame = { title: 'T', intro: { text: 'Hallo.', sourceIds: ['w1', 'erfunden'] }, outro: { text: 'Tschüss.', sourceIds: [] } };
+  const names = ['A', 'B', 'C', 'D', 'E', 'F'].map(title => ({ title, artist: 'X' }));
+  const moderation = (index: number, text = `Song ${index}.`) => ({ index, text, sourceIds: ['w1'] });
+  // Counted from 1: shifted to 0.
+  const oneBased = parseHourScript({ ...frame, tracks: [1, 2, 3].map(index => moderation(index)) }, 3, ['w1'], 'F');
+  assert.deepEqual(oneBased.tracks.map(track => [track.index, track.text]), [[0, 'Song 1.'], [1, 'Song 2.'], [2, 'Song 3.']]);
+  assert.deepEqual(oneBased.intro.sourceIds, ['w1']);
+  // A duplicate index keeps the first entry; the missing song gets a plain announcement.
+  const gap = parseHourScript({ ...frame, tracks: [moderation(0), moderation(1), moderation(1, 'doppelt'), moderation(3), moderation(4), moderation(5)] }, 6, ['w1'], 'F', names);
+  assert.equal(gap.tracks[1].text, 'Song 1.');
+  assert.deepEqual(gap.tracks[2], { text: 'Als Nächstes: «C» von X.', sourceIds: [], index: 2 });
+  // Entries without an index take their position.
+  const unnumbered = parseHourScript({ ...frame, tracks: [{ text: 'Erster.' }, { text: 'Zweiter.' }] }, 2, [], 'F');
+  assert.deepEqual(unnumbered.tracks.map(track => track.text), ['Erster.', 'Zweiter.']);
+  // Without names, with too many gaps or without the frame, the script is rejected.
+  assert.throws(() => parseHourScript({ ...frame, tracks: [moderation(0)] }, 2, [], 'F'), /1 of 2/);
+  assert.throws(() => parseHourScript({ ...frame, tracks: [moderation(0), moderation(1)] }, 6, [], 'F', names), /2 of 6/);
+  assert.throws(() => parseHourScript({ ...frame, intro: null, tracks: [moderation(0)] }, 1, [], 'F', names), /no intro/);
 });
 
 test('genre and theme hours ask for songs by different artists and drop picks without an artist', async () => {

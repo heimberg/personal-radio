@@ -83,6 +83,17 @@ test('a failed run resumes after the last finished task instead of paying for it
   assert.equal((db as any).raw.prepare('SELECT COUNT(*) AS n FROM agent_steps').get().n, 0);
 });
 
+test('a revision that loses a moderation is discarded; the checked draft goes on air', async () => {
+  const { tools } = fakeTools();
+  const broken = { ...tools, model: { askJson: async (system: string, input: unknown, label: string) => {
+    const result = await tools.model.askJson(system, input, label) as { tracks?: unknown[] };
+    return label === 'Gemini continuity editor' ? { ...result, tracks: result.tracks!.slice(0, 1) } : result;
+  } } };
+  const result = await produceWithTeam({ runId: 'item-4', ownerId: 'o', request, tools: broken, steps: new D1StepRunner(sqliteD1(), 'o', 'item-4') });
+  assert.ok(result.ok);
+  if (result.ok) assert.deepEqual(result.script.tracks.map(track => track.text), ['Entwurf Song 1.', 'Entwurf Song 2.', 'Entwurf Song 3.']);
+});
+
 test('too few songs on Spotify end the run with the count; nothing is written', async () => {
   const { tools, calls } = fakeTools({ unknownSongs: true });
   const result = await produceWithTeam({ runId: 'item-3', ownerId: 'o', request, tools, steps: new D1StepRunner(sqliteD1(), 'o', 'item-3') });
