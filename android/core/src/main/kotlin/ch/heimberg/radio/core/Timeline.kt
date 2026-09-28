@@ -58,12 +58,20 @@ data class SpotifySetup(val clientId: String)
 @Serializable
 data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null)
 
+/** `GET /api/timeline/{id}/script`: what was said, for reading along, and the sources behind it. */
+@Serializable
+data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList())
+
+@Serializable
+data class TranscriptLine(val text: String, val speaker: String? = null, val song: Boolean = false)
+
 /** `GET /api/library`: productions that can still be heard, newest first, and how long heard audio is kept. */
 @Serializable
 data class Library(val items: List<TimelineItem>, val retentionDays: Int = 7)
 
 object TimelineJson {
     private val json = Json { ignoreUnknownKeys = true }
+    fun parseTranscript(body: String): Transcript = json.decodeFromString(Transcript.serializer(), body)
     fun parseLibrary(body: String): Library = json.decodeFromString(Library.serializer(), body)
     fun encodeItem(item: TimelineItem): String = json.encodeToString(TimelineItem.serializer(), item)
     fun parseItem(body: String): TimelineItem = json.decodeFromString(TimelineItem.serializer(), body)

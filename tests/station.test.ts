@@ -4,7 +4,7 @@ import { activeSlot, ConfigError, defaultStationConfig, parseStationConfig } fro
 import type { StationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
-import { arrangeTimeline, planTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from '../server/station.ts';
+import { arrangeTimeline, planTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from '../server/station.ts';
 import { MUSIC_SHOW_ID } from '../src/domain/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { PipelineError } from '../server/segment-pipeline.ts';
@@ -388,6 +388,9 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
     `api/timeline/${id}/audio?part=4`, 'Sour Times', `api/timeline/${id}/audio?part=6`,
   ]);
   assert.equal(h.bucket.size, 4);
+  const transcript = transcriptView((await h.store.getItem(OWNER, id))!, null);
+  assert.deepEqual(transcript.lines.filter(line => line.song).map(line => line.text), ['Glory Box – Portishead', 'Roads – Portishead', 'Sour Times – Portishead']);
+  assert.ok(transcript.lines.filter(line => !line.song).every(line => line.text.trim()));
   // Unheard, the hour moves to the archive with its audio; after the retention period every part is released.
   h.advance(13 * 60);
   await tick(h.deps, OWNER);

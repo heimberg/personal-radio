@@ -28,6 +28,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionResult
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.Program
@@ -102,6 +103,16 @@ class MainActivity : AppCompatActivity() {
             isNestedScrollingEnabled = false
         }
         program.touchHelper.attachToRecyclerView(upcomingView)
+        findViewById<SwipeRefreshLayout>(R.id.refresh).apply {
+            setColorSchemeResources(R.color.accent)
+            setOnRefreshListener {
+                lifecycleScope.launch {
+                    refreshTimeline()
+                    controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
+                    isRefreshing = false
+                }
+            }
+        }
         upcomingCount = findViewById(R.id.upcoming_count)
         upcomingEmpty = findViewById(R.id.upcoming_empty)
         notice = findViewById(R.id.notice)
@@ -117,6 +128,8 @@ class MainActivity : AppCompatActivity() {
         playPause.setOnClickListener { togglePlayback() }
         findViewById<Button>(R.id.next).setOnClickListener { controller?.seekToNextMediaItem() }
         findViewById<Button>(R.id.like).setOnClickListener { rate(true) }
+        findViewById<Button>(R.id.transcript).setOnClickListener { openTranscript() }
+        titleView.setOnClickListener { openTranscript() }
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
         spotifyButton.setOnClickListener { connectSpotify() }
         findViewById<Button>(R.id.produce_now).setOnClickListener { chooseShowToProduce() }
@@ -261,6 +274,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun rate(liked: Boolean) {
         val id = controller?.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return
+        statusView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         lifecycleScope.launch {
             val result = runCatching { api.send(FeedbackPolicy.rating(id, liked)) }
             statusView.text = result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" })
@@ -287,6 +301,16 @@ class MainActivity : AppCompatActivity() {
             val ok = runCatching { result.get().resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
             statusView.text = if (ok) getString(R.string.playing_now, item.displayTitle) else getString(R.string.play_unavailable)
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /** Text and sources of what is playing. */
+    private fun openTranscript() {
+        val player = controller ?: return
+        val itemId = player.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: run {
+            Toast.makeText(this, R.string.nothing_playing, Toast.LENGTH_SHORT).show()
+            return
+        }
+        TranscriptActivity.open(this, itemId, player.mediaMetadata.title?.toString() ?: "")
     }
 
     private fun planNow() {

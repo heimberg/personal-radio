@@ -1,6 +1,7 @@
 package ch.heimberg.radio
 
 import android.annotation.SuppressLint
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -52,6 +53,7 @@ class ProgramAdapter(
         override fun onSelectedChanged(holder: RecyclerView.ViewHolder?, actionState: Int) {
             super.onSelectedChanged(holder, actionState)
             if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+                holder?.itemView?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 dragging = true
                 orderBeforeDrag = items.map { it.id }
             }
@@ -63,6 +65,7 @@ class ProgramAdapter(
             val changed = orderBeforeDrag != null && orderBeforeDrag != items.map { it.id }
             orderBeforeDrag = null
             if (changed) {
+                holder.itemView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 // Times follow the new order right away; the server confirms it.
                 recyclerView.post { refreshTimes(lastRemainingMs) }
                 onArranged(items)

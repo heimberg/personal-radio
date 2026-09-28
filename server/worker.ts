@@ -10,7 +10,7 @@ import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
-import { AUDIO_RETENTION_DAYS, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
+import { AUDIO_RETENTION_DAYS, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -401,10 +401,14 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|remove|delete)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|remove|delete|script)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
+  if (match[2] === 'script') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json(transcriptView(row, await store.getConfig(owner)), 200);
+  }
   if (match[2] === 'delete') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);

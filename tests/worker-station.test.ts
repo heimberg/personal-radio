@@ -105,6 +105,11 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'like', listenedRatio: 1 }) })).status, 200);
     assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 2);
     env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('like');
+    // Reading along: the spoken text and the sources of an item.
+    const transcript = await (await call(`/api/timeline/${items[0].id}/script`)).json() as { title: string; lines: Array<{ text: string }>; sources: unknown[] };
+    assert.equal(transcript.title, 'Gelandet');
+    assert.ok(transcript.lines.length >= 1 && transcript.lines.every(line => line.text.trim()));
+    assert.deepEqual(transcript.sources, [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }]);
     // Deleting from the archive removes the item and its audio; it can no longer be played.
     const kept = new Map(env.AUDIO.objects);
     assert.equal((await call(`/api/timeline/${items[0].id}/delete`, { method: 'POST' })).status, 200);

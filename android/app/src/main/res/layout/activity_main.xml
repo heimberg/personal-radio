@@ -3,11 +3,17 @@
     Direction 1c "Kompakt" of the Nocturne redesign: a dense player card with a small orb and a waveform,
     so the program list shows without scrolling. Actions follow below it.
 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Pull down to refresh. -->
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/refresh"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
+    android:fitsSystemWindows="true">
+
+<ScrollView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:scrollbars="none">
 
     <LinearLayout
@@ -159,6 +165,16 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/transcript"
+                    style="@style/Widget.PersonalRadio.Button.Icon"
+                    android:layout_width="@dimen/touch_target"
+                    android:layout_height="@dimen/touch_target"
+                    android:layout_marginEnd="@dimen/space_1"
+                    android:contentDescription="@string/transcript"
+                    android:tooltipText="@string/transcript"
+                    app:icon="@drawable/ic_info" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/dislike"
@@ -343,3 +359,4 @@
             app:icon="@drawable/ic_plugs" />
     </LinearLayout>
 </ScrollView>
+</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>

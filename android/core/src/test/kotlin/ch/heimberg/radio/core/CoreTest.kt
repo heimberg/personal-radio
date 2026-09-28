@@ -188,3 +188,16 @@ class ProgramClockTest {
         assertEquals(listOf("a", "b", "c"), ProgramClock.move(items, 1, 0, null).map { it.id })
     }
 }
+
+class TranscriptTest {
+    @Test fun readsLinesWithSpeakersSongsAndSources() {
+        val transcript = TimelineJson.parseTranscript(
+            """{"title":"Portishead","lines":[{"text":"Willkommen."},{"text":"Glory Box – Portishead","song":true},{"speaker":"Jonas","text":"Genau."}],
+               "sources":[{"title":"Quelle","url":"https://example.org/a"}],"extra":1}""",
+        )
+        assertEquals("Portishead", transcript.title)
+        assertEquals(listOf(false, true, false), transcript.lines.map { it.song })
+        assertEquals("Jonas", transcript.lines[2].speaker)
+        assertEquals("https://example.org/a", transcript.sources.single().url)
+    }
+}
