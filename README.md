@@ -24,7 +24,7 @@ Android: `cd android && ./gradlew -p core test` for the program logic; CI builds
 
 ## Deploy
 
-Merges into `feat/ai-segment-pipeline` deploy the Worker (migrations included) through GitHub Actions. Account setup, Access, secrets and variables: [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md). CI details: [docs/deployment.md](docs/deployment.md). Architecture and roadmap: [docs/architecture.md](docs/architecture.md).
+Merges into `main` deploy the Worker (migrations included) and publish the signed APK for in-app updates through GitHub Actions. Account setup, Access, secrets and variables: [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md). CI details: [docs/deployment.md](docs/deployment.md). Architecture and roadmap: [docs/architecture.md](docs/architecture.md).
 
 ## Privacy
 
