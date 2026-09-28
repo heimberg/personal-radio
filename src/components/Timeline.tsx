@@ -132,6 +132,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
           <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}</span>
           {item.error && item.state !== 'ready' && <span className="timeline-error">
             {item.updatedAt ? `${clockTime(item.updatedAt)} · ` : ''}{errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</span>}
+          {item.team && <span className="timeline-team">Redaktionsteam: {item.team.songs} Songs einzeln recherchiert{item.team.specialists ? ` · ${item.team.specialists} Fachrecherchen` : ''} · {item.team.corrections === 0 ? 'Faktencheck ohne Beanstandung' : `${item.team.corrections} Korrekturen im Faktencheck`}</span>}
           {item.parts && item.showId !== MUSIC_SHOW_ID && <span className="timeline-tracks">♫ {item.subject ? `${item.subject}: ` : ''}{item.parts.flatMap(part => part.kind === 'track' ? [part.title] : []).join(' · ')}
             <em> – Musik über Spotify in der App</em></span>}
           {(item.sources?.length || item.searchQueries?.length) ? <span className="timeline-sources">

@@ -11,7 +11,10 @@ import type { SegmentPipeline } from './segment-pipeline.ts';
 import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
 import { HOUR_KINDS } from './music.ts';
-import type { BlockMoment, MusicCatalog, MusicWriter, PlaylistSource, PlaylistTrack, SongPick, TrackPick } from './music.ts';
+import type { BlockMoment, HourScript, MusicCatalog, MusicWriter, PlaylistSource, PlaylistTrack, SongPick, TrackPick } from './music.ts';
+import { produceWithTeam } from './agentic/music-hour.ts';
+import type { JsonModel } from './agentic/music-hour.ts';
+import type { DurableStepRunner } from './agentic/runtime.ts';
 
 export interface AudioBucket {
   put(key: string, value: Uint8Array, options: { httpMetadata: { contentType: string } }): Promise<unknown>;
@@ -36,6 +39,9 @@ export interface StationDeps {
   playlists?: PlaylistSource;
   /** The owner's Spotify top artists, when the owner connected the listening profile. */
   listening?: { topArtists(owner: string, now: Date): Promise<string[]> };
+  /** The editorial team's model and durable step storage (music hours with `production: agents`). */
+  agentModel?: JsonModel;
+  agentSteps?(owner: string, runId: string): DurableStepRunner & { clear(): Promise<void> };
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -299,34 +305,55 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       ?? (await deps.musicWriter.pickSubject({ focus, interests, avoid: await recentSubjects(deps, owner, focus), instructions: show.instructions })).subject;
     // Search grounding does not trigger every time: one more, more explicit attempt. If both stay empty,
     // the hour is written from well-known facts, carefully worded and marked as unverified ("frei").
+    // The editorial team does its own research; the standard path researches here.
     const brief = `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim();
-    let { sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now });
-    if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now }));
-    const picks = await deps.musicWriter.pickTracks({ focus, subject, count: show.tracks ?? 10, sources, instructions: show.instructions });
-    const resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }> = [];
-    for (const pick of picks) {
-      if (resolved.length >= (show.tracks ?? 10)) break;
-      const track = await deps.catalog.find(pick);
-      if (track && !resolved.some(item => item.uri === track.uri)) resolved.push({ pick, ...track });
+    let sources: Source[] = [], queries: string[] = [];
+    if (show.production !== 'agents') {
+      ({ sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now }));
+      if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now }));
     }
-    if (resolved.length < 3) return fail(`TOO_FEW_TRACKS: ${resolved.length} von ${picks.length} Songs auf Spotify gefunden`);
-    // A second research pass runs after Spotify has confirmed the exact tracks. This gives the writer
-    // song-specific evidence, rather than asking it to improvise from a broad artist dossier.
-    const songDossier = await deps.researcher.research({
-      brief: `Recherchiere gezielt für jede dieser bestätigten Aufnahmen eine eigene, belegbare Geschichte. Suche konkrete Hintergründe zu Entstehung, Aufnahme, Album, Text oder Motiv, beteiligten Musikerinnen und Musikern und damaligem Kontext. Liefere unterschiedliche Details pro Song; keine allgemeine Künstlerbiografie.\n${resolved.map((item, index) => `${index + 1}. ${item.pick.artist} – ${item.pick.title}${item.pick.album ? `, Album ${item.pick.album}` : ''}${item.pick.year ? ` (${item.pick.year})` : ''}: ${item.pick.reason}`).join('\n')}`,
-      interests: [subject], avoidTopics: [], now,
-    });
-    const knownUrls = new Set(sources.map(source => source.url));
-    const songSources = songDossier.sources.flatMap((source, index) => {
-      if (knownUrls.has(source.url)) return [];
-      knownUrls.add(source.url);
-      return [{ ...source, id: `song-${index + 1}-${source.id}` }];
-    });
-    sources = [...sources, ...songSources];
-    queries = [...new Set([...queries, ...songDossier.queries])];
-    const verification = sources.length ? show.verification : 'off';
     const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner) };
-    const hour = await deps.musicWriter.writeHour({ focus, subject, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
+    let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }>;
+    let hour: HourScript;
+    let team: { songs: number; specialists: number; corrections: number } | undefined;
+    if (show.production === 'agents') {
+      // The editorial team researches, plans, writes, checks and edits in durable steps.
+      if (!deps.agentModel) return fail('GEMINI_NOT_CONFIGURED');
+      const steps = deps.agentSteps?.(owner, row.id) ?? memorySteps();
+      const result = await produceWithTeam({ runId: row.id, ownerId: owner, steps,
+        tools: { model: deps.agentModel, researcher: deps.researcher, catalog: deps.catalog, now: deps.now },
+        request: { focus, subject, count: show.tracks ?? 10, talkSeconds: show.talkSeconds ?? 60, instructions: show.instructions, researchPrompt: show.researchPrompt, direction } });
+      if (!result.ok) { await steps.clear(); return fail(result.error); }
+      sources = result.sources; queries = result.queries; hour = result.script;
+      resolved = result.songs.map(song => ({ pick: { title: song.title, artist: song.artist, reason: song.role, ...(song.album ? { album: song.album } : {}), ...(song.year ? { year: song.year } : {}) }, uri: song.uri, durationMs: song.durationMs }));
+      team = { songs: result.songs.length, specialists: result.specialists, corrections: result.corrections };
+      await steps.clear();
+    } else {
+      const picks = await deps.musicWriter.pickTracks({ focus, subject, count: show.tracks ?? 10, sources, instructions: show.instructions });
+      resolved = [];
+      for (const pick of picks) {
+        if (resolved.length >= (show.tracks ?? 10)) break;
+        const track = await deps.catalog.find(pick);
+        if (track && !resolved.some(item => item.uri === track.uri)) resolved.push({ pick, ...track });
+      }
+      if (resolved.length < 3) return fail(`TOO_FEW_TRACKS: ${resolved.length} von ${picks.length} Songs auf Spotify gefunden`);
+      // A second research pass runs after Spotify has confirmed the exact tracks. This gives the writer
+      // song-specific evidence, rather than asking it to improvise from a broad artist dossier.
+      const songDossier = await deps.researcher.research({
+        brief: `Recherchiere gezielt für jede dieser bestätigten Aufnahmen eine eigene, belegbare Geschichte. Suche konkrete Hintergründe zu Entstehung, Aufnahme, Album, Text oder Motiv, beteiligten Musikerinnen und Musikern und damaligem Kontext. Liefere unterschiedliche Details pro Song; keine allgemeine Künstlerbiografie.\n${resolved.map((item, index) => `${index + 1}. ${item.pick.artist} – ${item.pick.title}${item.pick.album ? `, Album ${item.pick.album}` : ''}${item.pick.year ? ` (${item.pick.year})` : ''}: ${item.pick.reason}`).join('\n')}`,
+        interests: [subject], avoidTopics: [], now,
+      });
+      const knownUrls = new Set(sources.map(source => source.url));
+      const songSources = songDossier.sources.flatMap((source, index) => {
+        if (knownUrls.has(source.url)) return [];
+        knownUrls.add(source.url);
+        return [{ ...source, id: `song-${index + 1}-${source.id}` }];
+      });
+      sources = [...sources, ...songSources];
+      queries = [...new Set([...queries, ...songDossier.queries])];
+      hour = await deps.musicWriter.writeHour({ focus, subject, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
+    }
+    const verification = sources.length ? show.verification : 'off';
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
     const sourceIds = [...new Set(spoken.flatMap(part => part.sourceIds))];
     const text = spoken.map(part => part.text).join(' ');
@@ -342,11 +369,23 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts };
     await deps.store.markCovered(owner, sources.map(source => source.url), now);
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), sources_json: JSON.stringify(sources),
-      verification, research_json: queries.length ? JSON.stringify({ queries }) : null }, deps.now());
+      verification, research_json: queries.length || team ? JSON.stringify({ queries, ...(team ? { team } : {}) }) : null }, deps.now());
   } else {
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
   }
   return voiceParts(deps, owner, config, show.voiceId ?? config.host.voiceId, row, pkg);
+}
+
+/** Without durable storage (tests, local runs) the team's steps simply run in memory. */
+function memorySteps(): DurableStepRunner & { clear(): Promise<void> } {
+  const done = new Map<string, unknown>();
+  return {
+    async do<T>(name: string, _config: unknown, callback: () => Promise<T>): Promise<T> {
+      if (done.has(name)) return done.get(name) as T;
+      const result = await callback(); done.set(name, result); return result;
+    },
+    async clear() { done.clear(); },
+  };
 }
 
 /** Voices every spoken part that has no audio yet, storing progress after each, then marks the item ready. */
@@ -659,7 +698,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { script = JSON.parse(row.script_json ?? '{}'); } catch { /* Keep the item visible without details. */ }
   try { sources = JSON.parse(row.sources_json ?? '[]'); } catch { /* Keep the item visible without sources. */ }
   let queries: string[] = [];
-  try { queries = (JSON.parse(row.research_json ?? '{}') as { queries?: string[] }).queries ?? []; } catch { /* Research details are optional. */ }
+  let team: TimelineItemView['team'];
+  try { ({ queries = [], team } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team'] }); } catch { /* Research details are optional. */ }
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
     showName: row.show_id === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
@@ -669,6 +709,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     ...(script.interestTags?.length ? { interestTags: script.interestTags } : {}),
     ...(row.verification ? { verification: row.verification as VerificationPolicy } : {}),
     ...(queries.length ? { searchQueries: queries } : {}),
+    ...(team ? { team } : {}),
     ...(row.error ? { error: row.error } : {}),
     ...(hourView(row, script as Partial<HourPackage>) ?? (row.audio_key && row.state !== 'expired' ? { audioUrl: `api/timeline/${row.id}/audio` } : {})),
   };

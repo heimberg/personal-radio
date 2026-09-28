@@ -25,6 +25,10 @@ These two requirements override every other decision in this document:
 8. **Audio lives in R2, Google Drive is an archive.** Playout needs a few hundred MB at most (a 2-minute MP3 is about 2 MB; 7-day retention), well inside R2's free allowance with free egress. Google Drive would need a stored OAuth token (refresh tokens of Google apps in "testing" status expire after 7 days), would route every stream through the Worker and adds latency and quotas. The owner's 2 TB are used later for an archive: liked segments and artist hours are copied to a Drive folder with script and sources.
 9. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
 
+## Editorial team for music hours (beta)
+
+Per show, `production: agents` hands a music hour to a team of registered agents instead of a single writer: director, per-song researchers, lyric analyst, optional specialists, segment editor, fact checker and continuity editor, run as a validated plan with durable D1 checkpoints. Details, roles and costs: [agentic-workflow-spike.md](agentic-workflow-spike.md).
+
 ## Division of work: app and web cockpit
 
 Decided by the owner on 28.09.2026.

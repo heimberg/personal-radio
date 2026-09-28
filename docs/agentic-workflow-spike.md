@@ -1,5 +1,17 @@
 # Agentic production workflow spike
 
+## Status (28.09.2026): editorial team for music hours
+
+Music hours can be produced by the editorial team: `production: agents` per show (cockpit: «Produktion → Redaktionsteam (Beta)»); `standard` stays the default. Code: `server/agentic/music-hour.ts`.
+
+- **Phase A:** `music.dossier` (grounded research on the subject) → `music.director` (title, thread, song list with a role and a research question per song, up to two specialist questions) → `spotify.resolve` (deterministic matching, no AI; fewer than three matches end the run with `TOO_FEW_TRACKS`).
+- **Phase B**, built from the resolved songs: per song `music.song-researcher` (grounded, sources `s<n>w…`) and `music.lyric-analyst` (themes and mood in own words, no lyric quotes, marked as interpretation), optional `research.specialist` (sources `x<n>w…`), then `music.segment-editor` → `music.fact-checker` → `music.continuity-editor`.
+- The result is the same hour package as the standard path, so review (`verification`), voicing and the Android app are unchanged. The timeline shows «Redaktionsteam: N Songs einzeln recherchiert · … · Korrekturen im Faktencheck».
+- **Durability:** every task is a checkpoint in D1 (`agent_steps`, migration `0005`, `server/agentic/steps.ts`). A retried production resumes after the last finished task; checkpoints are deleted once the script is stored. The runner has the `step.do` shape, so moving to a Cloudflare Workflow binding means swapping the runner, not the team.
+- **Cost:** about 3 + 2 × songs + specialists model calls plus 1 + songs + specialists grounded searches per hour (roughly 25 calls for 10 songs), against about 5 on the standard path.
+
+Next: compare both paths on real hours (quality, time, cost); if the team wins, make it the default and consider the Workflow binding for runs that outgrow the queue consumer's time limit.
+
 ## Recommendation
 
 Keep agent roles and production policy in a small application-owned registry, and use Cloudflare Workflows as the durable execution adapter for production jobs. Do not make agents call one another directly. A director creates a bounded, inspectable plan; the runtime validates it and schedules registered agents by declared artifact dependencies. This leaves room to add a geologist, biologist, lyric analyst, fact checker, or format editor without changing the execution engine.

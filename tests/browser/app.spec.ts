@@ -33,7 +33,7 @@ async function fakeWorker(page: Page, initial: unknown) {
       title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
       sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },
     { id: 'h1', seq: 2, showId: 'kuenstler', showName: 'Künstler-Stunde', plannedAt: '2026-09-27T08:02:00.000Z', state: 'ready', estimatedMinutes: 60,
-      title: 'Portishead', focus: 'artist', subject: 'Portishead', parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
+      title: 'Portishead', focus: 'artist', subject: 'Portishead', team: { songs: 10, specialists: 1, corrections: 2 }, parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
         { kind: 'track', spotifyUri: 'spotify:track:1', title: 'Glory Box', artist: 'Portishead', durationMs: 1 }] },
   ] : [], failures: state.stored ? { count: 1, latestError: 'NO_SOURCES', latestAt: '2026-09-27T13:31:00.000Z' } : { count: 0 } }) }));
   await page.route('**/api/spotify/profile', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ connected: true, artists: ['Nine Inch Nails', 'Protomartyr'] }) }));
@@ -78,6 +78,7 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   const timeline = page.getByRole('list', { name: 'Programmablauf' });
   await expect(timeline.getByRole('listitem')).toHaveCount(2);
   await expect(timeline.getByText(/♫ Portishead: Glory Box/)).toBeVisible();
+  await expect(timeline.getByText('Redaktionsteam: 10 Songs einzeln recherchiert · 1 Fachrecherchen · 2 Korrekturen im Faktencheck')).toBeVisible();
   await expect(timeline.getByRole('link', { name: 'Raumfahrt heute' })).toHaveAttribute('href', 'https://news.example.test/a');
   await expect(timeline.getByRole('link', { name: 'sonde landung' })).toHaveAttribute('href', 'https://www.google.com/search?q=sonde%20landung');
   await expect(page.getByText(/⚠ 1 fehlgeschlagen · zuletzt \d\d:\d\d: Keine neuen Quellen/)).toBeVisible();
@@ -139,6 +140,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await hour.getByRole('button', { name: 'Künstler-Stunde bearbeiten' }).click();
   await hour.getByLabel('Format').selectOption('genre_hour');
   await hour.getByLabel('Genre oder Szene').fill('Krautrock');
+  await hour.getByLabel('Produktion').selectOption('agents');
   await hour.getByRole('checkbox').check();
 
   const slot = page.getByRole('group', { name: 'Wochentage' }).first();
@@ -158,7 +160,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.profile.topics).toEqual(['Wissenschaft', 'Kultur']);
   expect(saved.profile.interests).toEqual(['Vulkane']);
   expect(saved.shows.find((show: any) => show.format === 'theme_hour')).toMatchObject({ id: 'themen-stunde', theme: 'Der Mond', tracks: 8, talkSeconds: 120, enabled: true });
-  expect(saved.shows.find((show: any) => show.id === 'kuenstler')).toMatchObject({ format: 'genre_hour', genre: 'Krautrock', enabled: true });
+  expect(saved.shows.find((show: any) => show.id === 'kuenstler')).toMatchObject({ format: 'genre_hour', genre: 'Krautrock', enabled: true, production: 'agents' });
   expect(saved.shows.find((show: any) => show.id === 'kuenstler').artist).toBeUndefined();
   expect(saved.music).toEqual({ between: 2, announce: true, taste: 'Industrial, Indie, Rock' });
   expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });

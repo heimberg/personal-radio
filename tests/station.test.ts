@@ -649,3 +649,27 @@ test('a music block rotates playlist and AI groups, speaks where the triggers fi
   assert.ok(songRequests[1].avoid.includes('Neu! – A1'));
   assert.doesNotMatch(JSON.stringify(songRequests[1]), /Geheim/);
 });
+
+test('a music hour produced by the editorial team: same parts for the app, team summary in the timeline; production is validated', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true, artist: 'Portishead', tracks: 3, production: 'agents' as const } : { ...show, enabled: false });
+  const parsed = parseStationConfig(station);
+  assert.equal(parsed.shows.find(show => show.id === 'kuenstler')!.production, 'agents');
+  assert.equal(parseStationConfig(config()).shows.find(show => show.id === 'kuenstler')!.production, 'standard');
+  assert.throws(() => parseStationConfig({ ...station, shows: station.shows.map(show => show.id === 'kuenstler' ? { ...show, production: 'robots' } : show) }), /production/);
+  const h = harness({ station: parsed }); await h.setup();
+  const researched: string[] = [];
+  h.deps.researcher = { research: async request => { researched.push(request.brief); return { sources: [{ id: 'w1', url: `https://example.org/${researched.length}`, title: 't', excerpt: 'Beleg.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }; } };
+  h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title}`, durationMs: 200_000 }) };
+  h.deps.musicWriter = { pickSubject: async () => { throw new Error('fixed'); }, pickTracks: async () => { throw new Error('the team picks'); }, writeHour: async () => { throw new Error('the team writes'); }, pickSongs: async () => [] } as never;
+  const hour = (label: string) => ({ title: 'Portishead', intro: { text: `${label} Hallo.`, sourceIds: ['w1'] }, tracks: [0, 1, 2].map(index => ({ index, text: `${label} ${index}.`, sourceIds: [`s${index + 1}w1`] })), outro: { text: 'Tschüss.', sourceIds: [] } });
+  h.deps.agentModel = { askJson: async (_system, _input, label) => label === 'Gemini director' ? { title: 'Portishead', angle: 'a', songs: ['A', 'B', 'C'].map(title => ({ title, artist: 'Portishead', role: 'r', question: 'q' })), specialists: [] }
+    : label === 'Gemini lyric analyst' ? { themes: 't', mood: 'm', confidence: 'hoch' } : label === 'Gemini fact checker' ? { issues: [] } : hour(label === 'Gemini segment editor' ? 'Entwurf' : 'Final') };
+  const id = (await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  assert.equal(researched.length, 4); // subject dossier plus one per song, no separate standard research
+  const view = toView((await h.store.getItem(OWNER, id))!, parsed);
+  assert.deepEqual(view.team, { songs: 3, specialists: 0, corrections: 0 });
+  assert.deepEqual(view.parts!.map(part => part.kind), ['speech', 'speech', 'track', 'speech', 'track', 'speech', 'track', 'speech']);
+  assert.equal(view.verification, 'light');
+});
