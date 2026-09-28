@@ -1,6 +1,6 @@
 # Private Cloudflare deployment
 
-The hosted app uses one Cloudflare Worker for the built web app and its authenticated API endpoints, D1 for durable daily limits, and Cloudflare Access for the login gate. It serves the web cockpit and the program API behind Access.
+The hosted app uses a Cloudflare Worker for authenticated API endpoints, D1 for durable configuration and production state, R2 for generated audio, and Cloudflare Access for the login gate. The Android app is the only user-facing interface; the Worker is its backend and does not provide a separate web cockpit.
 
 ## Cost and limits
 
@@ -34,9 +34,9 @@ Workers and D1 have free plans. Access is free for small teams (currently up to 
    npx wrangler secret put ACCESS_SERVICE_TOKEN_ID   # Client ID of the Android app's service token, see android.md
    ```
 
-   Use the ASK HTTPS API base URL, for example `https://ask.ict-tfbern.ch/api/v1`, and the authorized ASK model credentials. The ASK endpoint must allow outbound HTTPS from Cloudflare Workers; verify connectivity and organizational authorization before use. Keep all credentials out of `wrangler.toml`, GitHub source and frontend variables. After setting `MISTRAL_API_KEY`, deploy the Worker and open the private app while signed in through Cloudflare Access. The brief-segment form loads available voices from the authenticated `/api/mistral-voices` route. Choose one there; the selection is stored on that device and sent to the Worker for each brief. No `MISTRAL_VOICE_ID` secret is needed unless you want a server-side fallback. Voxtral supports German, though the available preset voice language and accent can affect pronunciation.
+   Use the ASK HTTPS API base URL, for example `https://ask.ict-tfbern.ch/api/v1`, and the authorized ASK model credentials. The ASK endpoint must allow outbound HTTPS from Cloudflare Workers; verify connectivity and organizational authorization before use. Keep all credentials out of `wrangler.toml`, GitHub source and app assets. After setting `MISTRAL_API_KEY`, deploy the Worker and verify voice selection and segment production from the Android app. The app loads available voices from the authenticated `/api/mistral-voices` route. No `MISTRAL_VOICE_ID` secret is needed unless you want a server-side fallback. Voxtral supports German, though the available preset voice language and accent can affect pronunciation.
 
-8. Run the deploy workflow again after setting secrets. Open the `workers.dev` URL and confirm Cloudflare Access requires sign-in. The app checks the Access JWT signature, issuer, audience and exact allowed email on every page and API request, even if the Access policy is accidentally bypassed.
+8. Run the deploy workflow again after setting secrets. Confirm the Android app can connect through its Access service token and load the program. The Worker checks the Access JWT signature, issuer, audience and owner identity on every API request, even if the Access policy is accidentally bypassed.
 
 ## Program production
 

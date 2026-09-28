@@ -1,15 +1,15 @@
 # Android app
 
-The single app for listening: native playback of the server-produced program, lock-screen and Bluetooth controls, feedback, and the settings cockpit embedded as a web view. Source in [`android/`](../android).
+The only user-facing app: native playback of the server-produced program, lock-screen and Bluetooth controls, feedback, program configuration and immediate production. Source in [`android/`](../android). There is no separate web cockpit or browser-based listening experience.
 
 ## What it does
 
 - **Playback** runs in a foreground media service (Media3 `MediaSessionService` with ExoPlayer), so the program continues with the screen off. Headphones unplugged pause playback; audio focus is respected during calls.
-- **Program sync:** every minute (and whenever the program runs out) the app fetches `GET /api/timeline` and makes its playlist after the current item follow the server order: new items are added, items moved, removed or shuffled in the cockpit are rearranged; the item that is playing is never interrupted. If the program had run out while listening, playback continues automatically. If nothing is planned, the app asks the server to plan.
+- **Program sync:** every minute (and whenever the program runs out) the app fetches `GET /api/timeline` and makes its playlist after the current item follow the server order: new items are added, moved, removed or rearranged in the app; the item that is playing is never interrupted. If the program had run out while listening, playback continues automatically. If nothing is planned, the app asks the server to plan.
 - **Offline buffer:** segments are cached on the device (up to 300 MB) and the next four are downloaded ahead, so short network losses do not interrupt listening.
 - **Feedback:** a segment that plays to its end is reported as complete; skipping reports the share heard; 👍/👎 in the app are strong signals. The server learns from them.
 - **Quick production:** from the native app, choose a configured show and start it immediately. For artist, genre and theme hours, optionally enter a one-off subject; leaving it blank lets the AI choose.
-- **Settings:** "Programm einstellen" opens the web cockpit (persona, shows, sources, program clock as YAML, timeline with sources). Inside the app the cockpit hides its own player.
+- **Settings and program controls:** configuration, show selection, immediate production, timeline and source details are part of the Android app. The app communicates with the Worker through its authenticated API; it does not open a second web interface.
 - **Spotify (artist hours):** the app controls the installed Spotify app through the App Remote SDK. An artist hour's tracks sit in the playlist as silent placeholders with the song's title, so the notification, pause and "next" work for music as for speech. When a placeholder starts, Spotify plays that one track and our player gives up audio focus; when Spotify reports the track's end (or moves on), the app pauses Spotify at once and continues with the next spoken part. If Spotify pauses on its own (a call), the app pauses too and resumes with it. Hours wait in the queue until Spotify is connected, so they never play without their music. Nothing Spotify reports leaves the phone.
 
 ### Spotify
@@ -38,10 +38,6 @@ base64 -w0 radio.jks   # value of RADIO_KEYSTORE_B64
 ```
 
 Repository secrets: `RADIO_KEYSTORE_B64`, `RADIO_KEYSTORE_PASSWORD`, `RADIO_KEY_ALIAS` (`radio`), `RADIO_KEY_PASSWORD`. Keep `radio.jks` outside the repository.
-
-### Cockpit login
-
-The cockpit's first request carries the service token. If Access still shows its login page inside the app, use the **one-time PIN by email**: Google sign-in is blocked inside embedded web views by Google.
 
 ## Build and test
 

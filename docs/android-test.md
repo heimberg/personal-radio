@@ -1,10 +1,10 @@
 # Android playback acceptance test
 
-Applies to the [Android app](android.md) from milestone 2 on; the web prototype results below are kept for comparison.
+Applies to the [Android app](android.md), the only user-facing product. Browser/PWA checks from the earlier prototype are not product acceptance criteria.
 
 Status: User confirmed on 2026-09-28 that the Android playback test completed successfully. Device/build details and individual observations were not recorded here. Desktop automation cannot pass this gate.
 
-Record device, Android/browser versions, installed/browser mode, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
+Record device, Android version, app build, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
 
 | Test | Expected | Actual |
 | --- | --- | --- |
@@ -15,16 +15,10 @@ Record device, Android/browser versions, installed/browser mode, battery saver s
 | Bluetooth play/pause and headset disconnect | Controls work; disconnect does not unexpectedly play on speaker | Pending |
 | Incoming call then return | Respects interruption, no unexpected overlapping audio | Pending |
 | Battery saver | Record continuity and any restrictions | Pending |
-| Browser backgrounded | Same queue continues | Pending |
-| Local-file reload | Files must be selected again; no false resume claim | Pending |
+| App backgrounded and screen off | Same queue continues | Pending |
 | Wi-Fi/mobile/network interruption | NOT covered by local blobs; repeat with real HTTPS audio in next phase | Pending |
-| Installed PWA | Install from Chrome menu and repeat locked playback tests | Pending |
 | Spotify/moderation transition | NOT implemented or authorized by this test | Pending |
 
 Note the time of every interruption, skipped handoff or unexpected pause, and what you were doing (screen off, call, network change, Bluetooth). Record your listening observations: a clean log does not prove audible output.
 
-If the required background test fails, do not declare PWA a fix. Diagnose from the log, reproduce and decide on native media-service playback.
-
-## Install the PWA
-
-The HTTPS build includes a web app manifest and a service worker. In Chrome on Android, open the app and choose **Install app** from the browser menu. The service worker caches the static app shell and same-origin JavaScript, CSS and icon files. API calls and generated audio are never cached, so offline use is limited to opening the interface; generation and playback of remote audio still need a connection.
+If background playback fails, diagnose from the log and reproduce it in the Android app's Media3 service. Browser/PWA behavior is outside this acceptance test.
