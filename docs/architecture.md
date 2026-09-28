@@ -10,20 +10,33 @@ A private, single-user radio: tune in and hear a continuous program of AI-genera
 
 These two requirements override every other decision in this document:
 
-1. **One app on Android.** Tuning in, listening, feedback, configuration and production controls happen in a single Android app. There is no separate web cockpit or browser-based player. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
+1. **One app on Android.** Tuning in, listening, feedback and configuration happen in a single Android app; the settings are the web cockpit embedded in it, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
 2. **AI-generated speech in every program.** Generated spoken segments are the reason the station exists; music alone is not a program. The configuration is rejected without at least one enabled speech show (`parseStationConfig`), and music blocks always carry generated moderation.
 
 ## Decisions
 
 1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
 2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
-3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback and all user-facing configuration and production controls belong in the native app. The Worker provides authenticated APIs; it is not a second interface. The Spotify Web Playback SDK is not part of the Android product.
-4. **The native app is the only settings surface.** Shows, persona, sources, schedule, music rules, timeline, source details and immediate production are controlled in the app. Users should not need to edit YAML or visit a desktop browser.
+3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web cockpit on the phone. The Spotify Web Playback SDK is not part of the product.
+4. **Settings and planning live in the web cockpit.** Shows, persona, voices, sources, program clock, music rules and arranging the timeline are forms in the web cockpit, used on a computer or embedded in the app; YAML is optional for bulk edits. See [Division of work](#division-of-work-app-and-web-cockpit).
 5. **Server-side configuration.** The backend stores configuration, sources, schedule, feedback, production state and memory in D1 so it can produce without the app being open. The device keeps UI preferences and a playback cache. Export and delete remain available.
 6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
 8. **Audio lives in R2, Google Drive is an archive.** Playout needs a few hundred MB at most (a 2-minute MP3 is about 2 MB; 7-day retention), well inside R2's free allowance with free egress. Google Drive would need a stored OAuth token (refresh tokens of Google apps in "testing" status expire after 7 days), would route every stream through the Worker and adds latency and quotas. The owner's 2 TB are used later for an archive: liked segments and artist hours are copied to a Drive folder with script and sources.
 9. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
+
+## Division of work: app and web cockpit
+
+Decided by the owner on 28.09.2026.
+
+| | Android app (native) | Web cockpit (Worker page, behind Access) |
+|---|---|---|
+| Role | The product for listening | The workbench for settings and planning |
+| Contents | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over and «Spotify verbinden», feedback (👍/👎, skips), program list, immediate production | Persona and voices, shows of every format, program clock, music and playlist groups, feeds, arranging the timeline (move, remove, shuffle, add songs), YAML, Spotify listening profile, failures and sources |
+| Where | Phone | Browser on a computer; embedded in the app via «Programm einstellen» |
+| Changes ship | With a new APK | With every Worker deploy, no reinstall |
+
+Rules for new features: anything used while listening or often on the phone goes native (and may later move from the cockpit into the app); settings, planning and anything with larger forms goes into the web cockpit. Both use the same Worker API, so a feature can exist in both without duplicating server logic. The cockpit's small browser player only checks spoken segments; listening happens in the app.
 
 ## System overview
 
@@ -239,7 +252,7 @@ Public repository, private application. Cloudflare Access protects the Worker AP
 
 ## Current state and gaps
 
-Built: Worker with Access, D1 quotas, feed retrieval and ranking, Gemini/ASK writing and verification, voice providers, Spotify App Remote playback, feedback learning, server-side timeline and immediate production. The Android app is the only user-facing interface; configuration, timeline, feedback and show production belong there. The Worker provides the authenticated API and generated audio.
+Built: Worker with Access, D1 quotas, feed retrieval and ranking, Gemini/ASK writing and verification, voice providers, Spotify App Remote playback, feedback learning, server-side timeline and immediate production. The Android app is the listening product with quick actions; the web cockpit (embedded in the app) holds settings and planning. The Worker provides the authenticated API, the cockpit and generated audio.
 
 Remaining gaps:
 
