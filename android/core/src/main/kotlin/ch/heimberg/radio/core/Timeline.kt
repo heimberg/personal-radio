@@ -82,7 +82,11 @@ data class BlockList(val blocks: List<BlockView> = emptyList())
 
 /** `GET /api/timeline/{id}/script`: what was said, for reading along, and the sources behind it. */
 @Serializable
-data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList())
+data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList(), val quality: Quality? = null)
+
+/** The quality jury's marks (1–5) after the final edit. */
+@Serializable
+data class Quality(val overall: Double, val notes: String = "")
 
 @Serializable
 data class TranscriptLine(val text: String, val speaker: String? = null, val song: Boolean = false)

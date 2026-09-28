@@ -1,11 +1,13 @@
 // Server-only program runtime: plans the timeline and produces its segments without an open browser.
 import { HOUR_FOCUS, MUSIC_SHOW_ID, SONG_MINUTES, activeSlot, bringsOwnMusic, hourSubject, isMusicHour, localClock } from '../src/domain/station.ts';
 import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemView, VerificationPolicy } from '../src/domain/station.ts';
-import type { Profile, Script, Source, TextGenerator } from '../src/domain/program.ts';
+import type { Profile, QualityScore, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
 import { ProviderError } from './providers.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
+import { finishScript } from './editing.ts';
+import type { ScriptEditor, StationContext } from './editing.ts';
 import { BLOCKS, BLOCK_PREFIX, blockOf, blockShow } from '../src/domain/blocks.ts';
 import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
@@ -40,6 +42,8 @@ export interface StationDeps {
   catalog?: MusicCatalog;
   /** Music blocks: the owner's Spotify playlists. */
   playlists?: PlaylistSource;
+  /** Final edit and quality jury for spoken items. */
+  editor?: ScriptEditor;
   /** Tool: the weather for `{wetter}` (Open-Meteo). */
   weather?: Weather;
   /** The owner's Spotify top artists, when the owner connected the listening profile. */
@@ -168,6 +172,16 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
   }));
 }
 
+/** What comes before an item: for the bridge into it and the station ident after music. */
+async function stationContext(deps: StationDeps, owner: string, config: StationConfig, row: TimelineRow, now: Date): Promise<StationContext> {
+  const clock = clockValues(now, config.timezone);
+  const previous = await deps.store.previousItem(owner, row.seq);
+  const before = previous ? toView(previous, config) : undefined;
+  const musical = !!previous && (previous.show_id === MUSIC_SHOW_ID || bringsOwnMusic((config.shows.find(show => show.id === previous.show_id) ?? blockOf(previous.show_id)?.show)?.format ?? 'brief'));
+  return { stationName: config.name, when: `${clock.wochentag}, ${clock.uhrzeit}`, afterMusic: musical,
+    ...(before && previous!.show_id !== MUSIC_SHOW_ID ? { previous: before.title ?? before.showName } : {}) };
+}
+
 /**
  * The headlines of the day: the newest items of the owner's feeds (last 36 hours); without feeds, a
  * web search for today's most important news.
@@ -271,7 +285,9 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       sources = [...toolSources, ...sources];
       if (!sources.length) return fail('NO_SOURCES');
       const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics };
-      const script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
+      let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
+      // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
+      if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, await stationContext(deps, owner, config, row, now));
       await deps.pipeline.review(script, sources, show.verification);
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: queries.length ? JSON.stringify({ queries }) : null };
@@ -824,6 +840,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
     ...(script.interestTags?.length ? { interestTags: script.interestTags } : {}),
     ...(row.verification ? { verification: row.verification as VerificationPolicy } : {}),
+    ...(script.quality ? { quality: script.quality.overall } : {}),
     ...(queries.length ? { searchQueries: queries } : {}),
     ...(team ? { team } : {}),
     ...(row.error ? { error: row.error } : {}),
@@ -834,6 +851,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
 /** What was said in an item, for reading along: spoken text (dialogs by speaker, hours with their songs) and sources. */
 export interface TranscriptView {
   title: string;
+  /** The jury's marks after the final edit, when there was one. */
+  quality?: QualityScore;
   lines: Array<{ speaker?: string; text: string; song?: boolean }>;
   sources: Array<{ title: string; url: string }>;
 }
@@ -852,6 +871,7 @@ export function transcriptView(row: TimelineRow, config: StationConfig | null): 
     lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: turn.text }));
   } else lines = script.text ? [{ text: script.text }] : [];
   return {
+    ...(script.quality ? { quality: script.quality } : {}),
     title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,
     lines: lines.filter(line => line.text?.trim()),
     sources: sources.map(source => ({ title: source.title, url: source.url })),

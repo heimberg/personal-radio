@@ -199,6 +199,8 @@ class TranscriptTest {
         assertEquals(listOf(false, true, false), transcript.lines.map { it.song })
         assertEquals("Jonas", transcript.lines[2].speaker)
         assertEquals("https://example.org/a", transcript.sources.single().url)
+        assertEquals(null, transcript.quality)
+        assertEquals(4.2, TimelineJson.parseTranscript("""{"title":"x","quality":{"overall":4.2,"hook":4,"notes":"gut"}}""").quality?.overall)
     }
 }
 

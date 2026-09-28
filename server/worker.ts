@@ -10,6 +10,7 @@ import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
+import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
 import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
@@ -230,6 +231,8 @@ function stationDeps(env: Environment): StationDeps {
     researcher: providersFor(env).researcher,
     weather: new OpenMeteo(),
     musicWriter: musicFor(env).writer,
+    // The final edit and the quality jury use the same Gemini JSON calls as the music desk.
+    ...(musicFor(env).writer ? { editor: new GeminiScriptEditor((system, input, label, temperature) => musicFor(env).writer!.askJson(system, input, label, temperature)) } : {}),
     ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
     agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
     catalog: musicFor(env).catalog,

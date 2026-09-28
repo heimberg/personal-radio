@@ -117,6 +117,8 @@ export type TimelinePartView =
   | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number };
 export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
+  /** Overall mark (1–5) of the quality jury, for spoken items that went through the final edit. */
+  quality?: number;
   id: string;
   seq: number;
   showId: string;

@@ -86,6 +86,12 @@ export class StationStore {
     return this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? ORDER BY seq DESC LIMIT 1').bind(owner).first<TimelineRow>();
   }
 
+  /** The item right before [seq] in the program that is still or already on air (not failed or dropped). */
+  async previousItem(owner: string, seq: number): Promise<TimelineRow | null> {
+    return this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND seq < ? AND state NOT IN ('failed', 'expired')
+      ORDER BY seq DESC LIMIT 1`).bind(owner, seq).first<TimelineRow>();
+  }
+
   async getItem(owner: string, id: string): Promise<TimelineRow | null> {
     return this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? AND id = ?').bind(owner, id).first<TimelineRow>();
   }

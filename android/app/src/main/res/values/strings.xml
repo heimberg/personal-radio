@@ -105,4 +105,5 @@
     <string name="notice_ready">«%1$s» ist bereit</string>
     <string name="notice_failed">Eine Produktion ist fehlgeschlagen</string>
     <string name="notice_retry">Erneut versuchen</string>
+    <string name="transcript_quality">Qualität %1$s von 5 · %2$s</string>
 </resources>
