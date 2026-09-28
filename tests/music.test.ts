@@ -59,7 +59,7 @@ test('the Gemini music writer requires one moderation per song and drops unknown
   assert.match(body.systemInstruction.parts[0].text, /Wähle 6 Songs von «Portishead»/);
   const hour = await writer.writeHour({ focus: 'artist', subject: 'Portishead', picks, sources, talkSeconds: 60,
     direction: { persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } } });
-  assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörtern/);
+  assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörter/);
   assert.match(body.systemInstruction.parts[0].text, /Du sprichst als Mira/);
   assert.doesNotMatch(body.systemInstruction.parts[0].text, /keine Quellen geliefert/);
   assert.deepEqual(hour.intro, { text: 'Willkommen.', sourceIds: ['w1'] });
