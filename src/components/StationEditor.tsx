@@ -17,6 +17,8 @@ const SUBJECT: Record<HourFocus, { key: 'artist' | 'genre' | 'theme'; label: str
   genre: { key: 'genre', label: 'Genre oder Szene', example: 'z. B. Krautrock' },
   theme: { key: 'theme', label: 'Thema', example: 'z. B. Der Mond' },
 };
+/** Placeholders the server fills in when it produces an item. */
+const PLACEHOLDERS: Array<[string, string]> = [['datum', 'Datum'], ['wochentag', 'Wochentag'], ['uhrzeit', 'Uhrzeit'], ['ort', 'Ort'], ['wetter', 'Wetter']];
 const TIMEZONES = ['Europe/Zurich', 'Europe/Berlin', 'Europe/Vienna', 'Europe/London', 'America/New_York', 'UTC'];
 
 function uniqueId(base: string, taken: string[]): string {
@@ -196,6 +198,9 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <Field label="Anweisungen an die Moderation" hint="Gilt für alle Sendungen.">
         <textarea rows={3} maxLength={2000} value={draft.host.instructions} onChange={event => change(next => { next.host.instructions = event.target.value; })} />
       </Field>
+      <fieldset className="spaced"><legend>Wo du hörst</legend>
+        <LocationPicker value={draft.location} onChange={location => change(next => { if (location) next.location = location; else delete next.location; })} />
+      </fieldset>
     </Section>
 
     <Section title="Interessen" description="Worüber recherchiert wird, wenn eine Sendung selbst wählen darf. Dein Feedback gewichtet sie mit der Zeit.">
@@ -263,14 +268,35 @@ export function StationEditor({ config: stored, onSave }: Props) {
             {focus && <Field label={`Moderation vor jedem Song: ${show.talkSeconds ?? 60} s`}>
               <input type="range" min={20} max={180} step={10} value={show.talkSeconds ?? 60} onChange={event => changeShow(index, current => ({ ...current, talkSeconds: Number(event.target.value) }))} />
             </Field>}
-            {focus && <Field label="Produktion" hint="Das Redaktionsteam recherchiert jeden Song einzeln, prüft Fakten und redigiert – gründlicher, braucht mehr Aufrufe.">
-              <select value={show.production ?? 'standard'} onChange={event => changeShow(index, current => ({ ...current, production: event.target.value as 'standard' | 'agents' }))}>
-                <option value="standard">Standard (eine Autorin)</option><option value="agents">Redaktionsteam (Beta)</option>
-              </select>
-            </Field>}
             {!focus && !block && <Field label="Quellen">
               <select value={show.sourceMode} onChange={event => changeShow(index, current => ({ ...current, sourceMode: event.target.value as ShowConfig['sourceMode'] }))}>
                 <option value="web">Websuche (Google)</option><option value="feeds">Meine Feeds</option>
+              </select>
+            </Field>}
+          </div>
+          {block && <BlockSettings show={show} onChange={update => changeShow(index, update)} />}
+          {!focus && !block && show.sourceMode === 'feeds' && <fieldset className="feed-picks"><legend>Feeds dieser Sendung</legend>
+            {draft.feeds.length === 0 ? <small className="muted">Noch keine Feeds – unten hinzufügen.</small> : draft.feeds.map(feed => <label key={feed.id} className="check">
+              <input type="checkbox" checked={show.feedIds.includes(feed.id)} onChange={event => changeShow(index, current => ({ ...current,
+                feedIds: event.target.checked ? [...current.feedIds, feed.id] : current.feedIds.filter(id => id !== feed.id) }))} />{feed.name}</label>)}
+          </fieldset>}
+          {!block && (focus || show.sourceMode === 'web') && <Field label={focus ? 'Zusätzlicher Rechercheauftrag' : 'Rechercheauftrag'} hint="Wonach die Websuche suchen soll.">
+            <textarea rows={2} maxLength={1000} value={show.researchPrompt} onChange={event => changeShow(index, current => ({ ...current, researchPrompt: event.target.value }))} />
+          </Field>}
+          <Field label="Redaktionelle Anweisungen" hint="Was diese Sendung tun soll, in deinen Worten.">
+            <textarea rows={2} maxLength={2000} value={show.instructions} onChange={event => changeShow(index, current => ({ ...current, instructions: event.target.value }))} />
+          </Field>
+          <div className="chips placeholders" role="group" aria-label="Aktuelles einfügen">
+            <small className="muted">Einfügen:</small>
+            {PLACEHOLDERS.map(([token, label]) => <button type="button" key={token} title={`Setzt beim Produzieren ${label.toLowerCase()} ein`}
+              onClick={() => changeShow(index, current => ({ ...current, instructions: `${current.instructions.trimEnd()}${current.instructions.trim() ? ' ' : ''}{${token}}`.slice(0, 2000) }))}>+ {label}</button>)}
+          </div>
+          <details className="more">
+            <summary>Weitere Optionen</summary>
+            <div className="grid">
+            {focus && <Field label="Produktion" hint="Das Redaktionsteam recherchiert jeden Song einzeln, prüft Fakten und redigiert – gründlicher, braucht mehr Aufrufe.">
+              <select value={show.production ?? 'standard'} onChange={event => changeShow(index, current => ({ ...current, production: event.target.value as 'standard' | 'agents' }))}>
+                <option value="standard">Standard (eine Autorin)</option><option value="agents">Redaktionsteam (Beta)</option>
               </select>
             </Field>}
             {show.format === 'brief' && <Field label="Text schreibt">
@@ -288,19 +314,8 @@ export function StationEditor({ config: stored, onSave }: Props) {
                 <option value="">Wie die Moderation</option>{voiceOptions(show.voiceId)}
               </select>
             </Field>}
-          </div>
-          {block && <BlockSettings show={show} onChange={update => changeShow(index, update)} />}
-          {!focus && !block && show.sourceMode === 'feeds' && <fieldset className="feed-picks"><legend>Feeds dieser Sendung</legend>
-            {draft.feeds.length === 0 ? <small className="muted">Noch keine Feeds – unten hinzufügen.</small> : draft.feeds.map(feed => <label key={feed.id} className="check">
-              <input type="checkbox" checked={show.feedIds.includes(feed.id)} onChange={event => changeShow(index, current => ({ ...current,
-                feedIds: event.target.checked ? [...current.feedIds, feed.id] : current.feedIds.filter(id => id !== feed.id) }))} />{feed.name}</label>)}
-          </fieldset>}
-          {!block && (focus || show.sourceMode === 'web') && <Field label={focus ? 'Zusätzlicher Rechercheauftrag' : 'Rechercheauftrag'} hint="Wonach die Websuche suchen soll.">
-            <textarea rows={2} maxLength={1000} value={show.researchPrompt} onChange={event => changeShow(index, current => ({ ...current, researchPrompt: event.target.value }))} />
-          </Field>}
-          <Field label="Redaktionelle Anweisungen" hint="Dein eigener Prompt für diese Sendung. Platzhalter: {datum}, {wochentag}, {uhrzeit}, {ort}, {wetter}.">
-            <textarea rows={2} maxLength={2000} value={show.instructions} onChange={event => changeShow(index, current => ({ ...current, instructions: event.target.value }))} />
-          </Field>
+            </div>
+          </details>
           <div className="row-end"><button type="button" className="button ghost small danger" onClick={() => change(next => {
             next.shows.splice(index, 1);
             next.schedule = next.schedule.map(slot => ({ ...slot, showIds: slot.showIds.filter(id => id !== show.id) }));
@@ -343,9 +358,6 @@ export function StationEditor({ config: stored, onSave }: Props) {
           <input type="range" min={10} max={120} step={5} value={draft.horizonMinutes} onChange={event => change(next => { next.horizonMinutes = Number(event.target.value); })} />
         </Field>
       </div>
-      <fieldset className="spaced"><legend>Ort für {'{ort}'} und {'{wetter}'}</legend>
-        <LocationPicker value={draft.location} onChange={location => change(next => { if (location) next.location = location; else delete next.location; })} />
-      </fieldset>
     </Section>
 
     <Section title="Feeds" description="RSS- oder Atom-Feeds für Sendungen mit der Quelle «Meine Feeds».">

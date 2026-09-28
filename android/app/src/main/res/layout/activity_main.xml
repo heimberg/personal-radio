@@ -279,15 +279,6 @@
             app:icon="@drawable/ic_lightning" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/plan"
-            style="@style/Widget.PersonalRadio.Button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
-            android:text="@string/plan"
-            app:icon="@drawable/ic_calendar_plus" />
-
-        <com.google.android.material.button.MaterialButton
             android:id="@+id/spotify"
             style="@style/Widget.PersonalRadio.Button"
             android:layout_width="match_parent"
@@ -307,23 +298,32 @@
             android:textColor="@color/accent_300"
             android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/archive"
-            style="@style/Widget.PersonalRadio.Button"
+        <!-- Listening back and changing the program: the two things used besides playing. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_2"
-            android:text="@string/archive_open"
-            app:icon="@drawable/ic_archive" />
+            android:orientation="horizontal">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/cockpit"
-            style="@style/Widget.PersonalRadio.Button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
-            android:text="@string/cockpit"
-            app:icon="@drawable/ic_sliders" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/archive"
+                style="@style/Widget.PersonalRadio.Button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/archive"
+                app:icon="@drawable/ic_archive" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cockpit"
+                style="@style/Widget.PersonalRadio.Button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_2"
+                android:layout_weight="1"
+                android:text="@string/settings"
+                app:icon="@drawable/ic_sliders" />
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/connection"

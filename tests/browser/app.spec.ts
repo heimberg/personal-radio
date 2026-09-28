@@ -141,6 +141,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await hour.getByRole('button', { name: 'Künstler-Stunde bearbeiten' }).click();
   await hour.getByLabel('Format').selectOption('genre_hour');
   await hour.getByLabel('Genre oder Szene').fill('Krautrock');
+  await hour.getByText('Weitere Optionen').click();
   await hour.getByLabel('Produktion').selectOption('agents');
   await hour.getByRole('checkbox').check();
 
@@ -216,7 +217,8 @@ test('settings: a music block with a playlist group, an AI group, rotation and m
 test('YAML view saves valid documents and explains broken ones', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
-  await page.getByRole('button', { name: 'YAML', exact: true }).click();
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByRole('button', { name: /Als Text \(YAML\) bearbeiten/ }).click();
   const editor = page.getByLabel('Konfiguration als YAML');
   await expect(editor).toHaveValue(/# host: Moderations-Persona/);
   await expect(editor).toHaveValue(/\nhost:\n  name: Mira\n/);
@@ -224,7 +226,8 @@ test('YAML view saves valid documents and explains broken ones', async ({ page }
   await page.getByRole('button', { name: 'YAML speichern' }).click();
   await expect(page.getByRole('alert')).toContainText('Kein gültiges YAML');
   await page.getByRole('button', { name: 'Programm', exact: true }).click();
-  await page.getByRole('button', { name: 'YAML', exact: true }).click();
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByRole('button', { name: /Als Text \(YAML\) bearbeiten/ }).click();
   await expect(editor).toHaveValue(/\nhost:\n  name: Mira\n/);
   await editor.fill((await editor.inputValue()).replace('  name: Mira\n', '  name: Lou\n'));
   await page.getByRole('button', { name: 'YAML speichern' }).click();
