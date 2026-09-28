@@ -166,6 +166,8 @@ export class StationStore {
     const rows = (await this.db.prepare(`DELETE FROM timeline_items WHERE owner_id = ? AND state IN ('failed', 'expired')
       AND updated_at < ? RETURNING audio_key, script_json`).bind(owner, updatedBefore?.toISOString() ?? '9999-12-31T23:59:59.999Z')
       .all<{ audio_key: string | null; script_json: string | null }>()).results;
+    // Checkpoints of editorial-team runs that never finished (the item expired or was removed).
+    await this.db.prepare(`DELETE FROM agent_steps WHERE owner_id = ? AND created_at < ?`).bind(owner, updatedBefore?.toISOString() ?? '9999-12-31T23:59:59.999Z').run();
     return { removed: rows.length, audioKeys: rows.flatMap(row => audioKeysOf(row)) };
   }
 

@@ -5,6 +5,7 @@ import type { HostPersona, Profile } from './program.ts';
 export type ShowFormat = 'brief' | 'podcast' | 'artist_hour' | 'genre_hour' | 'theme_hour' | 'music_block';
 /** Music hours: spoken parts with Spotify tracks in between, about one artist, one genre or one theme. */
 export type HourFocus = 'artist' | 'genre' | 'theme';
+export type HourProduction = 'standard' | 'agents';
 export const HOUR_FOCUS: Partial<Record<ShowFormat, HourFocus>> = { artist_hour: 'artist', genre_hour: 'genre', theme_hour: 'theme' };
 export const isMusicHour = (format: ShowFormat): boolean => HOUR_FOCUS[format] !== undefined;
 /** Music hours and music blocks bring their own music, so no songs are planned after them. */
@@ -38,6 +39,8 @@ export interface ShowConfig {
   artist?: string;
   genre?: string;
   theme?: string;
+  /** Music hours: `agents` lets the editorial team produce the hour (beta); `standard` is the single-writer path. */
+  production?: HourProduction;
   /** Music hours: number of tracks and spoken seconds before each track. */
   tracks?: number;
   talkSeconds?: number;
@@ -118,6 +121,8 @@ export interface TimelineItemView {
   interestTags?: string[];
   verification?: VerificationPolicy;
   searchQueries?: string[];
+  /** Produced by the editorial team: songs researched one by one, specialist research, fact-check corrections. */
+  team?: { songs: number; specialists: number; corrections: number };
   error?: string;
   audioUrl?: string;
   /** Music hour or song: speech and Spotify tracks in playing order, and what the hour is about. */
@@ -206,6 +211,12 @@ function musicBlock(s: Record<string, unknown>, path: string, whole: (value: unk
   };
 }
 
+function production(value: unknown, path: string): HourProduction {
+  if (value === undefined || value === 'standard') return 'standard';
+  if (value !== 'agents') fail(path, '«standard» oder «agents»');
+  return 'agents';
+}
+
 export function parseStationConfig(raw: unknown): StationConfig {
   const c = record(raw, 'config');
   if (c.version !== 1) fail('version', '1 erwartet');
@@ -269,6 +280,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
         tracks: whole(s.tracks, 'tracks', 3, 15, focus === 'theme' ? 8 : 10),
         // Theme hours talk more: the topic is the content, the music accompanies it.
         talkSeconds: whole(s.talkSeconds, 'talkSeconds', 20, 180, focus === 'theme' ? 120 : 60),
+        production: production(s.production, `${path}.production`),
       } : {}),
       ...(format === 'music_block' ? musicBlock(s, path, whole) : {}),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),

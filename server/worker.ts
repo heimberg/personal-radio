@@ -12,6 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
+import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
@@ -198,7 +199,7 @@ function pipelineFor(env: Environment): SegmentPipeline {
   return pipeline;
 }
 
-const musicCache = new WeakMap<object, { writer?: MusicWriter; catalog?: MusicCatalog }>();
+const musicCache = new WeakMap<object, { writer?: GeminiMusicWriter; catalog?: MusicCatalog }>();
 function musicFor(env: Environment) {
   let music = musicCache.get(env.DB as object);
   if (!music) {
@@ -226,6 +227,8 @@ function stationDeps(env: Environment): StationDeps {
     },
     researcher: providersFor(env).researcher,
     musicWriter: musicFor(env).writer,
+    ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
+    agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
     catalog: musicFor(env).catalog,
     ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
     ...(musicFor(env).catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(musicFor(env).catalog as SpotifyCatalog, listeningFor(env)) } : {}),

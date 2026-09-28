@@ -10,6 +10,7 @@ const HELP = [
   '#        textProvider gemini | ask · sourceMode feeds (feedIds) | web (Google-Suche, researchPrompt = Rechercheauftrag)',
   '#        format artist_hour | genre_hour | theme_hour (20–90 Min.): artist | genre | theme (leer = KI wählt),',
   '#          tracks 3–15, talkSeconds 20–180 – Musik über Spotify zwischen den Moderationen',
+  '#          production standard | agents (Redaktionsteam: Regie, Song-Recherche, Faktencheck, Schlussredaktion)',
   '# music: between 0–3 Songs nach jedem Wortbeitrag · announce true/false (kurze Ansage) · taste = dein Musikgeschmack',
   '# schedule: days 0 (So) bis 6 (Sa), from/to HH:MM in timezone · showIds werden abwechselnd gesendet',
 ].join('\n');

@@ -64,6 +64,7 @@ Stand: 28.09.2026. Das Programm läuft auf dem privaten Worker; gehört wird in 
 
 - KI-generierte Beiträge sind der Kern; volle Personalisierung über editierbare Sendungen, Sendeuhr und Musikregeln.
 - Dirigent statt Mischpult: Backend plant und produziert eine Timeline, das Gerät spielt eigene Segmente und Spotify strikt abwechselnd.
+- [ ] **Redaktionsteam ausprobieren:** eine Musikstunde auf «Produktion → Redaktionsteam (Beta)» stellen, «Jetzt produzieren», mit einer Standard-Stunde vergleichen (Qualität, Dauer, Kosten).
 - Aufteilung (28.09.2026): Die Android-App ist das Produkt zum Hören (Wiedergabe, Spotify, Feedback, Programmliste, Sofort-Produktion). Das Web-Cockpit ist die Werkbank für Einstellungen und Planung, am Computer oder eingebettet in der App. Neues fürs Hören und Häufiges am Handy kommt nativ, Einstellungen und Planung ins Cockpit.
 - Übernommen aus ai-radio-station (MIT): Segment-Trigger, Playlist-Gruppen, Persona, YAML, Tools/MCP, Themen-Gedächtnis. Nicht übernommen: Ducking (Sprache über Musik), Spotify-Metadaten an die KI, librespot, Wiedergabe über Rechner-Lautsprecher.
 - Konfiguration serverseitig in D1 statt local-first, weil das Backend ohne offenen Browser produziert.

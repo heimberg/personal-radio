@@ -262,6 +262,11 @@ export function StationEditor({ config: stored, onSave }: Props) {
             {focus && <Field label={`Moderation vor jedem Song: ${show.talkSeconds ?? 60} s`}>
               <input type="range" min={20} max={180} step={10} value={show.talkSeconds ?? 60} onChange={event => changeShow(index, current => ({ ...current, talkSeconds: Number(event.target.value) }))} />
             </Field>}
+            {focus && <Field label="Produktion" hint="Das Redaktionsteam recherchiert jeden Song einzeln, prüft Fakten und redigiert – gründlicher, braucht mehr Aufrufe.">
+              <select value={show.production ?? 'standard'} onChange={event => changeShow(index, current => ({ ...current, production: event.target.value as 'standard' | 'agents' }))}>
+                <option value="standard">Standard (eine Autorin)</option><option value="agents">Redaktionsteam (Beta)</option>
+              </select>
+            </Field>}
             {!focus && !block && <Field label="Quellen">
               <select value={show.sourceMode} onChange={event => changeShow(index, current => ({ ...current, sourceMode: event.target.value as ShowConfig['sourceMode'] }))}>
                 <option value="web">Websuche (Google)</option><option value="feeds">Meine Feeds</option>
