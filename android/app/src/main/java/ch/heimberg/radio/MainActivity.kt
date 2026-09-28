@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -11,6 +12,7 @@ import android.widget.Button
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.text.InputFilter
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -22,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -30,6 +33,7 @@ import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
+import com.google.android.material.button.MaterialButton
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,8 +50,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
     private lateinit var titleView: TextView
     private lateinit var showView: TextView
-    private lateinit var playPause: Button
-    private lateinit var upcomingView: TextView
+    private lateinit var liveDot: View
+    private lateinit var orb: OrbView
+    private lateinit var progress: WaveformView
+    private lateinit var timeView: TextView
+    private lateinit var playPause: MaterialButton
+    private lateinit var upcomingView: LinearLayout
+    private lateinit var upcomingCount: TextView
+    private lateinit var upcomingEmpty: TextView
+    private lateinit var notice: View
+    private lateinit var noticeText: TextView
+    private var upcomingItems: List<TimelineItem> = emptyList()
+    private var currentItemId: String? = null
     private lateinit var spotifyButton: Button
     private lateinit var spotifyStatus: TextView
     private lateinit var spotify: SpotifyLink
@@ -68,8 +82,16 @@ class MainActivity : AppCompatActivity() {
         statusView = findViewById(R.id.status)
         titleView = findViewById(R.id.title)
         showView = findViewById(R.id.show)
+        liveDot = findViewById(R.id.live_dot)
+        orb = findViewById(R.id.orb)
+        progress = findViewById(R.id.progress)
+        timeView = findViewById(R.id.time)
         playPause = findViewById(R.id.play_pause)
         upcomingView = findViewById(R.id.upcoming)
+        upcomingCount = findViewById(R.id.upcoming_count)
+        upcomingEmpty = findViewById(R.id.upcoming_empty)
+        notice = findViewById(R.id.notice)
+        noticeText = findViewById(R.id.notice_text)
         spotifyButton = findViewById(R.id.spotify)
         spotifyStatus = findViewById(R.id.spotify_status)
         // Shown so an installed build can be matched to its CI run.
@@ -96,6 +118,12 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    while (true) {
+                        renderProgress()
+                        delay(500)
+                    }
+                }
                 while (true) {
                     refreshTimeline()
                     delay(30_000)
@@ -161,7 +189,20 @@ class MainActivity : AppCompatActivity() {
         val metadata: MediaMetadata = player.mediaMetadata
         titleView.text = metadata.title ?: getString(R.string.nothing_playing)
         showView.text = metadata.artist ?: ""
-        playPause.text = getString(if (player.playWhenReady) R.string.pause else R.string.play)
+        playPause.setIconResource(if (player.playWhenReady) R.drawable.ic_pause else R.drawable.ic_play)
+        playPause.contentDescription = getString(if (player.playWhenReady) R.string.pause else R.string.play)
+        // Live while audio plays or is about to: the dot lights, the orb and the waveform move.
+        val live = player.playWhenReady && player.mediaItemCount > 0 &&
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+        orb.active = live
+        progress.active = live
+        liveDot.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, if (live) R.color.accent else R.color.neutral_600))
+        val playingItem = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)
+        if (playingItem != currentItemId) {
+            currentItemId = playingItem
+            renderUpcoming()
+        }
+        renderProgress(player)
         statusView.text = getString(
             when {
                 player.mediaItemCount == 0 -> R.string.status_waiting
@@ -283,19 +324,68 @@ class MainActivity : AppCompatActivity() {
             .onSuccess { timeline ->
                 spotifyClientId = timeline.spotify?.clientId
                 spotifyButton.visibility = if (spotifyClientId != null) View.VISIBLE else View.GONE
-                upcomingView.text = describe(timeline.items.filter { it.isOpen }.take(12))
+                notice.visibility = View.GONE
+                upcomingItems = timeline.items.filter { it.isOpen }.take(12)
+                renderUpcoming()
             }
-            .onFailure { upcomingView.text = it.message }
+            .onFailure {
+                // The access diagnosis says which layer refused (Access or the Worker) and why.
+                noticeText.text = it.message ?: getString(R.string.connection_failed)
+                notice.visibility = View.VISIBLE
+            }
     }
 
-    private fun describe(items: List<TimelineItem>): String {
-        if (items.isEmpty()) return getString(R.string.nothing_planned)
+    private fun renderUpcoming() {
+        val items = upcomingItems
+        upcomingEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        upcomingCount.text = if (items.isEmpty()) "" else resources.getQuantityString(R.plurals.upcoming_count, items.size, items.size)
+        upcomingView.removeAllViews()
         val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-        return items.joinToString("\n\n") { item ->
-            val planned = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
-            val error = item.error?.let { "\n" + Labels.error(it) } ?: ""
+        for (item in items) {
+            val row = layoutInflater.inflate(R.layout.item_timeline, upcomingView, false)
+            val playing = item.id == currentItemId
+            row.findViewById<TextView>(R.id.time).text = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
+            row.findViewById<TextView>(R.id.title).apply {
+                text = item.displayTitle
+                if (playing) setTextColor(ContextCompat.getColor(context, R.color.accent_300))
+            }
             val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + getString(R.string.spotify_tracks, it) } ?: ""
-            "$planned  ${item.displayTitle}\n${item.showName} · ${Labels.state(item.state)}$tracks$error"
+            row.findViewById<TextView>(R.id.meta).text = "${item.showName} · ${Labels.state(item.state)}$tracks"
+            item.error?.let { error ->
+                row.findViewById<TextView>(R.id.error).apply {
+                    text = Labels.error(error)
+                    visibility = View.VISIBLE
+                }
+            }
+            row.findViewById<ImageView>(R.id.state).apply {
+                setImageResource(
+                    when {
+                        playing -> R.drawable.ic_waveform
+                        item.state == "ready" -> R.drawable.ic_check_circle
+                        item.state == "voicing" -> R.drawable.ic_waveform
+                        else -> R.drawable.ic_clock
+                    },
+                )
+                if (playing || item.state == "ready") imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_300))
+            }
+            upcomingView.addView(row)
         }
+    }
+
+    private fun renderProgress(player: Player? = controller) {
+        val duration = player?.duration ?: C.TIME_UNSET
+        if (player == null || duration == C.TIME_UNSET || duration <= 0) {
+            progress.progress = 0f
+            timeView.text = ""
+            return
+        }
+        val position = player.currentPosition.coerceIn(0, duration)
+        progress.progress = position.toFloat() / duration
+        timeView.text = "${clock(position)} / ${clock(duration)}"
+    }
+
+    private fun clock(ms: Long): String {
+        val seconds = ms / 1000
+        return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
     }
 }

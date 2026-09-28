@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Personal Radio</string>
-    <string name="play">▶ Hören</string>
-    <string name="pause">Ⅱ Pause</string>
-    <string name="next">Weiter ↦</string>
-    <string name="like">👍 Mehr davon</string>
-    <string name="dislike">👎 Weniger</string>
+    <string name="brand">personal radio</string>
+    <string name="eyebrow">Dein Programm. Dein Rhythmus.</string>
+    <string name="headline">Platz für gute Gedanken.</string>
+    <string name="play">Hören</string>
+    <string name="pause">Pause</string>
+    <string name="next">Weiter</string>
+    <string name="like">Mehr davon</string>
+    <string name="dislike">Weniger</string>
     <string name="plan">Jetzt planen</string>
     <string name="produce_now_action">Sendung sofort produzieren</string>
     <string name="produce_now_title">Sendung auswählen</string>
@@ -26,6 +29,10 @@
     <string name="cockpit">Programm einstellen</string>
     <string name="connection">Verbindung</string>
     <string name="upcoming">Als Nächstes</string>
+    <plurals name="upcoming_count">
+        <item quantity="one">%1$d Beitrag</item>
+        <item quantity="other">%1$d Beiträge</item>
+    </plurals>
     <string name="nothing_playing">Noch nichts eingeschaltet</string>
     <string name="nothing_planned">Noch nichts geplant. Tippe auf «Jetzt planen».</string>
     <string name="status_waiting">Das Programm wird produziert. Der erste Beitrag kommt in wenigen Minuten.</string>

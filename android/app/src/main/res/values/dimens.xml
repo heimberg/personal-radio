@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nocturne's compact scale (density 0.7×) and radii. -->
+<resources>
+    <dimen name="space_1">2.8dp</dimen>
+    <dimen name="space_2">5.6dp</dimen>
+    <dimen name="space_3">8.4dp</dimen>
+    <dimen name="space_4">11.2dp</dimen>
+    <dimen name="space_6">16.8dp</dimen>
+    <dimen name="space_8">22.4dp</dimen>
+
+    <dimen name="radius_sm">4dp</dimen>
+    <dimen name="radius_md">8dp</dimen>
+    <dimen name="radius_lg">14dp</dimen>
+
+    <!-- Freestanding rules fade out over this length at each end. -->
+    <dimen name="rule_fade">48dp</dimen>
+    <dimen name="touch_target">44dp</dimen>
+</resources>

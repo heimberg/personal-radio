@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ground with a soft glow from the top-left corner instead of a flat fill. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/bg" />
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0"
+                android:centerY="0"
+                android:endColor="@color/bg"
+                android:gradientRadius="90%p"
+                android:startColor="@color/bg_glow"
+                android:type="radial" />
+        </shape>
+    </item>
+</layer-list>

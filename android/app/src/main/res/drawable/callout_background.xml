@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A deep accent tint for messages that need attention, such as a refused connection. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/accent_900" />
+    <corners android:radius="@dimen/radius_md" />
+</shape>

@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 /**
  * The web cockpit inside the app: persona, shows, sources, program clock (YAML) and timeline.
@@ -22,7 +23,11 @@ class CockpitActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val connection = RadioSettings(this).connection() ?: run { finish(); return }
-        val web = WebView(this).apply { fitsSystemWindows = true }
+        // The ground colour shows while the page loads instead of a white flash.
+        val web = WebView(this).apply {
+            fitsSystemWindows = true
+            setBackgroundColor(ContextCompat.getColor(context, R.color.bg))
+        }
         setContentView(web)
 
         CookieManager.getInstance().setAcceptCookie(true)
