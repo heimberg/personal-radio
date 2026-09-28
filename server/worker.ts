@@ -12,13 +12,14 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from './station.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
+import { parseAgentConfig } from '../src/domain/agents.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
 
 interface StoredAudio { body: ReadableStream; size: number; httpEtag: string; range?: { offset?: number; length?: number; suffix?: number } }
@@ -372,6 +373,22 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (!itemId) return json({ error: 'unknown_block' }, 404);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
+  }
+  if (url.pathname === '/api/agents/trial') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 65_536);
+    if (body.error) return body.error;
+    const { agent, agents } = (body.value ?? {}) as { agent?: unknown; agents?: unknown };
+    if (agent !== 'writer' && agent !== 'editor' && agent !== 'jury') return json({ error: 'invalid_agent' }, 400);
+    let draft;
+    try { draft = parseAgentConfig(agents, (path, expected) => { throw new ConfigError(`${path}: ${expected}`); }); }
+    catch (error) {
+      if (error instanceof ConfigError) return json({ error: 'invalid_config', detail: error.message }, 400);
+      throw error;
+    }
+    const result = await trialAgent(stationDeps(env), owner, agent, draft);
+    return json(result, result.ok ? 200 : result.error === 'NO_ITEM' ? 404 : result.error === 'NOT_CONFIGURED' ? 409 : 502);
   }
   if (url.pathname === '/api/library') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

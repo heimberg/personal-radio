@@ -5,7 +5,8 @@ import type { VerificationPolicy } from '../src/domain/station.ts';
 import { normalizeSpeech } from './audio.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
-export interface EditorialVerifier { verify(script: Script, sources: Source[]): Promise<EditorialDecision> }
+/** [hints]: the owner's extra instructions for the fact check; they may sharpen it, never loosen it. */
+export interface EditorialVerifier { verify(script: Script, sources: Source[], hints?: string): Promise<EditorialDecision> }
 export interface VoicedAudio { audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number }
 export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number; mode: 'brief' | 'podcast' }
 export interface PodcastProviders { text: TextGenerator; speech: SpeechSynthesizer }
@@ -119,10 +120,10 @@ export class SegmentPipeline {
   }
 
   /** Step 2: evidence review. Only the strict policy calls the verifier; the show decides. */
-  async review(script: Script, sources: Source[], policy: VerificationPolicy): Promise<EditorialDecision> {
+  async review(script: Script, sources: Source[], policy: VerificationPolicy, hints?: string): Promise<EditorialDecision> {
     if (policy !== 'strict') return { approved: true, reasons: [`VERIFICATION_${policy.toUpperCase()}`] };
     let decision: EditorialDecision;
-    try { decision = await this.verifier.verify(script, sources); }
+    try { decision = await this.verifier.verify(script, sources, hints || undefined); }
     catch (error) {
       // A rate-limited verifier says nothing about the script; let the caller wait and retry.
       if ((error as { status?: unknown } | null)?.status === 429) throw error;

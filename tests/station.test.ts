@@ -4,6 +4,7 @@ import { activeSlot, ConfigError, defaultStationConfig, parseStationConfig } fro
 import type { StationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Profile, Script, Source } from '../src/domain/program.ts';
 import { StationStore } from '../server/station-store.ts';
+import { resolveAgents } from '../src/domain/agents.ts';
 import { arrangeTimeline, planTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from '../server/station.ts';
 import { MUSIC_SHOW_ID } from '../src/domain/station.ts';
 import type { StationDeps } from '../server/station.ts';
@@ -106,7 +107,7 @@ test('tick plans, production stores audio in the bucket and marks sources as cov
   assert.equal(result.planned, 10); // 20-minute default horizon with 2-minute shows
   assert.equal(result.due.length, 10);
   assert.equal(await produceItem(h.deps, OWNER, result.due[0]), 'ready');
-  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host, avoidTopics: [] });
+  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host, avoidTopics: [], agents: resolveAgents(undefined) });
   const ready = await h.store.getItem(OWNER, result.due[0]);
   assert.equal(ready?.state, 'ready'); assert.equal(ready?.audio_key, `segments/${result.due[0]}.mp3`);
   assert.deepEqual([...h.bucket.keys()], [`segments/${result.due[0]}.mp3`]);

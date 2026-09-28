@@ -224,3 +224,18 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: 0.9em;
 .block-list.picker { margin-top: 4px; }
 .presets button small { color: var(--muted); margin-left: 4px; }
 .block-list.picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Redaktion: the editorial agents */
+.agents { display: grid; gap: 20px; }
+.agent-group { display: grid; gap: 10px; }
+.agent-group h3 { margin: 0; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.agents .show > .field, .agents .show > .inline, .agents .show > details { margin-top: 12px; }
+.agents .inline { flex-wrap: wrap; }
+.tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--soft); color: var(--brand-strong); font-size: .72rem; font-weight: 600; vertical-align: middle; }
+.small { font-size: .82rem; }
+.range-ends { display: flex; justify-content: space-between; }
+.notice.error { cursor: default; margin-top: 12px; }
+.trial { margin-top: 12px; }
+.trial-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.trial-grid h4 { margin: 0 0 6px; font-size: .85rem; }
+.trial-text { white-space: pre-line; font-size: .9rem; line-height: 1.5; background: var(--soft); border-radius: 12px; padding: 10px 12px; margin: 0; overflow-wrap: anywhere; }

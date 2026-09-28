@@ -1,3 +1,4 @@
+import type { ResolvedAgents } from './agents.ts';
 export type Topic = 'Technologie' | 'Wissenschaft' | 'Kultur';
 export interface Profile {
   topics: Topic[];
@@ -38,6 +39,8 @@ export interface EditorialDirection {
   persona?: HostPersona;
   /** Titles of recent segments; the next draft should not repeat these topics. */
   avoidTopics?: string[];
+  /** The station's agents with the owner's changes; missing means the shipped defaults. */
+  agents?: ResolvedAgents;
 }
 export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;

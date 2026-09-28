@@ -1,5 +1,7 @@
 import { defaultProfile, parseProfile } from './program.ts';
 import type { HostPersona, Profile } from './program.ts';
+import { parseAgentConfig } from './agents.ts';
+import type { AgentConfig } from './agents.ts';
 
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
 export type ShowFormat = 'brief' | 'podcast' | 'artist_hour' | 'genre_hour' | 'theme_hour' | 'music_block';
@@ -107,6 +109,8 @@ export interface StationConfig {
   feeds: FeedConfig[];
   shows: ShowConfig[];
   schedule: ScheduleSlot[];
+  /** The owner's changes to the editorial agents (prompts, temperature, on/off); defaults otherwise. */
+  agents?: AgentConfig;
 }
 
 /** `archived`: produced but not heard before it left the program; it can still be played from the archive. */
@@ -347,7 +351,8 @@ export function parseStationConfig(raw: unknown): StationConfig {
     location = { name: text(l.name, 'location.name', 80), latitude, longitude };
   }
 
-  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule };
+  const agents = parseAgentConfig(c.agents, fail);
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}) };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */
