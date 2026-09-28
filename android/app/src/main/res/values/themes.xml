@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nocturne is dark only: the ground, surfaces and ramps are tuned for it. -->
+    <style name="Theme.PersonalRadio" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/bg</item>
+        <item name="colorPrimaryContainer">@color/accent_800</item>
+        <item name="colorOnPrimaryContainer">@color/accent_100</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnSecondary">@color/bg</item>
+        <item name="colorSecondaryContainer">@color/accent_900</item>
+        <item name="colorOnSecondaryContainer">@color/accent_200</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text</item>
+        <item name="colorSurfaceVariant">@color/surface</item>
+        <item name="colorOnSurfaceVariant">@color/neutral_400</item>
+        <!-- Dialogs and menus sit on the surface colour, edged like Nocturne's elevation. -->
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainer">@color/surface</item>
+        <item name="colorSurfaceContainerHigh">@color/surface</item>
+        <item name="colorSurfaceContainerHighest">@color/surface</item>
+        <item name="colorOutline">@color/divider</item>
+        <item name="colorOutlineVariant">@color/neutral_800</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorOnBackground">@color/text</item>
+        <item name="colorControlNormal">@color/neutral_400</item>
+        <item name="colorControlActivated">@color/accent</item>
+        <item name="colorControlHighlight">@color/text_ripple</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/neutral_400</item>
+        <item name="android:textColorHint">@color/neutral_500</item>
+        <item name="android:textColorHighlight">@color/accent_ripple</item>
+
+        <item name="fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/inter</item>
+
+        <item name="android:windowBackground">@drawable/window_background</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="materialButtonStyle">@style/Widget.PersonalRadio.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.PersonalRadio.Button</item>
+        <item name="editTextStyle">@style/Widget.PersonalRadio.Input</item>
+    </style>
+
+    <!-- Buttons are outlined, never filled: a divider edge, or the accent for the primary action. -->
+    <style name="Widget.PersonalRadio.Button" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">@dimen/touch_target</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textColor">@color/button_text</item>
+        <item name="cornerRadius">@dimen/radius_md</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/button_stroke</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="rippleColor">@color/text_ripple</item>
+        <item name="iconTint">@color/button_text</item>
+        <item name="iconSize">16dp</item>
+        <item name="iconPadding">6dp</item>
+        <item name="iconGravity">textStart</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Button.Primary">
+        <item name="android:textColor">@color/button_accent</item>
+        <item name="strokeColor">@color/button_accent</item>
+        <item name="iconTint">@color/button_accent</item>
+        <item name="rippleColor">@color/accent_ripple</item>
+    </style>
+
+    <!-- A text-only action: no edge, muted until pressed. -->
+    <style name="Widget.PersonalRadio.Button.Ghost">
+        <item name="strokeWidth">0dp</item>
+        <item name="android:textColor">@color/button_muted</item>
+        <item name="iconTint">@color/button_muted</item>
+        <item name="rippleColor">@color/accent_ripple</item>
+    </style>
+
+    <!-- Square 44dp icon buttons; the layout sets the size and a content description. -->
+    <style name="Widget.PersonalRadio.Button.Icon" parent="Widget.PersonalRadio.Button.Ghost">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">18dp</item>
+        <item name="android:textColor">@color/button_text</item>
+        <item name="iconTint">@color/button_text</item>
+    </style>
+
+    <!-- The round play button: the only accent-edged control in the player row. -->
+    <style name="Widget.PersonalRadio.Button.Play" parent="Widget.PersonalRadio.Button.Primary">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">18dp</item>
+        <item name="cornerRadius">22dp</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Input" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/input_background</item>
+        <item name="android:minHeight">@dimen/touch_target</item>
+        <item name="android:paddingStart">@dimen/space_4</item>
+        <item name="android:paddingEnd">@dimen/space_4</item>
+        <item name="android:paddingTop">@dimen/space_3</item>
+        <item name="android:paddingBottom">@dimen/space_3</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textColorHint">@color/neutral_500</item>
+        <item name="android:textCursorDrawable">@drawable/input_cursor</item>
+    </style>
+
+    <!-- Type, applied with style= (not textAppearance) so tabular figures work on every API level.
+         Inter at 400 and 500: hierarchy comes from size and space, never from heavier weights. -->
+    <style name="Widget.PersonalRadio.Text.Eyebrow" parent="">
+        <item name="android:textSize">10sp</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/accent_300</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Headline" parent="">
+        <item name="android:textSize">20sp</item>
+        <item name="android:letterSpacing">-0.015</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Section" parent="">
+        <item name="android:textSize">17sp</item>
+        <item name="android:letterSpacing">-0.015</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Title" parent="">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.ItemTitle" parent="">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Body" parent="">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/neutral_400</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Meta" parent="">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/neutral_500</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Status" parent="">
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">@color/neutral_400</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <style name="Widget.PersonalRadio.Text.Tag" parent="">
+        <item name="android:textSize">10sp</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/neutral_100</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+</resources>

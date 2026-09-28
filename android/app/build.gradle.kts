@@ -1,0 +1,68 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+// CI passes a keystore so every build can update the installed app; without one the debug key signs.
+val keystorePath: String? = System.getenv("RADIO_KEYSTORE_PATH")
+
+android {
+    namespace = "ch.heimberg.radio"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "ch.heimberg.radio"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "0.2.$versionCode"
+    }
+
+    signingConfigs {
+        if (keystorePath != null) {
+            create("owner") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("RADIO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RADIO_KEY_ALIAS")
+                keyPassword = System.getenv("RADIO_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("owner") ?: signingConfigs.getByName("debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}
+
+kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
+
+dependencies {
+    implementation("ch.heimberg.radio:core")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation("androidx.media3:media3-session:1.8.0")
+    implementation("androidx.media3:media3-datasource:1.8.0")
+    implementation("androidx.media3:media3-database:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Spotify App Remote controls the installed Spotify app; see libs/README.md.
+    implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    implementation("com.google.code.gson:gson:2.11.0")
+}

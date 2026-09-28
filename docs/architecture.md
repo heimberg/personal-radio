@@ -1,55 +1,296 @@
 # Architecture and implementation plan
 
+Decisions revised 2026-09-28. This replaces the earlier local-first, browser-player plan.
+
+## Goal
+
+A private, single-user radio: tune in and hear a continuous program of AI-generated spoken segments and music that match one person's niche interests. Everything that shapes the program — shows, prompts, sources, voices, schedule, music rules and verification strictness — is user-editable configuration, not code.
+
+## Non-negotiable requirements
+
+These two requirements override every other decision in this document:
+
+1. **One app on Android.** Tuning in, listening, feedback and configuration happen in a single Android app; the settings are the web cockpit embedded in it, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
+2. **AI-generated speech in every program.** Generated spoken segments are the reason the station exists; music alone is not a program. The configuration is rejected without at least one enabled speech show (`parseStationConfig`), and music blocks always carry generated moderation.
+
 ## Decisions
 
-Start with a modular monolith in TypeScript and one server-side worker, not independent microservices. Keep domain contracts independent of React and provider SDKs. UI and playback are separate: rerenders must never recreate the audio element. Text generation and TTS run on the server; browser controls playback and displays verified results.
+1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
+2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
+3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web cockpit on the phone. The Spotify Web Playback SDK is not part of the product.
+4. **Settings and planning live in the web cockpit.** Shows, persona, voices, sources, program clock, music rules and arranging the timeline are forms in the web cockpit, used on a computer or embedded in the app; YAML is optional for bulk edits. See [Division of work](#division-of-work-app-and-web-cockpit).
+5. **Server-side configuration.** The backend stores configuration, sources, schedule, feedback, production state and memory in D1 so it can produce without the app being open. The device keeps UI preferences and a playback cache. Export and delete remain available.
+6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
+7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
+8. **Audio lives in R2, Google Drive is an archive.** Playout needs a few hundred MB at most (a 2-minute MP3 is about 2 MB; 7-day retention), well inside R2's free allowance with free egress. Google Drive would need a stored OAuth token (refresh tokens of Google apps in "testing" status expire after 7 days), would route every stream through the Worker and adds latency and quotas. The owner's 2 TB are used later for an archive: liked segments and artist hours are copied to a Drive folder with script and sources.
+9. **Stay on Cloudflare**, on the Workers Paid plan (USD 5/month at time of writing), because audio decoding in the Worker can exceed the Free plan's CPU limit. Provider costs (ASK, Mistral, Gemini) are separate and capped by D1 quotas.
 
-Current directories: `src/domain` holds contracts/validation, `src/audio` holds playback, `src/main.tsx` is the initial UI, and `server/providers.ts` holds server-only integrations. Split the small initial UI into feature components when real editorial/profile views arrive. No backend is exposed yet.
+## Editorial team for music hours (beta)
 
-## Planned bounded modules
+Per show, `production: agents` hands a music hour to a team of registered agents instead of a single writer: director, per-song researchers, lyric analyst, optional specialists, segment editor, fact checker and continuity editor, run as a validated plan with durable D1 checkpoints. Details, roles and costs: [agentic-workflow-spike.md](agentic-workflow-spike.md).
 
-Profile, sources, editorial generation, verification, speech, program scheduling, playback, feedback and operations. Adapters implement `TextGenerator` and `SpeechSynthesizer`. Later add `SourceProvider`, `MusicProvider`, repository and job-store ports only when used.
+## Division of work: app and web cockpit
 
-## Editorial pipeline
+Decided by the owner on 28.09.2026.
 
-Fetch allowlisted RSS/API sources → deduplicate/date → select diverse candidates → construct cited fact records → ASK drafts script → deterministic schema/citation checks and editorial verification → TTS → measure actual duration → publish prepared segment to queue.
+| | Android app (native) | Web cockpit (Worker page, behind Access) |
+|---|---|---|
+| Role | The product for listening | The workbench for settings and planning |
+| Contents | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over and «Spotify verbinden», feedback (👍/👎, skips), program list, immediate production | Persona and voices, shows of every format, program clock, music and playlist groups, feeds, arranging the timeline (move, remove, shuffle, add songs), YAML, Spotify listening profile, failures and sources |
+| Where | Phone | Browser on a computer; embedded in the app via «Programm einstellen» |
+| Changes ship | With a new APK | With every Worker deploy, no reinstall |
 
-Citation existence is NOT factual verification. `parseScript` currently checks structure/source IDs only. Before live news, add per-claim source excerpts, stale-source rejection, contradiction handling and a golden evaluation set. Unverified drafts must not automatically become spoken news. Sources are untrusted data and cannot authorize tool calls. Restrict network egress; validate redirects, private IP ranges and response sizes when source fetching is implemented. No arbitrary user-controlled fetch URLs or model-selected executable actions.
+Rules for new features: anything used while listening or often on the phone goes native (and may later move from the cockpit into the app); settings, planning and anything with larger forms goes into the web cockpit. Both use the same Worker API, so a feature can exist in both without duplicating server logic. The cockpit's small browser player only checks spoken segments; listening happens in the app.
 
-Store source provenance, retrieval time, prompt/model version, verification state, script revision, audio revision and measured costs. State transitions are explicit: queued → drafting → verifying → voicing → ready, or failed. Jobs need idempotency keys, leases, bounded retries/backoff and a dead-letter state. App budget must reserve estimated TTS costs before submission; a retry cannot create duplicate paid generation. Cache by script + voice + model + settings hash.
+## System overview
 
-Prefetch only a bounded amount of audio. Expire news by freshness policy, not just cache age. If ASK/TTS fail, use still-valid prepared content with a clear status. Never invent replacement news. Provider adapters presently make one bounded request; they are not a production orchestration pipeline.
+```
+Cloudflare
+  Cron Trigger (every 10 min) ── while the owner listens, keeps the timeline filled up to the horizon (default 20 min)
+        │
+        ▼
+  Planner (Worker) ── reads schedule, shows, music rules, memory, feedback from D1
+        │ creates timeline items (planned)
+        ▼
+  Queue consumer (one item per message, one at a time; the item's D1 state drives retries)
+        segment:     collect sources → draft (ASK/Gemini) → verify per show policy
+                     → store script (state voicing) → reserve budget → TTS → R2 → ready
+        music block: LLM picks tracks → resolve via Spotify search (code, no AI)
+                     → moderation for resolved tracks only → TTS → R2 → ready
+        │
+        ▼
+  D1: configuration, timeline, jobs, usage, feedback, memory      R2: audio segments
+        │
+        ▼  Authenticated API (Access service token for the app)
+        │
+Android app (the single app)
+· Media3 plays our segments, lock screen and Bluetooth controls
+· App Remote plays Spotify URIs, hands over at track end
+· prefetches ready segments, reports played/skipped/feedback
+· in-app screens: persona, shows, sources, schedule, timeline and production controls
+```
 
-## Learning
+## Domain model
 
-Keep explicit preferences separate from session intent and inferred preferences. Explicit settings win. Strong signals: “more/less like this”, “already known”. Weak signal: skipped own editorial segment; an interruption must not count as dislike. Decay old inferences, expose/reset/export the learned profile and retain a user-controlled exploration fraction. Do not infer sensitive traits. No model training at MVP stage. Do not feed Spotify data into ASK or infer profiles from Spotify listening.
+| Entity | Purpose |
+| --- | --- |
+| `Station` | Station name and host persona: name, tone, style, own instructions and a co-host name for dialogs. Applies to every generated segment. |
+| `Show` | A format: name, prompt template (editable), source selection, text provider/model, voice(s), target length, language/style, verification policy, enabled flag. |
+| `Source` | Feed URL, web page or manual note/topic list; weight, blocked terms, fetch interval, owner's rights check. |
+| `Schedule` | The program clock: per weekday and time window an ordered list of slots — a show, a music block (n tracks + music rule) or a moderation — plus a speech/music ratio. |
+| `MusicRule` | Free-text taste description, genres, eras, seed artists, exclusions, no-repeat window, discovery share. |
+| `TimelineItem` | Position, kind (`segment`, `spotify-track`, `moderation`), references, planned time, state `planned → producing → ready → played / skipped / archived / failed / expired`. |
+| `Segment` | Script, cited sources, R2 audio key, measured duration, cost, provider/model/prompt versions, verification result. |
+| `FeedbackEvent` | like, dislike, skip (with listened ratio), complete, "already known", "go deeper". |
+| `Memory` | What was played, covered-story fingerprints for deduplication, series state ("part 3 of …"). |
 
-## Android decision gate
+Explicit configuration always wins over learned weights. The existing learning rules stay: thumbs are strong signals, completion is weakly positive, a skip before 20 % is ignored and a later skip is weakly negative, with a 45-day half-life.
 
-PWA installation and a service worker do not guarantee uninterrupted background execution. Measure real screen-locked playback, transitions, external controls and interruptions. A failed mandatory Android test triggers a native playback decision: reuse the web UI but implement an actual Android Media3 foreground media service. A plain WebView wrapper is not the solution. Native Spotify App Remote would be a separate integration and does not remove Spotify policy constraints.
+## Program production (implemented, milestone 1)
 
-## Spotify blocker
+- **Configuration** is one validated document per owner in D1 (`station_config`): station name, host persona, profile, feeds, shows, schedule, time zone and horizon. The Android app edits configuration through native screens; the API stores validated JSON. Documents saved before the persona existed get a default host.
+- **Persona** (`host`): every draft is written in the host's voice and tone; in two-host dialogs `host-a` is the host and `host-b` the co-host. Persona and show instructions are owner-written and go into the system prompt; source text never does. `parseStationConfig` rejects unknown references, out-of-range lengths (brief 1–2 min because of the TTS cap, dialog 2–10 min), invalid times and time zones.
+- **Planning** (`server/station.ts`, `planTimeline`) runs on every cron tick and on "Jetzt planen" from the app. It rotates the enabled shows of the schedule slot that is active at each planned time, stops at the horizon and at 12 new items per tick, and plans nothing outside an active slot.
+- **Listener gate:** the cron only plans new content if the owner opened the program or gave feedback within the last 3 hours. Unplayed items expire after 12 hours, so without this gate the station would pay for content nobody hears.
+- **Production** runs in a queue consumer, not in the browser request. Each item moves `planned → voicing → ready` (or `failed` / `expired`); a lease in D1 prevents concurrent production. The approved script is stored before speech synthesis, so a TTS retry never pays for a second draft. Transient provider errors back off (10, 20 min) and give up after 3 attempts; rejections and invalid drafts fail permanently; an exhausted daily budget defers the item to the next UTC day. Three failures within an hour pause planning.
+- **Sources** come from the show's feeds: articles older than 30 days or already covered are skipped, the rest is ranked with explicit interests and learned weights (ties: newest first). Used articles are recorded in `covered_sources` so they are not retold.
+- **Current execution:** a Cloudflare Queue consumer and D1 state machine produce each timeline item. The approved script and per-part voice progress are persisted, so transient failures resume without repeating completed work. This remains the active production path.
+- **Workflow framework decision:** [the agentic workflow spike](agentic-workflow-spike.md) adds a framework-neutral agent registry and tests a `step.do`-compatible checkpoint adapter. It does not yet register a Cloudflare Workflow or route production through one. Cloudflare Workflows are the candidate durable execution layer for a future multi-agent producer; keep the existing queue path until an end-to-end shadow run demonstrates quality, recovery, latency and cost. Mastra remains an alternative to evaluate, not a dependency.
+- **Audio** lives in R2 under `segments/<item>.mp3|wav`, is served with HTTP range support and is deleted 7 days after playback or on expiry.
+- **Feedback** from the player (`complete`, `skip`, thumbs) is stored in D1; server-side learned weights feed the next drafts.
 
-Spotify's developer policy restricts mixing/segueing audio, integration with other services' content, news generation and ingestion of Spotify content into AI. Personal/noncommercial use does not waive this. No Spotify implementation until this use case is clarified. No music downloading, re-streaming, AI ingestion or covert workarounds. An independent spoken news app or suitably licensed own music is a different scope and must be agreed as such.
+## Web research (implemented)
 
-## Security and deployment
+Shows with `sourceMode: web` need no feed. Production runs two steps:
 
-Public repository, private application. Use authenticated server sessions, least-privilege provider credentials, rate/cost limits and encrypted persisted tokens. Never add secrets to the frontend. ASK's organizational hosting is not automatically authorized for private use: confirm both authorization and connectivity. Log sanitized errors, not provider response bodies, secrets or full prompts. Define data retention, deletion and backups before persistent data is introduced.
+1. **Research** (`GeminiResearcher`): one Gemini call with the `google_search` tool, the show's `researchPrompt`, the listener's interests, today's date and the recent topics. From the grounding metadata only sentences that Gemini attributes to a search result are kept, grouped by that result; each result becomes a source (`w1`…`w8`, at most 24,000 characters in total). Ungrounded text is discarded. The search queries are stored with the item (`research_json`) and shown in the Android app as Google search links.
+2. **Script** from these sources exactly like from feed articles, followed by the show's verification policy. With `strict`, every claim must quote a grounded sentence.
 
-## Milestones and acceptance
+The two steps keep the script call independent of whether a model supports search and structured output in one request. Grounded requests are billed separately beyond a free daily allowance. Google's terms for grounding with Google Search require showing the search suggestions where grounded results are shown; the app lists the queries as links, which must be checked against the current terms before wider use. Grounding result URLs can be Google redirect links; their titles name the site.
 
-0. Feasibility: real Android 60-minute result; ASK endpoint/permission test; Mistral voice test; music policy decision.
-1. Foundation: responsive UI, deterministic tests/CI, private deployment with no provider secrets in browser.
-2. Vertical slice: one allowed feed → cited ASK draft → review/verification → Mistral audio → playback → feedback, with a cost ceiling.
-3. Program: topics, variety, licensed music provider, persisted resume, buffering and job recovery.
-4. Learning: explainable feedback weights, profile review/reset, replayable evaluation set.
-5. PWA: installability, cache only authorized own audio, safe update during playback and offline messages; native fallback if required.
+**Topic memory:** every draft and every research request receive the titles of the last 15 produced segments with the instruction not to repeat them.
+
+## Agentic production model
+
+A music hour benefits from specialist roles, but not from agents that can call tools or spawn other agents without bounds. Keep one deterministic conductor in `produceMusicHour`; it owns the queue state, budgets, retries and handoffs. Each specialist makes a bounded request and returns structured data that the next step can inspect:
+
+1. **Director / producer:** choose or accept the subject, set the editorial arc and song count, assign work, watch the whole block and check that every stage is complete.
+2. **Music researcher:** build a broad dossier, then research the exact Spotify tracks. Each selected recording gets its own source-backed context.
+3. **Lyric analyst:** identify themes relevant to each song from permitted evidence and return short notes without reproducing lyrics.
+4. **Music programmer:** select a varied sequence; Spotify search resolves exact tracks in deterministic code. Spotify metadata never goes back to a model.
+5. **Segment editor:** establish the hour's red thread and write a distinct, evidence-linked moderation for every selected song.
+6. **Fact checker and continuity editor:** check claims against sources and review pacing, transitions, repetition and the arc of the complete hour.
+7. **Voice producer:** synthesize each approved speech part and persist progress so retries do not pay for completed parts again.
+
+This is the target controlled agentic workflow: roles have narrow prompts and typed outputs, while a deterministic conductor decides what runs next. There is no open-ended tool loop. It makes the work auditable, keeps Spotify and secrets away from the language model, and gives each song a chance to carry its own story. The code prototype is documented in the linked spike; these roles are not yet separately registered or orchestrated in production. The first production version should research each confirmed song individually (parallel where safe), then write and verify its moderation against that song's evidence.
+
+### Extensible agent registry
+
+Agent identity and workflow are separate. Register each role once with a stable ID, version, capability description, input/output schema and explicitly allowed tools. A workflow plan may compose only registered roles allowed by the run's policy. Agents return structured artifacts and do not spawn agents or grant tools to one another. Domain specialists (geologist, biologist, historian, music researcher, lyric analyst) can be added as registrations without adding a new execution engine.
+
+| Agent role | Responsibility |
+| --- | --- |
+| Director / producer | Own the block-level plan, assign research, track stage completion, manage bounded revisions and assemble the rundown |
+| Research agents | Gather and cite evidence; specialized versions cover songs, lyrics, geology, biology, history and other topics |
+| Editors | Shape evidence into spoken segments, preserve the red thread and target length |
+| Fact checker | Match factual claims to sources and flag conflicts or weak evidence |
+| Continuity editor | Review the whole block for order, transitions, repetition, pacing and missing pieces |
+| Voice producer | Generate audio only from approved scripts and resume completed parts |
+
+The director's plan is untrusted input until deterministic validation checks allowed agents and tools, task and output limits, declared dependencies and cycles. Store compact JSON artifacts between durable steps; put audio and large source documents in R2. App progress should come from a run status API and show the stage and useful failure reason, without exposing framework details.
+
+## Music hours: artist, genre, theme
+
+Three show formats share one production: spoken parts with Spotify tracks in between, grounded in web search.
+
+- `artist_hour` — one artist or band: tracks across the career, background on the artist and the songs.
+- `genre_hour` — one genre or scene: its history from the origins to today, told through songs by different artists.
+- `theme_hour` — any topic (science, history, culture, nature, not only music): the topic is the content, told in chapters; after each chapter a song by any artist that fits the topic in its lyrics, title, origin or mood. Defaults: 8 tracks, 120 seconds of speech per chapter.
+
+```yaml
+- id: thema
+  name: Themen-Stunde
+  format: theme_hour
+  theme: Der Mond          # artist: … / genre: … for the other formats; leave empty and the AI picks from your interests
+  tracks: 8                # 3–15
+  talkSeconds: 120         # 20–180 per moderation
+  instructions: Erzähle das Thema in Kapiteln.
+  verification: light
+```
+
+Without a fixed subject the AI picks one from the listener's interests and avoids the subjects of recent hours of the same kind.
+
+Production, entirely ahead of time:
+
+1. **Dossier:** web research (as above) on biography, periods, albums, the story of individual songs and anecdotes.
+2. **Track selection:** the LLM picks about 11 songs across the career with a reason each; the backend resolves them with Spotify search and keeps unambiguous matches only (AI → Spotify; facts come from the web, never from Spotify).
+3. **Script:** opening, a 45–90 second moderation before each resolved track, closing — in the host persona, optionally as a dialog with the co-host. Moderation only for tracks that resolved.
+4. **Check and voice:** claims are checked against the dossier sources; unsupported sentences are rewritten or dropped. Moderations are voiced to R2.
+5. **Timeline:** opening → moderation → Spotify track → moderation → … → closing. About 45 minutes of music and 12–15 minutes of AI speech per hour, which satisfies the speech requirement by construction. One hour needs roughly 10,000–12,000 TTS characters; raise `DAILY_TTS_CHARACTERS` accordingly.
+
+Implementation: a music hour is one timeline item whose `script_json` holds the parts in playing order — spoken parts (each voiced to its own R2 file, `GET /api/timeline/{id}/audio?part=n`) and Spotify tracks (URI, the AI's title and artist, duration). Voicing stores progress after every part, so a retry never pays twice; moderations longer than about 250 words are split into consecutive parts. Track search uses the Spotify Web API with an app token (client credentials, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`), deterministic title/artist matching and `SPOTIFY_MARKET` (default `CH`); an hour with fewer than three matches fails with `TOO_FEW_TRACKS`. The whole script is verified once against the dossier (default policy `light`). `POST /api/shows/{id}/produce` produces any show immediately, outside the program clock, from the Android app. The app lists the hour's tracks and plays it with the App Remote handoff described below.
+
+## Songs between spoken items
+
+`music` in the station configuration: `between` (0–3 songs after every spoken item; music hours bring their own music), `announce` (a short spoken intro) and `taste` (the owner's own description). The planner inserts song items (reserved show ID `_musik`, about 4 minutes) after every brief or dialog. A song item asks Gemini for three candidates that fit the taste, avoiding recent songs and taking the owner's 👍/👎 and early skips on earlier songs into account (these are songs the AI picked, not Spotify data). Spotify resolves the first one it knows; the host voices a short announcement. The item has the same `parts` as a music hour, so the Android app plays it without changes. Song picks do not count towards `DAILY_GENERATIONS`; announcements count towards `DAILY_TTS_CHARACTERS`.
+
+## Arranging the program
+
+The Android app arranges the open items (planned, being voiced, ready): `POST /api/timeline/arrange` with the full new order (a stale order is refused with 409), `POST /api/timeline/{id}/remove` (expires the item and releases its audio), `POST /api/timeline/shuffle` (shuffles and spreads songs so that at least `max(1, music.between)` sit between two spoken items, adding and producing missing songs) and `POST /api/shows/_musik/produce` (one more song). Arranging gives the items fresh sequence numbers after all existing ones, so the planner continues after the new tail. The app rebuilds its playlist after the current item whenever the server order differs; the item that is playing is never interrupted.
+
+## Archive: listening freely
+
+Finished productions do not disappear when they leave the program. A ready item that nobody heard within 12 hours becomes `archived` instead of `expired` and keeps its audio; heard (`played`, `skipped`) and archived items keep their audio for 7 days after they left the program, then it is released from R2 and the item drops out of the archive. `GET /api/library` lists the productions that can still be heard (newest first, single songs left out) with `retentionDays`. The app plays any of them on request (a custom Media3 session command), after the current step; the program continues afterwards. Feedback on an item that is neither `ready` nor `archived` records only ratings, so listening again does not skew learning.
+
+## Music curation (AI → Spotify only)
+
+No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scopes `user-top-read` and, for music blocks, `playlist-read-private` and `playlist-read-collaborative`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
+
+1. The LLM picks tracks (artist, title, short reason) from its own knowledge, guided by `MusicRule` and the recent playlist memory (our own records of the LLM's earlier picks).
+2. The backend resolves each pick through the Spotify Search API with an app token (client credentials) and accepts it only if a normalized artist/title comparison matches. This comparison is deterministic code. Unmatched picks are dropped.
+3. Only then does the LLM write moderation, for resolved picks only, based solely on its own selection. The only information passed forward is which picks resolved.
+
+The planner stores the Spotify URI in the timeline; the app plays it through App Remote.
+
+## Music blocks and moderation triggers (milestone 3)
+
+Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (MIT), adapted to our constraints. A music block is a show (`format: music_block`, 10–120 minutes) that the schedule rotates like any other show; no songs are planned after it because it brings its own music.
+
+```yaml
+- id: morgenmusik
+  name: Morgenmusik
+  format: music_block
+  targetMinutes: 30
+  groups:                      # rotate; at most 6
+    - name: Kaffee
+      playlists:               # links, spotify:playlist: URIs or IDs; at most 5
+        - https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO
+    - name: Entdeckungen       # no playlists: the AI picks from the group's taste
+      taste: Krautrock und frühe Elektronik
+  switchAfterTracks: 3         # 0 = off
+  switchAfterMinutes: 0        # 0 = off
+  talkSeconds: 20              # 10–120 per moderation
+  triggers:
+    blockStart: true
+    blockEnd: true             # hands over to the next show of the schedule slot
+    beforeTrack: 1             # before every Nth AI-picked song; 0 = off
+    afterTrack: 0              # after every Nth AI-picked song; 0 = off
+    everyMinutes: 0            # after X minutes of music without speech; 0 = off
+    groupTransition: true
+```
+
+| Trigger | Fires | Context available to the prompt |
+| --- | --- | --- |
+| `blockStart` / `blockEnd` | when the block begins or ends | block name, group names, next show, time of day |
+| `beforeTrack` / `afterTrack` | every N AI-picked songs | only the AI's own pick (artist, title) |
+| `everyMinutes` | after X minutes of music without speech | time of day (not the clock: the block is produced ahead of time) |
+| `groupTransition` | between groups | group names |
+
+- **Two music sources.** AI groups: Gemini proposes songs from the group's taste (or the station's taste), the owner's 👍/👎 on songs and, if connected, the listening profile; Spotify search resolves them (AI → Spotify). Playlist groups: the Worker reads the owner's playlists (with the owner's token when the listening profile is connected, which also covers private playlists; otherwise the app token, public playlists only), shuffles them in code and prefers tracks that did not play recently. Playlist tracks are never sent to an AI provider, not even in the avoid list, so their moderation stays generic: transitions, time of day, the next show.
+- Several triggers at the same place become one moderation. If no configured trigger fires (for example only `beforeTrack` with playlist groups), the block still opens with a moderation: every block has generated speech. At least one trigger must be on.
+- The rotation continues across blocks: the next block of the show starts with the group after the last one played.
+- The block is one timeline item with the same `parts` as a music hour, so the Android app plays it without changes. Verification is `off` (the moderations carry no researched claims). A block counts once towards `DAILY_GENERATIONS`; its moderations count towards `DAILY_TTS_CHARACTERS`.
+- **No ducking.** ai-radio-station lowers the music and speaks over it; we never overlay speech on Spotify audio. Moderation plays between tracks.
+- **Never cut a track.** Hand over when Spotify reports the track change, not a few seconds before the end.
+- **Pre-produced.** Moderation is produced with the rest of the timeline, not live, so the handoff has no generation latency.
+
+## Playback handoff (Android)
+
+- Our segment ends → start the Spotify URI via App Remote → subscribe to player state.
+- The Spotify track ends or changes → pause Spotify immediately → play the next segment through Media3.
+- Spotify may briefly start the following track or autoplay before the pause takes effect; measure this and minimize it (single-track playback, pause on track change).
+- Implementation: each track is a silent placeholder in the Media3 playlist (track title, duration plus one minute), so the media session covers music and speech alike. On a placeholder the player stops handling audio focus and App Remote plays the URI; `TrackWatch` (core, tested) decides the end from Spotify's player state; the playlist then moves to the next spoken part and the player takes focus back. The Worker hands the public client ID to the app with the timeline.
+- Our segments are prefetched from R2, so short network loss does not stop the program. News items carry an expiry and are skipped when stale.
+- Acceptance test: 60 minutes screen-off with at least 10 handoffs, lock-screen/Bluetooth controls, an incoming call and a network change. The existing [Android test](android-test.md) covers our own audio only.
+
+## Content quality and safety
+
+- Sources are untrusted data, never instructions. Feed fetching keeps its limits: HTTPS only, no redirects, no IP literals or local hosts, 500 KB, 20 entries.
+- Each segment exposes its sources in the Android app. Segments without `strict` verification are never presented as verified news.
+- Deduplicate against memory so the same story is not retold. Never invent replacement news when production fails; play prepared content or music instead.
+- Cost control: D1 quotas per day (requests, TTS characters, feed fetches), budget reserved before TTS, horizon capped, audio cached by script + voice + model + settings hash.
+
+## Security
+
+Public repository, private application. Cloudflare Access protects the Worker API. The Android app authenticates with an Access service token; the Worker accepts a JWT whose `common_name` equals `ACCESS_SERVICE_TOKEN_ID` as the owner. The app sends the token only to the configured origin; audio URLs that would leave it are rejected. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
+
+## Adopted from ai-radio-station
+
+[ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) is a local macOS command-line DJ for Spotify playlists. It confirms the conductor approach (pause Spotify, speak, play the next track). Adopted: segment triggers and playlist groups (milestone 3), host persona and YAML configuration (done), per-show tools with template values — weather via Open-Meteo, headlines, MCP servers — and a topic memory of recent segments (milestone 4), ElevenLabs as an additional TTS adapter (milestone 4). Not adopted: speech plays on the computer's speakers rather than on the listening device, Spotify metadata goes to the LLM, speech is overlaid on music (ducking), librespot (an unofficial Spotify client), no persistence, learning or pre-production, and news limited to headline titles without sources.
+
+## Current state and gaps
+
+Built: Worker with Access, D1 quotas, feed retrieval and ranking, Gemini/ASK writing and verification, voice providers, Spotify App Remote playback, feedback learning, server-side timeline and immediate production. The Android app is the listening product with quick actions; the web cockpit (embedded in the app) holds settings and planning. The Worker provides the authenticated API, the cockpit and generated audio.
+
+Remaining gaps:
+
+- The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
+- Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
+- Keep configuration, timeline, sources and production controls accessible only through the Android app; users do not need a separate browser or login flow.
+- Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
+
+## Milestones
+
+1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; queue production with R2 audio; cron horizon with listener gate; authenticated timeline API.
+2. **Android app** (built; acceptance test on a device pending): Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth, settings and production controls; 60-minute screen-off test.
+3. **Spotify in the app:** App Remote, the artist hour as the first music format, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
+4. **Full customization:** per-show tools (weather, headlines, MCP) with template values, ElevenLabs as TTS option, music rules, Google Drive archive for liked segments and artist hours.
+5. **Learning and memory:** feedback weights in the planner, deduplication, series.
+6. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
+7. **Agentic production:** use the agent registry and a durable Workflow adapter for a shadow music-hour run; add per-song researcher and lyric analyst first, then the director, fact checker and continuity editor. Keep the queue path until the shadow run proves quality and recovery, then migrate one format at a time and expose stage progress in the app. See [agentic workflow spike](agentic-workflow-spike.md).
 
 ## References
 
 - https://developer.spotify.com/policy
+- https://developer.spotify.com/documentation/android (App Remote SDK)
+- https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow
+- https://developer.spotify.com/documentation/web-playback-sdk
+- https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide
 - https://developer.android.com/media/media3/session/background-playback
-- https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation
+- https://developers.cloudflare.com/queues/
+- https://developers.cloudflare.com/r2/
+- https://developers.cloudflare.com/workers/configuration/cron-triggers/
+- https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/
 - https://docs.mistral.ai/studio/audio/text_to_speech/speech
-
-Plan checked 2026-09-25. ASK's actual deployment contract still needs verification.
+- https://ai.google.dev/gemini-api/docs/speech-generation
+- https://ai.google.dev/gemini-api/docs/google-search

@@ -1,52 +1,33 @@
 # Personal Radio
 
-Mobile-first personal audio application with a planned ASK editorial pipeline and Mistral speech synthesis.
+A personal radio station: AI-hosted, researched spoken segments and music hours with Spotify, produced ahead of time on a private Cloudflare Worker and played in one Android app.
 
-**Status: feasibility prototype, not a working AI radio station.** The browser plays generated test tones or user-selected local audio. No paid API is called. Spotify is deliberately not connected. Android lock-screen reliability has not been established.
+- **Program:** the Worker plans a timeline from the station configuration (host persona, shows, program clock) and produces it in the background: web research grounded in Google Search or your feeds, scripts written by Gemini (ASK optional), source verification, expressive Gemini voices that follow a speaking style (Mistral optional). Segments show their sources and search queries.
+- **Music hours:** artist, genre and theme hours alternate AI moderation with songs. The AI picks the songs; Spotify only resolves them to tracks. Nothing from Spotify is sent to an AI provider.
+- **Android app** ([docs/android.md](docs/android.md)): the product for listening. Native playback with lock screen, Bluetooth and offline cache, hand-over to Spotify for music, feedback, the program list and quick actions such as immediate production. It embeds the web cockpit for settings, so the owner uses one app.
+- **Web cockpit** (the Worker's page, behind Cloudflare Access): the workbench for settings and planning — persona and voices, shows, program clock, music and playlists, feeds, the timeline to arrange, the YAML view and the Spotify listening profile. Used in the browser on a computer and embedded in the app; its small player is for checking spoken segments, not the listening product.
 
-## Run
+## Develop
 
-Use Node.js 24 or later.
+Node.js 24 or later.
 
 ```sh
 npm ci
-npm run dev
-```
-
-Open the Vite URL. On a phone in the same network, use the displayed network address for a basic playback check. Use HTTPS for the definitive mobile/platform test (Media Session availability can differ). Do not expose the development server publicly.
-
-```sh
-npm run check
-npm test
+npm run dev        # local frontend development; the API needs the Worker
+npm run check      # TypeScript
+npm test           # unit and Worker tests (D1 via node:sqlite)
+npx playwright test
 npm run build
 ```
 
-## Included
+Android: `cd android && ./gradlew -p core test` for the program logic; CI builds and signs the APK.
 
-- Responsive React/TypeScript UI in German with radio, preferences and test views.
-- One persistent HTML audio player, queue, repeat, seek, previous/next and Media Session handlers.
-- Local, low-volume generated 30-second WAV test segments; local file selection with no upload.
-- Bounded playback event log; downloadable JSON with browser information but no filenames/profile.
-- Device-local preference storage with corrupt-storage fallback; not yet connected to content selection.
-- Server-only ASK and Mistral adapters with mocked contract tests, timeouts and segment limits.
-- GitHub Actions type checks, tests, build and a downloadable web build artifact.
+## Deploy
 
-## Not included yet
-
-Server routes, private app login, source ingestion, editorial verification, persistent jobs/database, real provider calls, adaptive learning, hosted deployment, PWA/service worker and native Android playback. Reloading loses the audio queue and playback position; local files must be selected again. Local blob audio does not test streaming/network resilience.
-
-## Next decisions
-
-1. Run the Android test in [docs/android-test.md](docs/android-test.md).
-2. Confirm an authorized, HTTPS-accessible ASK endpoint, model and API contract from the intended backend host. Keys belong in server secrets, never browser/VITE variables.
-3. Choose a Mistral voice and run a short paid, explicitly enabled contract/quality check.
-4. Choose private hosting/access control before deployment. Public source code does not imply a public application.
-5. Resolve Spotify terms before building integrated music/moderation playback. Use suitable licensed/self-owned audio for the feasibility test.
-
-See [architecture and roadmap](docs/architecture.md) and [deployment](docs/deployment.md).
+Merges into `feat/ai-segment-pipeline` deploy the Worker (migrations included) through GitHub Actions. Account setup, Access, secrets and variables: [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md). CI details: [docs/deployment.md](docs/deployment.md). Architecture and roadmap: [docs/architecture.md](docs/architecture.md).
 
 ## Privacy
 
-Do not commit keys, private profiles, exports or generated personal audio. `.env.example` contains placeholders only. A voice supplied to Mistral must be authorized for that use. The prototype has no telemetry and no backend. Reset device preferences in “Mein Programm”. Close the tab to release selected audio; delete downloaded logs manually.
+Keys live only in Worker secrets and GitHub Actions secrets. Do not commit keys, the signing keystore, exports or generated personal audio. Spotify audio and playback data never reach an AI provider; only the owner's top artists do, and only if the owner connects the listening profile. A voice supplied to Mistral must be authorized for that use.
 
 No project license has been selected yet; public visibility alone does not grant an open-source license.

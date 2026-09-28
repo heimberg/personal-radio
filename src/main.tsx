@@ -1,73 +1,147 @@
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RadioPlayer } from './audio/player.ts';
-import type { Track } from './audio/player.ts';
-import { demoTracks } from './audio/demo.ts';
 import { connectMediaSession } from './audio/media-session.ts';
-import { defaultProfile, parseProfile } from './domain/program.ts';
-import type { Profile, Topic } from './domain/program.ts';
+import { NowPlaying } from './components/NowPlaying.tsx';
+import { StationEditor } from './components/StationEditor.tsx';
+import { Timeline } from './components/Timeline.tsx';
+import { YamlEditor } from './components/YamlEditor.tsx';
+import { defaultStationConfig } from './domain/station.ts';
+import type { FailureSummary, StationConfig, TimelineItemView } from './domain/station.ts';
+import type { FeedbackAction } from './domain/recommendation.ts';
+import { api, playableInBrowser, post, readJson, trackFor } from './station-client.ts';
 import './style.css';
+
+// Inside the Android app the page is only the settings cockpit; the app itself plays the program.
+const embeddedInApp = navigator.userAgent.includes('PersonalRadioAndroid');
+
+// Cache only the static app shell; API calls and generated audio stay online-only.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { type: 'module' })
+      .catch(error => console.warn('PWA offline shell registration failed', error));
+  }, { once: true });
+}
 
 const audio = new Audio(); audio.preload = 'auto';
 const player = new RadioPlayer(audio);
-player.setTracks(demoTracks());
+player.repeat(false);
 connectMediaSession(player);
-document.addEventListener('visibilitychange', () => player.log('visibility', document.visibilityState));
-window.addEventListener('online', () => player.log('network', 'online'));
-window.addEventListener('offline', () => player.log('network', 'offline'));
-const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-const statuses = { idle: 'Bereit zum Testen', loading: 'Wird gestartet', playing: 'Wiedergabe läuft', paused: 'Pausiert', buffering: 'Audio wird gepuffert', ended: 'Test beendet', error: 'Wiedergabe unterbrochen' };
 
-function loadProfile(): Profile {
-  try { return parseProfile(JSON.parse(localStorage.getItem('radio.profile.v1') ?? 'null')); }
-  catch { return { ...defaultProfile, topics: [...defaultProfile.topics] }; }
+type View = 'program' | 'settings' | 'yaml';
+
+// Back from connecting the Spotify listening profile: show the result once and clean the address.
+const spotifyReturn = new URLSearchParams(window.location.search).get('spotify');
+if (spotifyReturn) window.history.replaceState(null, '', window.location.pathname);
+
+function sendFeedback(timelineId: string, action: FeedbackAction, listenedRatio: number) {
+  // The server marks the item played and learns from the signal; playback never waits for it.
+  void fetch(api(`api/timeline/${timelineId}/feedback`), {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, listenedRatio: Math.max(0, Math.min(1, listenedRatio)) }),
+  }).catch(() => { /* The item stays open on the server. */ });
 }
+
 function App() {
-  const state = useSyncExternalStore(player.subscribe, player.snapshot);
-  const [tab, setTab] = useState<'radio' | 'profile' | 'test'>('radio');
-  const [profile, setProfile] = useState(loadProfile);
-  const [notice, setNotice] = useState('');
-  const [queueVersion, setQueueVersion] = useState(0);
-  const track = player.tracks[state.index];
-  const active = ['playing', 'loading', 'buffering'].includes(state.status);
-  function save(next: Profile) {
-    setProfile(next);
-    try { localStorage.setItem('radio.profile.v1', JSON.stringify(next)); setNotice('Auf diesem Gerät gespeichert.'); }
-    catch { setNotice('Speicherung blockiert. Einstellungen gelten für diese Sitzung.'); }
+  const [view, setView] = useState<View>(spotifyReturn ? 'settings' : 'program');
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [config, setConfig] = useState<StationConfig | null>(null);
+  const [items, setItems] = useState<TimelineItemView[]>([]);
+  const [failures, setFailures] = useState<FailureSummary>({ count: 0 });
+  const [notice, setNotice] = useState(() => {
+    const result = spotifyReturn;
+    return result === 'verbunden' ? 'Spotify-Hörprofil verbunden. Die Songauswahl kennt jetzt deine Top-Künstler.'
+      : result ? 'Spotify-Hörprofil konnte nicht verbunden werden. Prüfe die Redirect-URI im Spotify-Dashboard und versuche es erneut.' : '';
+  });
+  const [ratings, setRatings] = useState<Record<string, FeedbackAction>>({});
+  const listening = useRef(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [station, timeline] = await Promise.all([
+        fetch(api('api/station'), { credentials: 'same-origin' }).then(readJson<{ config: StationConfig | null }>),
+        fetch(api('api/timeline'), { credentials: 'same-origin' }).then(readJson<{ items: TimelineItemView[]; failures?: FailureSummary }>),
+      ]);
+      setAvailable(true); setConfig(station.config); setItems(timeline.items); setFailures(timeline.failures ?? { count: 0 });
+      // While listening, newly produced segments are appended to the running program.
+      if (listening.current) player.appendTracks(timeline.items.filter(playableInBrowser).map(trackFor));
+    } catch { setAvailable(false); }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  useEffect(() => player.subscribeSignals(signal => { if (signal.track.timelineId) sendFeedback(signal.track.timelineId, signal.action, signal.listenedRatio); }), []);
+
+  async function save(next: unknown): Promise<boolean> {
+    try {
+      const response = await fetch(api('api/station'), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
+      const result = await response.json().catch(() => ({})) as { config?: StationConfig; detail?: string };
+      if (!response.ok || !result.config) throw new Error(result.detail ? `Konfiguration ungültig – ${result.detail}` : 'Konfiguration konnte nicht gespeichert werden.');
+      setConfig(result.config); setNotice('Gespeichert. Neue Einstellungen gelten ab dem nächsten geplanten Beitrag.');
+      await refresh();
+      return true;
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Speichern fehlgeschlagen.'); return false; }
   }
-  function replace(tracks: Track[]) {
-    const old = player.tracks; player.setTracks(tracks);
-    old.forEach(t => URL.revokeObjectURL(t.url)); setQueueVersion(v => v + 1);
+
+  async function setUp() {
+    const initial = defaultStationConfig({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+    // The first program is planned right away instead of waiting for the next cron tick.
+    if (await save(initial)) {
+      try { await post('api/timeline/plan'); await refresh(); } catch { /* The cron plans it shortly. */ }
+    }
   }
-  function exportLog() {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({
-      version: 1, exportedAt: new Date().toISOString(), userAgent: navigator.userAgent,
-      mediaSession: 'mediaSession' in navigator, state: player.state, events: player.logs,
-    }, null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'radio-audiotest.json'; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  function listen() {
+    const ready = items.filter(playableInBrowser);
+    if (!ready.length) { setNotice('Noch nichts bereit. Das Programm wird produziert – «Jetzt planen» startet es sofort.'); return; }
+    listening.current = true;
+    player.setTracks(ready.map(trackFor));
+    void player.start(0);
   }
-  return <div className="shell">
-    <header><a className="brand" href="#" aria-label="Personal Radio Start" onClick={() => setTab('radio')}><span className="brand-icon">◒</span> personal radio<span className="dot">.</span></a><span className="badge">Audiolabor 0.1</span></header>
+
+  function rate(action: FeedbackAction) {
+    const track = player.tracks[player.state.index];
+    if (!track?.timelineId) return;
+    sendFeedback(track.timelineId, action, 1);
+    setRatings(current => ({ ...current, [track.timelineId!]: action }));
+  }
+
+  const ready = items.filter(playableInBrowser).length;
+  const currentId = player.tracks[player.state.index]?.timelineId;
+  const views: Array<[View, string]> = [['program', 'Programm'], ['settings', 'Einstellungen'], ['yaml', 'YAML']];
+
+  let content: React.ReactNode;
+  if (available === null) content = <p className="empty">Programm wird geladen …</p>;
+  else if (!available) content = <section className="card"><h2>Nicht verbunden</h2>
+    <p className="muted">Das Programm läuft auf deinem privaten Cloudflare-Worker. Melde dich dort an, dann erscheint es hier.</p></section>;
+  else if (!config) content = <section className="card setup"><h2>Dein Radio einrichten</h2>
+    <p className="muted">Der Server plant und produziert dein Programm im Voraus – mit Moderation, Recherche und Musikstunden. Danach passt du alles unter «Einstellungen» an.</p>
+    <button className="button primary" onClick={() => void setUp()}>Programm einrichten</button></section>;
+  else content = <>
+    {view === 'program' && <>
+      {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} />}
+      <Timeline config={config} items={items} failures={failures} refresh={refresh} />
+    </>}
+    {view === 'settings' && <StationEditor config={config} onSave={save} />}
+    {view === 'yaml' && <YamlEditor config={config} onSave={save} />}
+  </>;
+
+  return <div className={`shell ${embeddedInApp ? 'embedded' : ''}`}>
+    <header className="top">
+      <span className="brand"><span className="brand-mark" aria-hidden="true">◒</span>{config?.name ?? 'personal radio'}<span className="dot">.</span></span>
+      {config && <span className="host">mit {config.host.name}</span>}
+    </header>
+    {config && <nav className="tabs" aria-label="Bereiche">{views.map(([id, label]) =>
+      <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)}>{label}</button>)}</nav>}
     <main>
-      <div className="intro"><p className="eyebrow">DEIN PROGRAMM. DEIN RHYTHMUS.</p><h1>{tab === 'radio' ? 'Platz für gute Gedanken.' : tab === 'profile' ? 'So klingt dein Tag.' : 'Hören. Sperren. Testen.'}</h1><p>{tab === 'radio' ? 'Der Anfang deines persönlichen Radios. Heute testen wir die Wiedergabe – die KI-Redaktion folgt.' : tab === 'profile' ? 'Deine Vorlieben bleiben auf diesem Gerät. Sie werden erst mit der kommenden Redaktion wirksam.' : 'Finde heraus, wie zuverlässig dein Android-Gerät im Hintergrund weiterspielt.'}</p></div>
-      {tab === 'radio' && <>
-        <section className="player-card" aria-label="Audioplayer"><div className="card-top"><span className="live-dot" /> <span>{statuses[state.status]}</span><span className="card-number">{state.index + 1} / {player.tracks.length}</span></div>
-          <div className={`record ${active ? 'record-active' : ''}`} aria-hidden="true"><div className="record-inner"><span>PR</span><small>LISTEN / EXPLORE</small></div></div>
-          <p className="eyebrow">{track?.kind}</p><h2>{track?.title ?? 'Keine Audiodateien'}</h2>
-          <label className="sr-only" htmlFor="seek">Wiedergabeposition</label><input id="seek" type="range" min="0" max={state.duration || 1} step="0.1" value={Math.min(state.position, state.duration || 1)} disabled={!state.duration} onChange={e => player.seek(Number(e.target.value))} />
-          <div className="time"><span>{clock(state.position)}</span><span>{clock(state.duration)}</span></div>
-          <div className="controls"><button aria-label="Vorheriger Titel" onClick={() => void player.previous()}>↤</button><button className="play" onClick={() => active ? player.pause() : void player.start()}>{active ? 'Ⅱ Pause' : '▶ Start'}</button><button aria-label="Nächster Titel" onClick={() => void player.next()}>↦</button></div>
-          {state.error && <p role="alert" className="error">{state.error}</p>}
-        </section>
-        <section className="panel"><div className="section-heading"><h2>Als Nächstes</h2><span>Lokaler Audiotest</span></div><ol className="queue" key={queueVersion}>{player.tracks.map((t, i) => <li key={t.id}><button onClick={() => void player.start(i)} aria-current={state.index === i ? 'true' : undefined}><span className="queue-num">{String(i + 1).padStart(2, '0')}</span><span><strong>{t.title}</strong><small>{t.kind}</small></span><span aria-hidden="true">{state.index === i ? '●' : '↗'}</span></button></li>)}</ol></section>
-        <section className="note"><strong>Ein erster Funktionstest</strong><p>Du hörst leise Testtöne, keine KI-Nachrichten. ASK, Mistral und Spotify sind noch nicht verbunden. Du kannst stattdessen eigene Audiodateien auswählen.</p></section>
-      </>}
-      {tab === 'profile' && <section className="panel settings"><h2>Was interessiert dich?</h2><p>Wähle deine Themen. Alles lässt sich später ändern.</p><div className="chips">{(['Technologie', 'Wissenschaft', 'Kultur'] as Topic[]).map(topic => <button key={topic} aria-pressed={profile.topics.includes(topic)} onClick={() => save({ ...profile, topics: profile.topics.includes(topic) ? profile.topics.filter(t => t !== topic) : [...profile.topics, topic] })}>{topic}</button>)}</div><label htmlFor="minutes">Beitragslänge <strong>{profile.speechMinutes} Min.</strong></label><input id="minutes" type="range" min="1" max="10" value={profile.speechMinutes} onChange={e => save({ ...profile, speechMinutes: Number(e.target.value) })} /><label htmlFor="explore">Neues entdecken <strong>{profile.exploration} %</strong></label><input id="explore" type="range" min="0" max="50" step="5" value={profile.exploration} onChange={e => save({ ...profile, exploration: Number(e.target.value) })} /><p>Später bewertet die Redaktion Themen nach deinen Vorgaben. Automatisches Lernen ist in diesem Test noch nicht aktiv.</p><button className="secondary" onClick={() => save({ ...defaultProfile, topics: [...defaultProfile.topics] })}>Vorlieben zurücksetzen</button><p role="status">{notice}</p></section>}
-      {tab === 'test' && <section className="panel settings"><span className="badge light">ANDROID · MACHBARKEIT</span><h2>Bildschirm aus. Radio an?</h2><ol className="instructions"><li>Testsequenz oder eigene Dateien laden. Lautstärke zunächst niedrig einstellen.</li><li>Start drücken und den Bildschirm für mindestens 10 Minuten sperren.</li><li>Auf Titelwechsel achten. Pause und Fortsetzen über Sperrbildschirm oder Kopfhörer testen.</li><li>Für den vollständigen Test 60 Minuten hören, inklusive Anruf und Netzwechsel.</li><li>Protokoll exportieren und notieren, wann etwas abgebrochen ist.</li></ol><label className="toggle"><input type="checkbox" checked={state.repeat} onChange={e => player.repeat(e.target.checked)} /> Warteschlange wiederholen</label><div className="stats"><div><strong>{state.completed}</strong><span>Beendete Segmente</span></div><div><strong>{'mediaSession' in navigator ? 'Ja' : 'Nein'}</strong><span>Media Session verfügbar</span></div></div><label className="file-label">Eigene Audiodateien auswählen<input type="file" accept="audio/*" multiple onChange={e => { const files = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('audio/')); if (files.length) replace(files.map((f, i) => ({ id: `local-${i}`, title: f.name, kind: 'Lokale Datei · kein Upload', url: URL.createObjectURL(f) }))); e.target.value = ''; }} /></label><p>Dateien bleiben im Browser. Lokale Dateien testen keinen Streaming-Netzausfall. Das Protokoll enthält Zeitpunkte und Browserangaben, keine Dateinamen oder Profile.</p><button className="secondary" onClick={() => replace(demoTracks())}>Testsequenz laden</button><button className="primary" onClick={exportLog}>Testprotokoll herunterladen</button><p className="warning">Hintergrundwiedergabe ist noch nicht bestätigt. Dieser Test verwendet lokale Audioquellen; Spotify-Wechsel und Serverstreaming sind damit nicht geprüft.</p></section>}
+      {notice && <p className="notice" role="status" onClick={() => setNotice('')}>{notice}</p>}
+      {content}
     </main>
-    {tab !== 'radio' && <div className="mini"><span><strong>{track?.title}</strong><small>{statuses[state.status]}</small></span><button onClick={() => active ? player.pause() : void player.start()}>{active ? 'Pause' : 'Start'}</button></div>}
-    <nav aria-label="Hauptnavigation">{([['radio', '◉', 'Radio'], ['profile', '☷', 'Mein Programm'], ['test', '⌁', 'Audiotest']] as const).map(([id, icon, label]) => <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}><span aria-hidden="true">{icon}</span>{label}</button>)}</nav>
   </div>;
 }
+
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

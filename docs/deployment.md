@@ -1,22 +1,11 @@
-# CI and private deployment
+# CI and deployment
 
-CI runs on pull requests and main pushes. It installs the lockfile, checks TypeScript, runs offline unit/provider tests and builds `dist/`. The seven-day `personal-radio-web` artifact contains only the frontend. No real provider calls or secrets are needed. Actions are pinned to commit SHAs, workflow permissions are read-only, and Dependabot proposes updates.
+**CI** (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main` and `feat/ai-segment-pipeline`: lockfile install, TypeScript check, unit and Worker tests, Playwright tests for the frontend/API, build, and `wrangler deploy --dry-run`. The seven-day `personal-radio-web` artifact contains the built frontend assets. They are the web cockpit, which the Worker serves and the Android app embeds. No provider calls or secrets are needed. Actions are pinned to commit SHAs and workflow permissions are read-only.
 
-The user authorized public GitHub Pages hosting for the audio-only prototype. After successful tests and build on main, CI packages the same dist/ directory and deploys it to Pages. Pull requests never deploy. Deployment has job-scoped pages/id-token permissions and uses the github-pages environment; no personal token is required. No Azure resources, billing, provider endpoints or credentials are exposed.
+**Worker deploy** (`.github/workflows/deploy-worker.yml`) runs after a green CI on pushes to `feat/ai-segment-pipeline`: build, D1 migrations, `wrangler deploy`. It needs the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Worker variables and secrets are kept in the Cloudflare dashboard (`keep_vars = true`); see [cloudflare-deployment.md](cloudflare-deployment.md).
 
-One-time repository setting: Settings → Pages → Build and deployment → Source: GitHub Actions. If not enabled, the deployment job will fail; enable this setting, then rerun the failed job. Expected address: https://heimberg.github.io/personal-radio/ (only live after successful deployment).
+**Android** (`.github/workflows/android.yml`) runs on changes under `android/`: Kotlin core tests, then a signed release APK as the artifact `personal-radio-android` (30 days); see [android.md](android.md).
 
-This authorization covers the local audio demo only. The later personalized application and paid backend still require private access control. The demo stores preferences on the visitor's device and does not upload local audio files.
+The former public GitHub Pages demo (test tones and a local learning simulation) has been removed. If it was enabled, turn off Settings → Pages in the repository.
 
-## Target once hosting is selected
-
-1. Private/authenticated preview environment with HTTPS.
-2. Deploy exactly the tested build artifact to staging, run HTTP and mobile smoke tests.
-3. Promote the same version to production through a protected GitHub Environment.
-4. Use short-lived workload identity where supported; otherwise restrict deployment credentials to their environment.
-5. Run the editorial API/worker separately from the static frontend. Set ASK and Mistral credentials in server secrets; no VITE_ secrets.
-6. Apply API authentication, rate limits and actual generation budget enforcement before enabling paid operations.
-
-Azure Static Web Apps is an option, not yet a provisioned dependency. Choose its authentication/access-control plan and worker hosting after checking ASK reachability. If public hosting is chosen for this audio-only demo, explicitly agree that separately from private production. PWA installability, caching and update behavior come later.
-
-Before merging, inspect CI. GitHub may require a repository owner's approval or workflow permission changes for initial runs. Branch protection is not set by this commit; configure required CI checks and review once the workflow exists. Never bypass failed checks to deploy.
+Never bypass failed checks to deploy.

@@ -1,8 +1,10 @@
 # Android playback acceptance test
 
-Status: NOT RUN on a physical Android device. Desktop automation cannot pass this gate.
+Applies to the [Android app](android.md), the listening product. The web cockpit's browser player is a check tool, not part of these acceptance criteria.
 
-Record device, Android/browser versions, installed/browser mode, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
+Status: User confirmed on 2026-09-28 that the Android playback test completed successfully. Device/build details and individual observations were not recorded here. Desktop automation cannot pass this gate.
+
+Record device, Android version, app build, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
 
 | Test | Expected | Actual |
 | --- | --- | --- |
@@ -13,12 +15,10 @@ Record device, Android/browser versions, installed/browser mode, battery saver s
 | Bluetooth play/pause and headset disconnect | Controls work; disconnect does not unexpectedly play on speaker | Pending |
 | Incoming call then return | Respects interruption, no unexpected overlapping audio | Pending |
 | Battery saver | Record continuity and any restrictions | Pending |
-| Browser backgrounded | Same queue continues | Pending |
-| Local-file reload | Files must be selected again; no false resume claim | Pending |
+| App backgrounded and screen off | Same queue continues | Pending |
 | Wi-Fi/mobile/network interruption | NOT covered by local blobs; repeat with real HTTPS audio in next phase | Pending |
-| Installed PWA | NOT covered until PWA milestone | Pending |
 | Spotify/moderation transition | NOT implemented or authorized by this test | Pending |
 
-Export the JSON log from Audiotest after each run. Events include wall-clock timestamps, segment numbers, play/pause/error/ended, visibility and online/offline changes. An “ended” event counts a completed segment; manually skipped tracks do not. Browser events can be delayed during suspension, and success in the log does not prove audible output: record your listening observations too. Profiles/file names are not included; logs still contain browser details and timestamps, so review before sharing publicly.
+Note the time of every interruption, skipped handoff or unexpected pause, and what you were doing (screen off, call, network change, Bluetooth). Record your listening observations: a clean log does not prove audible output.
 
-If the required background test fails, do not declare PWA a fix. Diagnose from the log, reproduce and decide on native media-service playback.
+If background playback fails, diagnose from the log and reproduce it in the Android app's Media3 service. Browser/PWA behavior is outside this acceptance test.

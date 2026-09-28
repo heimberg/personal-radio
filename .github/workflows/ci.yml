@@ -1,7 +1,7 @@
-name: CI and Pages
+name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, feat/ai-segment-pipeline]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -25,31 +25,14 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - run: npm run build
+      - run: npx wrangler deploy --dry-run
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: personal-radio-web
           path: dist/
           retention-days: 7
-      - name: Package public audio demo
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
-        with:
-          path: dist/
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+  deploy-private-worker:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/ai-segment-pipeline'
     needs: check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-    steps:
-      - name: Deploy tested audio demo
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+    uses: ./.github/workflows/deploy-worker.yml
+    secrets: inherit

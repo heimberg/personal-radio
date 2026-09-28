@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A row's bottom rule that fades out over 48dp at each end instead of stopping cleanly. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="bottom|start" android:width="@dimen/rule_fade" android:height="1dp">
+        <shape android:shape="rectangle">
+            <gradient android:angle="0" android:endColor="@color/divider" android:startColor="@android:color/transparent" />
+        </shape>
+    </item>
+    <item android:gravity="bottom|fill_horizontal" android:height="1dp" android:start="@dimen/rule_fade" android:end="@dimen/rule_fade">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/divider" />
+        </shape>
+    </item>
+    <item android:gravity="bottom|end" android:width="@dimen/rule_fade" android:height="1dp">
+        <shape android:shape="rectangle">
+            <gradient android:angle="0" android:endColor="@android:color/transparent" android:startColor="@color/divider" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,67 @@
+name: Android app
+
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Use the preinstalled Java 17
+        run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+      - name: Test program logic
+        run: ./gradlew -p core test --no-daemon
+      - name: Prepare signing key
+        # Optional: a fixed key lets every new build update the installed app and is what Spotify recognises.
+        env:
+          KEYSTORE_B64: ${{ secrets.RADIO_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.RADIO_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RADIO_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "No RADIO_KEYSTORE_B64 secret: building with a temporary debug key."
+            exit 0
+          fi
+          # Copying often adds line breaks, spaces or the '%' zsh prints after output without a newline.
+          # Keep only base64 characters and report what was dropped (never the value itself).
+          cleaned=$(printf '%s' "$KEYSTORE_B64" | sed '/^-----/d' | tr -cd 'A-Za-z0-9+/=')
+          dropped=$(printf '%s' "$KEYSTORE_B64" | tr -d 'A-Za-z0-9+/=' | tr -d ' \r\n\t' | fold -w1 | sort -u | tr -d '\n')
+          if [ -n "$dropped" ]; then echo "::warning::Ignored characters that are not base64 in RADIO_KEYSTORE_B64: $dropped"; fi
+          if ! printf '%s' "$cleaned" | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
+            echo "::error::RADIO_KEYSTORE_B64 is not valid base64 (${#cleaned} base64 characters; a valid value has a multiple of 4). Store the output of 'base64 -w0 radio.jks' (Linux) or 'base64 -i radio.jks' (macOS) without anything after it."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::The keystore decoded, but RADIO_KEYSTORE_PASSWORD or RADIO_KEY_ALIAS does not match it."
+            exit 1
+          fi
+          # Public fingerprint for the Spotify developer app (Android packages).
+          keytool -list -v -keystore "$RUNNER_TEMP/release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | grep -E '^\s*SHA1:' | sed 's/^ */Signing key /'
+          echo "RADIO_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Build APK
+        env:
+          RADIO_KEYSTORE_PASSWORD: ${{ secrets.RADIO_KEYSTORE_PASSWORD }}
+          RADIO_KEY_ALIAS: ${{ secrets.RADIO_KEY_ALIAS }}
+          RADIO_KEY_PASSWORD: ${{ secrets.RADIO_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: personal-radio-android
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
