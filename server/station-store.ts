@@ -194,6 +194,13 @@ export class StationStore {
       AND state IN ('played', 'skipped', 'archived', 'expired', 'failed') AND updated_at < ?`).bind(owner, updatedBefore.toISOString()).all<TimelineRow>()).results;
   }
 
+  /** Deletes a production that already left the program (heard, skipped or archived) and returns its audio keys. */
+  async deleteHeard(owner: string, id: string): Promise<string[] | null> {
+    const row = await this.db.prepare(`DELETE FROM timeline_items WHERE owner_id = ? AND id = ? AND state IN ('played', 'skipped', 'archived')
+      RETURNING audio_key, script_json`).bind(owner, id).first<{ audio_key: string | null; script_json: string | null }>();
+    return row ? audioKeysOf(row) : null;
+  }
+
   /** Everything that can still be heard, newest first: ready, heard and archived productions with audio. Single songs are left out. */
   async library(owner: string, limit = 60): Promise<TimelineRow[]> {
     return (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND audio_key IS NOT NULL AND show_id != ?

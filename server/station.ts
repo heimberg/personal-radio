@@ -684,6 +684,15 @@ export async function removeItem(deps: StationDeps, owner: string, id: string): 
   return true;
 }
 
+/** Deletes a production from the archive; one still in the program leaves it instead. */
+export async function deleteItem(deps: StationDeps, owner: string, id: string): Promise<boolean> {
+  if (await removeItem(deps, owner, id)) return true;
+  const keys = await deps.store.deleteHeard(owner, id);
+  if (!keys) return false;
+  for (const key of keys) await deps.audio.delete(key);
+  return true;
+}
+
 /**
  * Shuffles the open items and spreads the songs so that at least `max(1, music.between)` songs sit
  * between two spoken items; missing songs are added. Returns the IDs of new items to produce.

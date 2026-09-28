@@ -55,4 +55,16 @@
         android:layout_height="16dp"
         android:importantForAccessibility="no"
         app:tint="@color/neutral_500" />
+
+    <!-- Program list only: touch and drag to move the item. -->
+    <ImageView
+        android:id="@+id/handle"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="@dimen/space_2"
+        android:contentDescription="@string/move"
+        android:padding="10dp"
+        android:src="@drawable/ic_dots_six"
+        android:visibility="gone"
+        app:tint="@color/neutral_500" />
 </LinearLayout>

@@ -197,7 +197,7 @@ class PlaybackService : MediaSessionService() {
 
     private val sessionCallback = object : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(PLAY_ITEM).build()
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(PLAY_ITEM).add(SYNC).build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
         }
 
@@ -207,6 +207,10 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == SYNC.customAction) {
+                scope.launch { sync() }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction != PLAY_ITEM.customAction) return super.onCustomCommand(session, controller, customCommand, args)
             val item = args.getString(EXTRA_ITEM)?.let { runCatching { TimelineJson.parseItem(it) }.getOrNull() }
                 ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
@@ -388,6 +392,8 @@ class PlaybackService : MediaSessionService() {
         /** Custom session command: play the production in [EXTRA_ITEM] (a timeline item as JSON) now. */
         val PLAY_ITEM = SessionCommand("ch.heimberg.radio.PLAY_ITEM", Bundle.EMPTY)
         const val EXTRA_ITEM = "item"
+        /** Custom session command: fetch the program now (after the owner changed its order). */
+        val SYNC = SessionCommand("ch.heimberg.radio.SYNC", Bundle.EMPTY)
 
         private val AUDIO = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
 

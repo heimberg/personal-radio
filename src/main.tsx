@@ -112,7 +112,8 @@ function App() {
 
   const ready = items.filter(playableInBrowser).length;
   const currentId = player.tracks[player.state.index]?.timelineId;
-  const views: Array<[View, string]> = [['program', 'Programm'], ['settings', 'Einstellungen'], ['yaml', 'YAML']];
+  // YAML is for bulk edits; it opens from the settings instead of taking a place in the navigation.
+  const views: Array<[View, string]> = [['program', 'Programm'], ['settings', 'Einstellungen']];
 
   let content: React.ReactNode;
   if (available === null) content = <p className="empty">Programm wird geladen …</p>;
@@ -126,8 +127,14 @@ function App() {
       {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} />}
       <Timeline config={config} items={items} failures={failures} refresh={refresh} />
     </>}
-    {view === 'settings' && <StationEditor config={config} onSave={save} />}
-    {view === 'yaml' && <YamlEditor config={config} onSave={save} />}
+    {view === 'settings' && <>
+      <StationEditor config={config} onSave={save} />
+      <p className="advanced-link"><button className="button ghost small" onClick={() => setView('yaml')}>Als Text (YAML) bearbeiten – für Fortgeschrittene</button></p>
+    </>}
+    {view === 'yaml' && <>
+      <p className="advanced-link"><button className="button ghost small" onClick={() => setView('settings')}>← Zurück zu den Einstellungen</button></p>
+      <YamlEditor config={config} onSave={save} />
+    </>}
   </>;
 
   return <div className={`shell ${embeddedInApp ? 'embedded' : ''}`}>
@@ -136,7 +143,7 @@ function App() {
       {config && <span className="host">mit {config.host.name}</span>}
     </header>
     {config && <nav className="tabs" aria-label="Bereiche">{views.map(([id, label]) =>
-      <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)}>{label}</button>)}</nav>}
+      <button key={id} aria-current={view === id || (id === 'settings' && view === 'yaml') ? 'page' : undefined} onClick={() => setView(id)}>{label}</button>)}</nav>}
     <main>
       {notice && <p className="notice" role="status" onClick={() => setNotice('')}>{notice}</p>}
       {content}
