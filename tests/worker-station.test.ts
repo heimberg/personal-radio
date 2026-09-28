@@ -219,6 +219,8 @@ test('artist hour through the Worker: produce now, queue, parts in the timeline 
     .setIssuer(`https://${team}`).setAudience(aud).setExpirationTime('2m').sign(privateKey);
   const originalFetch = globalThis.fetch;
   const spotifySeen: string[] = [];
+  let researchCalls = 0;
+  let moderationPrompt = '';
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
@@ -226,10 +228,10 @@ test('artist hour through the Worker: produce now, queue, parts in the timeline 
     if (url.includes('generativelanguage.googleapis.com')) {
       const body = JSON.parse(String(init?.body));
       const system = body.systemInstruction.parts[0].text as string;
-      if (body.tools) return reply('Dummy erschien 1994.', { webSearchQueries: ['portishead'], groundingChunks: [{ web: { uri: 'https://example.org/p', title: 'example.org' } }],
-        groundingSupports: [{ segment: { text: 'Dummy erschien 1994.' }, groundingChunkIndices: [0] }] });
-      if (system.includes('Moderationen')) return reply({ title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
-        tracks: [0, 1, 2].map(index => ({ index, text: `Song ${index}.`, sourceIds: ['w1'] })), outro: { text: 'Danke.', sourceIds: [] } });
+      if (body.tools) { researchCalls++; return reply('Dummy erschien 1994.', { webSearchQueries: ['portishead'], groundingChunks: [{ web: { uri: 'https://example.org/p', title: 'example.org' } }],
+        groundingSupports: [{ segment: { text: 'Dummy erschien 1994.' }, groundingChunkIndices: [0] }] }); }
+      if (system.includes('Regisseur dieser deutschsprachigen Musikstunde')) { moderationPrompt = system; return reply({ title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
+        tracks: [0, 1, 2].map(index => ({ index, text: `Song ${index}.`, sourceIds: ['w1'] })), outro: { text: 'Danke.', sourceIds: [] } }); }
       if (system.startsWith('Du stellst die Songliste')) return reply({ tracks: ['Glory Box', 'Roads', 'Sour Times'].map(title => ({ title, artist: 'Portishead', reason: 'r' })) });
       throw new Error(`Unexpected Gemini call: ${system.slice(0, 40)}`);
     }
@@ -251,16 +253,19 @@ test('artist hour through the Worker: produce now, queue, parts in the timeline 
   }), env as never);
   try {
     const station = defaultStationConfig({ voiceId: 'voice-test' });
-    station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, artist: 'Portishead', tracks: 3 } : show);
+    station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, artist: 'Bristol Trip-Hop', tracks: 3 } : show);
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
     assert.equal((await call('/api/shows/gibt-es-nicht/produce', { method: 'POST' })).status, 404);
-    const { itemId } = await (await call('/api/shows/kuenstler/produce', { method: 'POST' })).json() as { itemId: string };
+    assert.equal((await call('/api/shows/kuenstler/produce', { method: 'POST', body: JSON.stringify({ subject: 'x'.repeat(201) }) })).status, 400);
+    const { itemId } = await (await call('/api/shows/kuenstler/produce', { method: 'POST', body: JSON.stringify({ subject: 'Portishead' }) })).json() as { itemId: string };
     assert.deepEqual(sent.map(message => message.itemId), [itemId]);
     await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
     const { items, spotify } = await (await call('/api/timeline')).json() as { spotify?: { clientId: string }; items: Array<{ id: string; state: string; artist?: string; parts?: Array<{ kind: string; audioUrl?: string; spotifyUri?: string }> }> };
     assert.deepEqual(spotify, { clientId: 'id' });
     const hour = items.find(item => item.id === itemId)!;
     assert.equal(hour.state, 'ready', JSON.stringify(hour)); assert.equal(hour.artist, 'Portishead');
+    assert.equal(researchCalls, 2, 'first the broad dossier, then research of confirmed individual tracks');
+    assert.match(moderationPrompt, /genau einen eigenen Moderationsbeitrag/);
     assert.equal(spotifySeen.length, 3);
     assert.deepEqual(hour.parts!.map(part => part.kind), ['speech', 'speech', 'track', 'speech', 'track', 'speech', 'track', 'speech']);
     assert.equal(hour.parts![2].spotifyUri, 'spotify:track:GloryBox');

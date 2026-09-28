@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MUSIC_SHOW_ID } from '../domain/station.ts';
+import { HOUR_FOCUS, MUSIC_SHOW_ID } from '../domain/station.ts';
 import type { FailureSummary, StationConfig, TimelineItemView } from '../domain/station.ts';
 import { FORMAT_LABELS, STATE_LABELS, VERIFICATION_LABELS, api, clockTime, errorLabel, post } from '../station-client.ts';
 
@@ -15,6 +15,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [produceShow, setProduceShow] = useState('');
+  const [subject, setSubject] = useState('');
   const [dragged, setDragged] = useState<string | null>(null);
   // Local order while a change is on its way, so the list does not jump back.
   const [pending, setPending] = useState<string[] | null>(null);
@@ -22,6 +23,8 @@ export function Timeline({ config, items, failures, refresh }: Props) {
   const readyCount = open.filter(item => item.state === 'ready').length;
   const hasProblems = failures.count > 0 || items.some(item => item.error && item.state !== 'ready');
   const chosenShow = produceShow || config.shows[0]?.id;
+  const selectedShow = config.shows.find(show => show.id === chosenShow);
+  const hourFocus = selectedShow ? HOUR_FOCUS[selectedShow.format] : undefined;
   const openIds = open.map(item => item.id);
   const order = pending && pending.length === openIds.length && pending.every(id => openIds.includes(id)) ? pending : openIds;
   const shown = [...items.filter(item => !openIds.includes(item.id)), ...order.map(id => open.find(item => item.id === id)!)];
@@ -71,8 +74,9 @@ export function Timeline({ config, items, failures, refresh }: Props) {
   }, 'Planung fehlgeschlagen. Prüfe Anmeldung und Server.');
 
   const produceNow = (showId: string) => run(async () => {
-    await post<{ itemId?: string }>(`api/shows/${encodeURIComponent(showId)}/produce`);
-    return `«${config.shows.find(show => show.id === showId)?.name ?? showId}» wird produziert.`;
+    await post<{ itemId?: string }>(`api/shows/${encodeURIComponent(showId)}/produce`, subject.trim() ? { subject: subject.trim() } : undefined);
+    const title = config.shows.find(show => show.id === showId)?.name ?? showId;
+    return `${subject.trim() ? `«${subject.trim()}» für ` : ''}«${title}» wird produziert.`;
   }, 'Produktion konnte nicht gestartet werden. Prüfe Anmeldung und Server.');
 
   const cleanup = () => run(async () => `${(await post<{ removed?: number }>('api/timeline/cleanup')).removed ?? 0} Einträge entfernt.`,
@@ -103,6 +107,11 @@ export function Timeline({ config, items, failures, refresh }: Props) {
         </select>
         <button className="button" disabled={busy || !chosenShow} onClick={() => void produceNow(chosenShow)}>Jetzt produzieren</button>
       </div>
+      {hourFocus && <label className="field">
+        <span>{hourFocus === 'artist' ? 'Künstler oder Band' : hourFocus === 'genre' ? 'Genre oder Szene' : 'Thema'}</span>
+        <input value={subject} maxLength={200} placeholder={hourFocus === 'artist' ? 'z. B. Portishead' : hourFocus === 'genre' ? 'z. B. Krautrock' : 'z. B. Der Mond'} onChange={event => setSubject(event.target.value)} />
+        <small>Leer lassen: Die KI wählt passend zu deinen Interessen. Die Vorgabe gilt nur für diese Produktion.</small>
+      </label>}
     </div>
 
     {failures.count > 0 && <div className="alert" role="status">

@@ -2,7 +2,7 @@
 
 Applies to the [Android app](android.md) from milestone 2 on; the web prototype results below are kept for comparison.
 
-Status: User confirmed that screen-off playback works on their Android device. Device/browser details and individual test durations were not recorded; remaining rows below are still pending. Desktop automation cannot pass this gate.
+Status: User confirmed on 2026-09-28 that the Android playback test completed successfully. Device/build details and individual observations were not recorded here. Desktop automation cannot pass this gate.
 
 Record device, Android/browser versions, installed/browser mode, battery saver state, start/end time and observations. Set volume low first. Test files remain local and are not uploaded. Test tones change pitch every 30 seconds and repeat by default. Prefer your own speech/music clips for a realistic listening session.
 

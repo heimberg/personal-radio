@@ -238,6 +238,12 @@ interface TrackPart { kind: 'track'; uri: string; title: string; artist: string;
 interface HourPackage { kind: 'music_hour' | 'artist_hour' | 'song'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart> }
 const packageFocus = (pkg: Partial<HourPackage>): HourFocus => pkg.focus ?? 'artist';
 const packageSubject = (pkg: Partial<HourPackage>): string => pkg.subject ?? pkg.artist ?? '';
+function requestedHourSubject(row: TimelineRow): string | undefined {
+  try {
+    const value = (JSON.parse(row.research_json ?? '{}') as { subjectOverride?: unknown }).subjectOverride;
+    return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : undefined;
+  } catch { return undefined; }
+}
 
 /** Mistral speaks at most about 280 words per request; longer moderations become consecutive parts. */
 export function splitSpeech(text: string, maxWords = 250): string[] {
@@ -282,14 +288,13 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     // Artist and genre hours also draw on what the owner listens to; theme hours stay with the interests.
     const listens = focus !== 'theme' && deps.listening ? (await deps.listening.topArtists(owner, now)).slice(0, 15).map(artist => `hört ${artist}`) : [];
     const interests = [...config.profile.topics, ...config.profile.interests, ...listens];
-    const subject = hourSubject(show)
+    const subject = requestedHourSubject(row) ?? hourSubject(show)
       ?? (await deps.musicWriter.pickSubject({ focus, interests, avoid: await recentSubjects(deps, owner, focus), instructions: show.instructions })).subject;
     // Search grounding does not trigger every time: one more, more explicit attempt. If both stay empty,
     // the hour is written from well-known facts, carefully worded and marked as unverified ("frei").
     const brief = `${HOUR_KINDS[focus].research(subject)} ${show.researchPrompt}`.trim();
     let { sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now });
     if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now }));
-    const verification = sources.length ? show.verification : 'off';
     const picks = await deps.musicWriter.pickTracks({ focus, subject, count: show.tracks ?? 10, sources, instructions: show.instructions });
     const resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }> = [];
     for (const pick of picks) {
@@ -298,6 +303,21 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       if (track && !resolved.some(item => item.uri === track.uri)) resolved.push({ pick, ...track });
     }
     if (resolved.length < 3) return fail(`TOO_FEW_TRACKS: ${resolved.length} von ${picks.length} Songs auf Spotify gefunden`);
+    // A second research pass runs after Spotify has confirmed the exact tracks. This gives the writer
+    // song-specific evidence, rather than asking it to improvise from a broad artist dossier.
+    const songDossier = await deps.researcher.research({
+      brief: `Recherchiere gezielt für jede dieser bestätigten Aufnahmen eine eigene, belegbare Geschichte. Suche konkrete Hintergründe zu Entstehung, Aufnahme, Album, Text oder Motiv, beteiligten Musikerinnen und Musikern und damaligem Kontext. Liefere unterschiedliche Details pro Song; keine allgemeine Künstlerbiografie.\n${resolved.map((item, index) => `${index + 1}. ${item.pick.artist} – ${item.pick.title}${item.pick.album ? `, Album ${item.pick.album}` : ''}${item.pick.year ? ` (${item.pick.year})` : ''}: ${item.pick.reason}`).join('\n')}`,
+      interests: [subject], avoidTopics: [], now,
+    });
+    const knownUrls = new Set(sources.map(source => source.url));
+    const songSources = songDossier.sources.flatMap((source, index) => {
+      if (knownUrls.has(source.url)) return [];
+      knownUrls.add(source.url);
+      return [{ ...source, id: `song-${index + 1}-${source.id}` }];
+    });
+    sources = [...sources, ...songSources];
+    queries = [...new Set([...queries, ...songDossier.queries])];
+    const verification = sources.length ? show.verification : 'off';
     const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner) };
     const hour = await deps.musicWriter.writeHour({ focus, subject, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
@@ -395,15 +415,16 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
 }
 
 /** Plans one item of a show (or a song) right away, outside the program clock ("Jetzt produzieren"). */
-export async function scheduleShowNow(deps: StationDeps, owner: string, showId: string): Promise<string | null> {
+export async function scheduleShowNow(deps: StationDeps, owner: string, showId: string, subjectOverride?: string): Promise<string | null> {
   const config = await deps.store.getConfig(owner);
   const show = showId === MUSIC_SHOW_ID ? { id: MUSIC_SHOW_ID, targetMinutes: SONG_MINUTES } : config?.shows.find(item => item.id === showId);
-  if (!config || !show) return null;
+  if (!config || !show || (subjectOverride && !('format' in show && isMusicHour(show.format)))) return null;
   const now = deps.now();
   const ahead = (await deps.store.openItems(owner)).reduce((sum, item) => sum + item.estimated_minutes, 0);
   const last = await deps.store.lastItem(owner);
   const id = (deps.newId ?? (() => crypto.randomUUID()))();
   await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: show.id, plannedAt: minutes(now, ahead).toISOString(), estimatedMinutes: show.targetMinutes }, now);
+  if (subjectOverride?.trim()) await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: subjectOverride.trim().slice(0, 200) }) }, now);
   return id;
 }
 
