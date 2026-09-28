@@ -1,6 +1,6 @@
 # Private Cloudflare deployment
 
-The hosted app uses a Cloudflare Worker for authenticated API endpoints, D1 for durable configuration and production state, R2 for generated audio, and Cloudflare Access for the login gate. The Android app is the only user-facing interface; the Worker is its backend and does not provide a separate web cockpit.
+The hosted app uses a Cloudflare Worker for authenticated API endpoints, D1 for durable configuration and production state, R2 for generated audio, and Cloudflare Access for the login gate. The Worker also serves the web cockpit for settings and planning, which the Android app embeds; listening happens in the app.
 
 ## Cost and limits
 

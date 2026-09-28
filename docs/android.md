@@ -1,6 +1,6 @@
 # Android app
 
-The only user-facing app: native playback of the server-produced program, lock-screen and Bluetooth controls, feedback, program configuration and immediate production. Source in [`android/`](../android). There is no separate web cockpit or browser-based listening experience.
+The product for listening: native playback of the server-produced program, lock-screen and Bluetooth controls, feedback, the program list and quick actions. Settings and planning come from the web cockpit, embedded in the app (see [Architecture → Division of work](architecture.md#division-of-work-app-and-web-cockpit)). Source in [`android/`](../android).
 
 ## What it does
 
@@ -9,7 +9,7 @@ The only user-facing app: native playback of the server-produced program, lock-s
 - **Offline buffer:** segments are cached on the device (up to 300 MB) and the next four are downloaded ahead, so short network losses do not interrupt listening.
 - **Feedback:** a segment that plays to its end is reported as complete; skipping reports the share heard; 👍/👎 in the app are strong signals. The server learns from them.
 - **Quick production:** from the native app, choose a configured show and start it immediately. For artist, genre and theme hours, optionally enter a one-off subject; leaving it blank lets the AI choose.
-- **Settings and program controls:** configuration, show selection, immediate production, timeline and source details are part of the Android app. The app communicates with the Worker through its authenticated API; it does not open a second web interface.
+- **Settings and planning:** "Programm einstellen" opens the web cockpit inside the app (persona, voices, shows, program clock, music, feeds, arranging the timeline, YAML). Native in the app are the things used while listening: the program list, immediate production and feedback.
 - **Spotify (artist hours):** the app controls the installed Spotify app through the App Remote SDK. An artist hour's tracks sit in the playlist as silent placeholders with the song's title, so the notification, pause and "next" work for music as for speech. When a placeholder starts, Spotify plays that one track and our player gives up audio focus; when Spotify reports the track's end (or moves on), the app pauses Spotify at once and continues with the next spoken part. If Spotify pauses on its own (a call), the app pauses too and resumes with it. Hours wait in the queue until Spotify is connected, so they never play without their music. Nothing Spotify reports leaves the phone.
 
 ### Spotify
