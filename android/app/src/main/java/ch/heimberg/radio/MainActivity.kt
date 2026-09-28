@@ -8,10 +8,16 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.text.InputFilter
+import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -78,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
         spotifyButton.setOnClickListener { connectSpotify() }
         findViewById<Button>(R.id.plan).setOnClickListener { planNow() }
+        findViewById<Button>(R.id.produce_now).setOnClickListener { chooseShowToProduce() }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
         findViewById<Button>(R.id.connection).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
 
@@ -194,6 +201,81 @@ class MainActivity : AppCompatActivity() {
             statusView.text = runCatching { api.plan() }.fold({ getString(R.string.planned) }, { it.message ?: "" })
             refreshTimeline()
         }
+    }
+
+    private fun chooseShowToProduce() {
+        lifecycleScope.launch {
+            val shows = runCatching { api.shows() }.getOrElse {
+                statusView.text = it.message ?: getString(R.string.production_failed)
+                return@launch
+            }
+            if (shows.isEmpty()) {
+                statusView.text = getString(R.string.no_shows)
+                return@launch
+            }
+
+            val labels = shows.map { "${it.name} · ${formatLabel(it.format)}" }
+            val picker = Spinner(this@MainActivity).apply {
+                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, labels)
+            }
+            val subject = EditText(this@MainActivity).apply {
+                maxLines = 1
+                filters = arrayOf(InputFilter.LengthFilter(200))
+                hint = getString(R.string.production_subject_hint)
+            }
+            val explanation = TextView(this@MainActivity).apply {
+                text = getString(R.string.production_subject_optional)
+                setPadding(0, 8, 0, 8)
+            }
+            val content = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                val inset = (24 * resources.displayMetrics.density).toInt()
+                setPadding(inset, 0, inset, 0)
+                addView(picker)
+                addView(subject)
+                addView(explanation)
+            }
+            fun updateSubjectVisibility() {
+                val musicHour = shows.getOrNull(picker.selectedItemPosition)?.format in setOf("artist_hour", "genre_hour", "theme_hour")
+                subject.visibility = if (musicHour) View.VISIBLE else View.GONE
+                explanation.visibility = if (musicHour) View.VISIBLE else View.GONE
+                subject.hint = when (shows.getOrNull(picker.selectedItemPosition)?.format) {
+                    "artist_hour" -> getString(R.string.subject_artist)
+                    "genre_hour" -> getString(R.string.subject_genre)
+                    "theme_hour" -> getString(R.string.subject_theme)
+                    else -> getString(R.string.production_subject_hint)
+                }
+            }
+            picker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) = updateSubjectVisibility()
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            }
+            updateSubjectVisibility()
+
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(R.string.produce_now_title)
+                .setView(content)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.produce_now_action) { _, _ ->
+                    val selected = shows.getOrNull(picker.selectedItemPosition) ?: return@setPositiveButton
+                    val requestedSubject = subject.text.toString().trim().takeIf { subject.visibility == View.VISIBLE }.orEmpty()
+                    lifecycleScope.launch {
+                        statusView.text = getString(R.string.production_starting)
+                        statusView.text = runCatching { api.produceNow(selected, requestedSubject) }
+                            .fold({ getString(R.string.production_queued, selected.name) }, { it.message ?: getString(R.string.production_failed) })
+                        refreshTimeline()
+                    }
+                }
+                .show()
+        }
+    }
+
+    private fun formatLabel(format: String): String = when (format) {
+        "artist_hour" -> getString(R.string.format_artist_hour)
+        "genre_hour" -> getString(R.string.format_genre_hour)
+        "theme_hour" -> getString(R.string.format_theme_hour)
+        "podcast" -> getString(R.string.format_podcast)
+        else -> getString(R.string.format_brief)
     }
 
     private suspend fun refreshTimeline() {

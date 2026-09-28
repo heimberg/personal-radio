@@ -107,6 +107,12 @@
             android:text="@string/plan" />
 
         <Button
+            android:id="@+id/produce_now"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/produce_now_action" />
+
+        <Button
             android:id="@+id/spotify"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
