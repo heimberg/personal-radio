@@ -746,6 +746,33 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   };
 }
 
+/** What was said in an item, for reading along: spoken text (dialogs by speaker, hours with their songs) and sources. */
+export interface TranscriptView {
+  title: string;
+  lines: Array<{ speaker?: string; text: string; song?: boolean }>;
+  sources: Array<{ title: string; url: string }>;
+}
+
+export function transcriptView(row: TimelineRow, config: StationConfig | null): TranscriptView {
+  let script: Partial<Script> & Partial<HourPackage> = {}, sources: Source[] = [];
+  try { script = JSON.parse(row.script_json ?? '{}'); } catch { /* No text yet. */ }
+  try { sources = JSON.parse(row.sources_json ?? '[]'); } catch { /* No sources. */ }
+  const host = config?.host.name ?? 'Moderation', cohost = config?.host.cohostName ?? 'Co-Moderation';
+  let lines: TranscriptView['lines'];
+  if (Array.isArray(script.parts)) {
+    lines = script.parts.map(part => part.kind === 'track'
+      ? { text: `${part.title} – ${part.artist}`, song: true }
+      : { text: part.text });
+  } else if (Array.isArray(script.turns)) {
+    lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: turn.text }));
+  } else lines = script.text ? [{ text: script.text }] : [];
+  return {
+    title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
+    lines: lines.filter(line => line.text?.trim()),
+    sources: sources.map(source => ({ title: source.title, url: source.url })),
+  };
+}
+
 function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineItemView, 'parts' | 'focus' | 'subject' | 'artist'> | null {
   if ((pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour' && pkg.kind !== 'song' && pkg.kind !== 'music_block') || !Array.isArray(pkg.parts)) return null;
   // Released audio (after the retention period) leaves the parts without URLs.

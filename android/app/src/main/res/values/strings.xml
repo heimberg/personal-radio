@@ -72,9 +72,13 @@
     <string name="arrange_saved">Reihenfolge gespeichert.</string>
     <string name="arrange_stale">Das Programm hat sich inzwischen geändert – bitte nochmals verschieben.</string>
     <string name="upcoming_hint">Tippen: sofort hören · am Griff ziehen: verschieben</string>
-    <string name="archive_hint_delete">Lange drücken: löschen</string>
+    <string name="archive_hint_delete">Lange drücken: Text und Quellen oder löschen.</string>
     <string name="delete">Löschen</string>
     <string name="delete_title">«%1$s» löschen?</string>
     <string name="delete_message">Die Produktion und ihr Audio werden endgültig entfernt.</string>
     <string name="deleted">Gelöscht.</string>
+    <string name="transcript">Text und Quellen</string>
+    <string name="transcript_loading">Text wird geladen …</string>
+    <string name="transcript_empty">Für diesen Beitrag gibt es noch keinen Text.</string>
+    <string name="sources">Quellen</string>
 </resources>

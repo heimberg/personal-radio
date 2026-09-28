@@ -7,6 +7,7 @@ import ch.heimberg.radio.core.Library
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
+import ch.heimberg.radio.core.Transcript
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -52,6 +53,9 @@ class ApiClient(private val connection: Connection) {
         val body = JSONObject().put("order", org.json.JSONArray(order)).toString()
         withContext(Dispatchers.IO) { request("POST", "api/timeline/arrange", body) }
     }
+
+    /** The text of an item and its sources, for reading along. */
+    suspend fun transcript(itemId: String): Transcript = withContext(Dispatchers.IO) { TimelineJson.parseTranscript(request("GET", "api/timeline/$itemId/script")) }
 
     /** Deletes a production from the archive (or takes it out of the program). */
     suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }

@@ -2,6 +2,7 @@ package ch.heimberg.radio
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -9,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import kotlinx.coroutines.launch
@@ -26,6 +28,7 @@ class LibraryActivity : AppCompatActivity() {
     private lateinit var api: ApiClient
     private lateinit var intro: TextView
     private lateinit var list: LinearLayout
+    private lateinit var refresh: SwipeRefreshLayout
     private val zone = ZoneId.systemDefault()
     private val time = DateTimeFormatter.ofPattern("HH:mm").withZone(zone)
     private val day = DateTimeFormatter.ofPattern("EEEE, d. MMMM", Locale.GERMAN)
@@ -38,12 +41,16 @@ class LibraryActivity : AppCompatActivity() {
         findViewById<Button>(R.id.back).setOnClickListener { finish() }
         intro = findViewById(R.id.intro)
         list = findViewById(R.id.items)
+        refresh = findViewById<SwipeRefreshLayout>(R.id.refresh).apply {
+            setColorSchemeResources(R.color.accent)
+            setOnRefreshListener { load() }
+        }
         load()
     }
 
     private fun load() {
         lifecycleScope.launch {
-            val library = runCatching { api.library() }.getOrElse {
+            val library = runCatching { api.library() }.also { refresh.isRefreshing = false }.getOrElse {
                 intro.text = it.message ?: getString(R.string.connection_failed)
                 return@launch
             }
@@ -69,7 +76,16 @@ class LibraryActivity : AppCompatActivity() {
                     setResult(RESULT_OK, Intent().putExtra(EXTRA_ITEM, TimelineJson.encodeItem(chosen)))
                     finish()
                 }
-                row.setOnLongClickListener { confirmDelete(item); true }
+                row.setOnLongClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    AlertDialog.Builder(this@LibraryActivity)
+                        .setTitle(item.displayTitle)
+                        .setItems(arrayOf(getString(R.string.transcript), getString(R.string.delete))) { _, which ->
+                            if (which == 0) TranscriptActivity.open(this@LibraryActivity, item.id, item.displayTitle) else confirmDelete(item)
+                        }
+                        .show()
+                    true
+                }
                 list.addView(row)
             }
         }
