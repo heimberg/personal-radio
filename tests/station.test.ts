@@ -564,11 +564,12 @@ test('a music hour retries research once and, if search stays empty, is written 
   h.deps.musicWriter = {
     pickSubject: async () => { throw new Error('fixed'); }, pickSongs: async () => [],
     pickTracks: async () => ['A', 'B', 'C'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
-    writeHour: async input => { writeInput = input; return { title: 'Portishead', intro: { text: 'Hallo.', sourceIds: [] }, tracks: [{ index: 0, text: 'Zu A.', sourceIds: [] }], outro: { text: 'Tschüss.', sourceIds: [] } }; },
+    writeHour: async input => { writeInput = input; return { title: 'Portishead', intro: { text: 'Hallo.', sourceIds: [] }, tracks: [0, 1, 2].map(index => ({ index, text: `Zu ${String.fromCharCode(65 + index)}.`, sourceIds: [] })), outro: { text: 'Tschüss.', sourceIds: [] } }; },
   };
   const id = (await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!;
   assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
-  assert.equal(briefs.length, 2); assert.match(briefs[1], /^Suche mit Google nach: Portishead\./);
+  assert.equal(briefs.length, 3); assert.match(briefs[1], /^Suche mit Google nach: Portishead\./);
+  assert.match(briefs[2], /Portishead – A.*Portishead – B.*Portishead – C/s);
   assert.deepEqual(writeInput.sources, []);
   assert.equal(reviewed, 'off');
   assert.equal(toView((await h.store.getItem(OWNER, id))!, parsed).verification, 'off');

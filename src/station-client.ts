@@ -9,9 +9,9 @@ export async function readJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-/** POST without a body; the Worker accepts it because the browser sends its own Origin. */
-export async function post<T>(path: string): Promise<T> {
-  const response = await fetch(api(path), { method: 'POST', credentials: 'same-origin' });
+/** POST to the station API; omit the body for actions that need no parameters. */
+export async function post<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(api(path), { method: 'POST', credentials: 'same-origin', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
   const result = await readJson<T>(response);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return result;

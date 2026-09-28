@@ -356,7 +356,15 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
     await store.touch(owner, new Date());
-    const itemId = await scheduleShowNow(stationDeps(env), owner, produce[1]);
+    let subject: string | undefined;
+    if (request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() === 'application/json') {
+      const body = await readJson(request, 1024);
+      if (body.error) return body.error;
+      const value = (body.value ?? {}) as { subject?: unknown };
+      if (value.subject !== undefined && (typeof value.subject !== 'string' || value.subject.trim().length > 200)) return json({ error: 'invalid_subject' }, 400);
+      subject = typeof value.subject === 'string' ? value.subject.trim() || undefined : undefined;
+    }
+    const itemId = await scheduleShowNow(stationDeps(env), owner, produce[1], subject);
     if (!itemId) return json({ error: 'unknown_show' }, 404);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);

@@ -93,6 +93,19 @@ The two steps keep the script call independent of whether a model supports searc
 
 **Topic memory:** every draft and every research request receive the titles of the last 15 produced segments with the instruction not to repeat them.
 
+## Agentic production model
+
+A music hour benefits from specialist roles, but not from agents that can call tools or spawn other agents without bounds. Keep one deterministic conductor in `produceMusicHour`; it owns the queue state, budgets, retries and handoffs. Each specialist makes a bounded request and returns structured data that the next step can inspect:
+
+1. **Director:** choose or accept the subject and define the editorial arc and song count.
+2. **Researcher:** build a broad dossier, then run a targeted pass after the exact Spotify tracks are confirmed. The second pass looks for a distinct, source-backed story about each recording.
+3. **Music programmer:** select a varied sequence; Spotify search resolves exact tracks in deterministic code. Spotify metadata never goes back to a model.
+4. **Scriptwriter:** set up the hour's red thread and write one individually grounded moderation for every selected song.
+5. **Fact checker:** check the finished speech against the bounded source dossier; a bad result rejects the item before voice generation.
+6. **Voice producer:** synthesize each speech part and persist progress so retries do not pay for completed parts again.
+
+This is a controlled agentic workflow: roles have narrow prompts and typed outputs, while the conductor decides what runs next. There is no open-ended tool loop. It makes the work auditable, keeps Spotify and secrets away from the language model, and gives each song a chance to carry its own story. The first version uses a single targeted research request containing the confirmed track list; per-track parallel research should be added only if listening tests show that the batched dossier misses song-level evidence, because it multiplies provider calls.
+
 ## Music hours: artist, genre, theme
 
 Three show formats share one production: spoken parts with Spotify tracks in between, grounded in web search.

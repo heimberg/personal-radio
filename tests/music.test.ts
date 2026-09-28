@@ -43,11 +43,11 @@ test('Spotify search uses an app token, resolves only matching tracks and refres
   await assert.rejects(limited.find({ title: 'x', artist: 'y' }), (error: any) => error.status === 429 && error.retryAfterMs === 30_000);
 });
 
-test('the Gemini music writer validates picks and scripts and drops unknown sources and indexes', async () => {
+test('the Gemini music writer requires one moderation per song and drops unknown sources and indexes', async () => {
   const replies: unknown[] = [
     { tracks: [{ title: 'Glory Box', artist: 'Portishead', year: 1994, reason: 'Schlüsselsong' }, { title: '', artist: 'x' }, { title: 'Roads', reason: 'Stille' }] },
     { title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1', 'erfunden'] },
-      tracks: [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }, { index: 7, text: 'Gibt es nicht.' }], outro: { text: 'Danke.', sourceIds: [] } },
+      tracks: [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }, { index: 1, text: 'Roads entstand als eigener Song.', sourceIds: ['erfunden'] }, { index: 7, text: 'Gibt es nicht.' }], outro: { text: 'Danke.', sourceIds: [] } },
   ];
   let body: any;
   const writer = new GeminiMusicWriter({ key: 'g' }, async (_url, init) => {
@@ -59,11 +59,11 @@ test('the Gemini music writer validates picks and scripts and drops unknown sour
   assert.match(body.systemInstruction.parts[0].text, /Wähle 6 Songs von «Portishead»/);
   const hour = await writer.writeHour({ focus: 'artist', subject: 'Portishead', picks, sources, talkSeconds: 60,
     direction: { persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } } });
-  assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörtern/);
+  assert.match(body.systemInstruction.parts[0].text, /etwa 130 Wörter/);
   assert.match(body.systemInstruction.parts[0].text, /Du sprichst als Mira/);
   assert.doesNotMatch(body.systemInstruction.parts[0].text, /keine Quellen geliefert/);
   assert.deepEqual(hour.intro, { text: 'Willkommen.', sourceIds: ['w1'] });
-  assert.deepEqual(hour.tracks, [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }]);
+  assert.deepEqual(hour.tracks, [{ index: 0, text: 'Glory Box erschien 1994.', sourceIds: ['w1'] }, { index: 1, text: 'Roads entstand als eigener Song.', sourceIds: [] }]);
 });
 
 test('genre and theme hours ask for songs by different artists and drop picks without an artist', async () => {
