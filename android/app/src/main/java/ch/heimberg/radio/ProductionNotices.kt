@@ -14,6 +14,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import ch.heimberg.radio.core.FailureSummary
 import ch.heimberg.radio.core.Labels
+import ch.heimberg.radio.core.NoticeState
 import ch.heimberg.radio.core.NoticeTracker
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
@@ -26,15 +27,19 @@ import kotlinx.coroutines.launch
  * production failed – with "Erneut versuchen" right in the notification.
  */
 class ProductionNotices(private val context: Context) {
-    private val tracker = NoticeTracker()
+    private val prefs = context.getSharedPreferences("notices", Context.MODE_PRIVATE)
 
     init {
         val channel = NotificationChannel(CHANNEL, context.getString(R.string.notices_channel), NotificationManager.IMPORTANCE_DEFAULT)
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    /** The player and the background check share one saved state, so nothing is reported twice. */
     fun update(timeline: Timeline) {
-        val notices = tracker.update(timeline)
+        val notices = synchronized(LOCK) {
+            val tracker = NoticeTracker(NoticeState.parse(prefs.getString(KEY_STATE, null)))
+            tracker.update(timeline).also { prefs.edit().putString(KEY_STATE, tracker.state.toJson()).apply() }
+        }
         notices.ready.forEach(::ready)
         notices.failure?.let(::failed)
     }
@@ -68,6 +73,8 @@ class ProductionNotices(private val context: Context) {
 
     companion object {
         private const val CHANNEL = "productions"
+        private const val KEY_STATE = "state"
+        private val LOCK = Any()
         const val FAILURE_ID = 4201
     }
 }
@@ -86,6 +93,29 @@ class RetryReceiver : BroadcastReceiver() {
                 }
             }
             pending.finish()
+        }
+    }
+}
+
+/**
+ * Checks the program every 15 minutes while the app is closed, so a finished music hour or a failure is
+ * reported anyway. It only peeks: the server does not count it as listening and plans nothing new.
+ */
+class NoticeWorker(context: Context, params: androidx.work.WorkerParameters) : androidx.work.CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val connection = RadioSettings(applicationContext).connection() ?: return Result.success()
+        val timeline = runCatching { ApiClient(connection).response(peek = true) }.getOrElse { return Result.success() }
+        ProductionNotices(applicationContext).update(timeline)
+        return Result.success()
+    }
+
+    companion object {
+        fun schedule(context: Context) {
+            val request = androidx.work.PeriodicWorkRequestBuilder<NoticeWorker>(15, java.util.concurrent.TimeUnit.MINUTES)
+                .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
+                .build()
+            androidx.work.WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork("production-notices", androidx.work.ExistingPeriodicWorkPolicy.KEEP, request)
         }
     }
 }

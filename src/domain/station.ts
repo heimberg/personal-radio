@@ -147,6 +147,8 @@ export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1,
 export const FORMATS = Object.keys(MINUTES_LIMITS) as ShowFormat[];
 
 export class ConfigError extends Error {}
+/** A building block in the day plan; the catalog lives in `blocks.ts`. */
+export const BLOCK_ID = /^_block:[a-z0-9-]{1,40}$/;
 
 export const DEFAULT_HOST: HostPersona = {
   name: 'Mira', tone: 'ruhig, neugierig, präzise', style: 'persönliches Hintergrundradio',
@@ -301,9 +303,6 @@ export function parseStationConfig(raw: unknown): StationConfig {
     };
   });
 
-  // AI-generated speech is the core of the station: a program of music alone is not a valid configuration.
-  if (!shows.some(show => show.enabled)) fail('shows', 'mindestens eine aktive Sendung – KI-Sprechbeiträge sind Pflicht');
-
   const slotIds = new Set<string>();
   const schedule = list(c.schedule, 'schedule', 50).map((value, index): ScheduleSlot => {
     const path = `schedule[${index}]`, s = record(value, path);
@@ -316,12 +315,19 @@ export function parseStationConfig(raw: unknown): StationConfig {
     if (typeof s.to !== 'string' || !TIME.test(s.to)) fail(`${path}.to`, 'Zeit HH:MM erwartet');
     if (minutesOf(s.from) >= minutesOf(s.to)) fail(path, '«from» muss vor «to» liegen');
     const slotShows = list(s.showIds, `${path}.showIds`, 20).map((show, i) => {
-      if (typeof show !== 'string' || !showIds.has(show)) fail(`${path}.showIds[${i}]`, 'unbekannte Sendung');
+      // Building blocks of the day plan (`_block:<id>`) stand next to the owner's shows.
+      if (typeof show !== 'string' || (!showIds.has(show) && !BLOCK_ID.test(show))) fail(`${path}.showIds[${i}]`, 'unbekannte Sendung');
       return show;
     });
     if (!slotShows.length) fail(`${path}.showIds`, 'mindestens eine Sendung');
     return { id: id(s.id, `${path}.id`, slotIds), days: [...new Set(days)].sort(), from: s.from, to: s.to, showIds: slotShows };
   });
+
+  // AI-generated speech is the core of the station: a program of music alone is not a valid configuration.
+  // Every block brings its own moderation, so a day plan of blocks counts too.
+  if (!shows.some(show => show.enabled) && !schedule.some(slot => slot.showIds.some(show => BLOCK_ID.test(show)))) {
+    fail('shows', 'mindestens eine aktive Sendung oder ein Baustein im Tagesplan – KI-Sprechbeiträge sind Pflicht');
+  }
 
   // Stations saved before music existed keep playing without songs until the owner turns them on.
   const m = c.music === undefined ? { between: 0, announce: true, taste: '' } : record(c.music, 'music');

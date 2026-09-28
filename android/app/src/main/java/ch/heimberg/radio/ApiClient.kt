@@ -26,7 +26,10 @@ class ApiClient(private val connection: Connection) {
     suspend fun timeline(): List<TimelineItem> = response().items
 
     /** The timeline plus the public Spotify client ID, when the Worker has one. */
-    suspend fun response(): Timeline = withContext(Dispatchers.IO) { TimelineJson.parseResponse(request("GET", "api/timeline")) }
+    suspend fun response(peek: Boolean = false): Timeline = withContext(Dispatchers.IO) {
+        // A peek (the background check for notifications) does not count as listening on the server.
+        TimelineJson.parseResponse(request("GET", if (peek) "api/timeline?peek=1" else "api/timeline"))
+    }
 
     /** Productions that can still be heard, newest first. */
     suspend fun library(): Library = withContext(Dispatchers.IO) { TimelineJson.parseLibrary(request("GET", "api/library")) }

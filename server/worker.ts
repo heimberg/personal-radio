@@ -328,7 +328,8 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (url.pathname === '/api/timeline') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     const config = await store.getConfig(owner);
-    await store.touch(owner, new Date());
+    // A background check for notifications only looks; it must not count as listening (no paid planning).
+    if (url.searchParams.get('peek') !== '1') await store.touch(owner, new Date());
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
     return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify }, 200);
