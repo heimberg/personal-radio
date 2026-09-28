@@ -10,7 +10,8 @@ import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
-import { AUDIO_RETENTION_DAYS, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from './station.ts';
+import { blockViews } from '../src/domain/blocks.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -349,6 +350,24 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       'Content-Type': 'application/vnd.android.package-archive', 'Content-Length': String(object.size),
       'Content-Disposition': 'attachment; filename="personal-radio.apk"', 'Cache-Control': 'no-store',
     } });
+  }
+  if (url.pathname === '/api/blocks') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const config = await store.getConfig(owner);
+    return json({ blocks: config ? blockViews(config) : [] }, 200);
+  }
+  const addBlockMatch = url.pathname.match(/^\/api\/blocks\/(song|[a-z0-9-]{1,40}|show:[a-z0-9-]{1,40})\/add$/);
+  if (addBlockMatch) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 2048);
+    if (body.error) return body.error;
+    const { subject, after } = (body.value ?? {}) as { subject?: unknown; after?: unknown };
+    if ((subject !== undefined && typeof subject !== 'string') || (after !== undefined && typeof after !== 'string')) return json({ error: 'invalid_block' }, 400);
+    const itemId = await addBlock(stationDeps(env), owner, addBlockMatch[1], subject as string | undefined, after as string | undefined);
+    if (!itemId) return json({ error: 'unknown_block' }, 404);
+    await env.PRODUCTION.send({ owner, itemId });
+    return json({ itemId }, 200);
   }
   if (url.pathname === '/api/library') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

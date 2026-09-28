@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Topic } from '../domain/program.ts';
 import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId } from '../domain/station.ts';
-import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ScheduleSlot, ShowConfig, ShowFormat, StationConfig } from '../domain/station.ts';
+import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ScheduleSlot, ShowConfig, ShowFormat, ShowTool, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
 import { LocationPicker } from './LocationPicker.tsx';
@@ -17,8 +17,8 @@ const SUBJECT: Record<HourFocus, { key: 'artist' | 'genre' | 'theme'; label: str
   genre: { key: 'genre', label: 'Genre oder Szene', example: 'z. B. Krautrock' },
   theme: { key: 'theme', label: 'Thema', example: 'z. B. Der Mond' },
 };
-/** Placeholders the server fills in when it produces an item. */
-const PLACEHOLDERS: Array<[string, string]> = [['datum', 'Datum'], ['wochentag', 'Wochentag'], ['uhrzeit', 'Uhrzeit'], ['ort', 'Ort'], ['wetter', 'Wetter']];
+/** Live information a spoken show can work in; the server fetches it when it produces the item. */
+const TOOLS: Array<[ShowTool, string]> = [['clock', 'Datum und Uhrzeit'], ['weather', 'Wetter'], ['headlines', 'Schlagzeilen']];
 const TIMEZONES = ['Europe/Zurich', 'Europe/Berlin', 'Europe/Vienna', 'Europe/London', 'America/New_York', 'UTC'];
 
 function uniqueId(base: string, taken: string[]): string {
@@ -301,11 +301,16 @@ export function StationEditor({ config: stored, onSave }: Props) {
           <Field label="Redaktionelle Anweisungen" hint="Was diese Sendung tun soll, in deinen Worten.">
             <textarea rows={2} maxLength={2000} value={show.instructions} onChange={event => changeShow(index, current => ({ ...current, instructions: event.target.value }))} />
           </Field>
-          <div className="chips placeholders" role="group" aria-label="Aktuelles einfügen">
-            <small className="muted">Einfügen:</small>
-            {PLACEHOLDERS.map(([token, label]) => <button type="button" key={token} title={`Setzt beim Produzieren ${label.toLowerCase()} ein`}
-              onClick={() => changeShow(index, current => ({ ...current, instructions: `${current.instructions.trimEnd()}${current.instructions.trim() ? ' ' : ''}{${token}}`.slice(0, 2000) }))}>+ {label}</button>)}
-          </div>
+          {!focus && !block && <div className="chips tools" role="group" aria-label="Aktuelles einbauen">
+            <small className="muted">Aktuelles einbauen:</small>
+            {TOOLS.map(([tool, label]) => <button type="button" key={tool} aria-pressed={show.tools?.includes(tool) ?? false}
+              onClick={() => changeShow(index, current => {
+                const tools = current.tools?.includes(tool) ? current.tools.filter(item => item !== tool) : [...current.tools ?? [], tool];
+                const { tools: _t, ...rest } = current;
+                return tools.length ? { ...rest, tools } : rest;
+              })}>{label}</button>)}
+            {show.tools?.includes('weather') && !draft.location && <small className="muted">Für das Wetter unter «Sender und Moderation» den Ort wählen.</small>}
+          </div>}
           <details className="more">
             <summary>Weitere Optionen</summary>
             <div className="grid">

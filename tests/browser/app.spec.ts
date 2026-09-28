@@ -45,6 +45,14 @@ async function fakeWorker(page: Page, initial: unknown) {
     await page.route(`**/api/timeline/${action}`, route => { state.calls.push(action); return route.fulfill({ contentType: 'application/json',
       body: JSON.stringify(action === 'plan' ? { planned: 2, queued: 2 } : action === 'retry' ? { retired: 1, restarted: 0, planned: 1, queued: 1 } : { removed: 1 }) }); });
   }
+  await page.route('**/api/blocks', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ blocks: [
+    { id: 'wetter', name: 'Wetter', description: 'Das Wetter für heute und morgen', minutes: 1, music: false, own: false },
+    { id: 'kuenstler', name: 'Künstler-Stunde', description: 'Eine Stunde mit einer Band', minutes: 60, music: true, own: false, input: { kind: 'artist', label: 'Künstler oder Band', example: 'z. B. Portishead' } },
+  ] }) }));
+  await page.route('**/api/blocks/*/add', route => {
+    state.calls.push(`add ${new URL(route.request().url()).pathname.split('/')[3]} ${route.request().postData()}`);
+    return route.fulfill({ contentType: 'application/json', body: '{"itemId":"x"}' });
+  });
   await page.route('**/api/shows/*/produce', route => { state.calls.push(new URL(route.request().url()).pathname); return route.fulfill({ contentType: 'application/json', body: '{"itemId":"x"}' }); });
   await page.route('**/api/timeline/t1/audio', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(2) }));
   await page.route('**/api/timeline/t1/feedback', async route => { state.feedback.push(JSON.parse(route.request().postData() ?? '{}')); await route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
@@ -90,14 +98,19 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   await expect(timeline.getByRole('link', { name: 'sonde landung' })).toHaveAttribute('href', 'https://www.google.com/search?q=sonde%20landung');
   await expect(page.getByText(/⚠ 1 fehlgeschlagen · zuletzt \d\d:\d\d: Keine neuen Quellen/)).toBeVisible();
 
-  await page.getByLabel('Sendung sofort produzieren').selectOption('kuenstler');
-  await page.getByRole('button', { name: 'Jetzt produzieren' }).click();
-  await expect(page.getByText('«Künstler-Stunde» wird produziert.')).toBeVisible();
+  // Building blocks: one tap, or one word first.
+  const blocks = page.getByRole('group', { name: 'Bausteine' });
+  await blocks.getByRole('button', { name: /^Wetter/ }).click();
+  await expect(page.getByText('«Wetter» kommt als Nächstes und wird produziert.')).toBeVisible();
+  await blocks.getByRole('button', { name: /^Künstler-Stunde/ }).click();
+  await blocks.getByLabel('Künstler oder Band').fill('Portishead');
+  await blocks.getByRole('button', { name: 'Hinzufügen' }).click();
+  await expect(page.getByText('«Künstler-Stunde» über «Portishead» kommt als Nächstes und wird produziert.')).toBeVisible();
   await page.getByRole('button', { name: 'Aufräumen' }).click();
   await expect(page.getByText('1 Einträge entfernt.')).toBeVisible();
   await page.getByRole('button', { name: 'Erneut versuchen' }).click();
   await expect(page.getByText('1 Fehlschläge abgeräumt, 0 wartende Beiträge neu gestartet, 1 neu geplant, 1 in Produktion.')).toBeVisible();
-  expect(worker.calls).toEqual(['/api/shows/kuenstler/produce', 'cleanup', 'retry']);
+  expect(worker.calls).toEqual(['add wetter {}', 'add kuenstler {"subject":"Portishead"}', 'cleanup', 'retry']);
 
   // Arranging the program: move, remove, shuffle, add a song.
   await page.getByRole('group', { name: 'Sonde gelandet verschieben' }).getByRole('button', { name: 'Nach unten' }).click();
@@ -108,7 +121,7 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   await expect(page.getByText('Programm gemischt, 1 Songs ergänzt.')).toBeVisible();
   await page.getByRole('button', { name: '+ Song' }).click();
   await expect(page.getByText('Ein Song wird ausgewählt und hinten angehängt.')).toBeVisible();
-  expect(worker.calls.slice(3)).toEqual(['arrange h1,t1', 'remove h1', 'shuffle', '/api/shows/_musik/produce']);
+  expect(worker.calls.slice(4)).toEqual(['arrange h1,t1', 'remove h1', 'shuffle', '/api/shows/_musik/produce']);
 
   // Only the spoken segment plays in the browser.
   await expect(page.getByText('1 Beitrag bereit')).toBeVisible();
@@ -161,6 +174,11 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await hour.getByText('Weitere Optionen').click();
   await hour.getByLabel('Produktion').selectOption('agents');
   await hour.getByRole('checkbox').check();
+  // Live information is switched on, not typed as placeholders.
+  const discovery = page.getByRole('article', { name: 'Sendung Entdeckungen' });
+  await discovery.getByRole('button', { name: 'Entdeckungen bearbeiten' }).click();
+  await discovery.getByRole('group', { name: 'Aktuelles einbauen' }).getByRole('button', { name: 'Wetter' }).click();
+  await expect(discovery.getByRole('button', { name: 'Wetter' })).toHaveAttribute('aria-pressed', 'true');
 
   await openArea(page, 'Sendeuhr');
   const slot = page.getByRole('group', { name: 'Wochentage' }).first();
@@ -184,6 +202,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.shows.find((show: any) => show.id === 'kuenstler')).toMatchObject({ format: 'genre_hour', genre: 'Krautrock', enabled: true, production: 'agents' });
   expect(saved.shows.find((show: any) => show.id === 'kuenstler').artist).toBeUndefined();
   expect(saved.music).toEqual({ between: 2, announce: true, taste: 'Industrial, Indie, Rock' });
+  expect(saved.shows.find((show: any) => show.id === 'entdecken').tools).toEqual(['weather']);
   expect(saved.location).toEqual({ name: 'Bern', latitude: 46.9481, longitude: 7.4474 });
   expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });
 
