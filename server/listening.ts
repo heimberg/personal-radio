@@ -5,7 +5,8 @@ import type { D1Database } from './station-store.ts';
 
 type Fetch = typeof fetch;
 const CACHE_HOURS = 12;
-export const LISTENING_SCOPE = 'user-top-read';
+/** Top artists for the music picks; playlist access so music blocks can play the owner's private playlists. */
+export const LISTENING_SCOPE = 'user-top-read playlist-read-private playlist-read-collaborative';
 
 export interface ListeningStatus { connected: boolean; artists: string[]; fetchedAt?: string }
 
@@ -56,6 +57,19 @@ export class SpotifyListening {
     const row = await this.row(owner);
     if (!row) return { connected: false, artists: [] };
     return { connected: true, artists: parseArtists(row.artists_json), ...(row.fetched_at ? { fetchedAt: row.fetched_at } : {}) };
+  }
+
+  /** A fresh access token of the owner's account, or null when not connected or refused. */
+  async accessToken(owner: string): Promise<string | null> {
+    const row = await this.row(owner);
+    if (!row) return null;
+    try {
+      const token = await this.token({ grant_type: 'refresh_token', refresh_token: row.refresh_token });
+      if (token.refresh_token && token.refresh_token !== row.refresh_token) {
+        await this.db.prepare('UPDATE spotify_listening SET refresh_token = ? WHERE owner_id = ?').bind(token.refresh_token, owner).run();
+      }
+      return token.access_token;
+    } catch { return null; }
   }
 
   /** Top artists, recent first, refreshed at most every 12 hours; the cached list survives Spotify outages. */

@@ -347,7 +347,7 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
   h.deps.musicWriter = {
     pickSubject: async () => { throw new Error('the artist is fixed'); },
     pickTracks: async () => ['Glory Box', 'Unbekannt', 'Roads', 'Sour Times', 'Numb'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
-    pickSongs: async () => [],
+    pickSongs: async () => [], writeBlock: async () => [],
     writeHour: async input => { hourInput = input; return { title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: ['w1'] },
       tracks: [{ index: 0, text: 'Zu Glory Box.', sourceIds: ['w1'] }, { index: 2, text: 'Zu Sour Times.', sourceIds: [] }], outro: { text: 'Danke.', sourceIds: [] } }; },
   };
@@ -392,7 +392,7 @@ test('an artist hour without enough Spotify matches fails with the count; missin
   const h = harness({ station: parseStationConfig(station) }); await h.setup();
   const due = [(await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!];
   h.deps.researcher = { research: async () => ({ sources: [{ id: 'w1', url: 'https://example.org/p', title: 't', excerpt: 'x', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }) };
-  h.deps.musicWriter = { pickSongs: async () => [], pickSubject: async () => ({ subject: 'Björk', reason: 'r' }), pickTracks: async () => [{ title: 'A', artist: 'Björk', reason: '' }, { title: 'B', artist: 'Björk', reason: '' }],
+  h.deps.musicWriter = { pickSongs: async () => [], writeBlock: async () => [], pickSubject: async () => ({ subject: 'Björk', reason: 'r' }), pickTracks: async () => [{ title: 'A', artist: 'Björk', reason: '' }, { title: 'B', artist: 'Björk', reason: '' }],
     writeHour: async () => { throw new Error('not reached'); } };
   assert.equal(await produceItem(h.deps, OWNER, due[0]), 'failed');
   assert.equal((await h.store.getItem(OWNER, due[0]))?.error, 'SPOTIFY_NOT_CONFIGURED');
@@ -416,7 +416,7 @@ test('a theme hour lets the AI pick a new theme, researches it and programs fitt
   h.deps.researcher = { research: async request => { briefs.push(request.brief); return { sources: [source], queries: [] }; } };
   h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 200_000 }) };
   h.deps.musicWriter = {
-    pickSongs: async () => [],
+    pickSongs: async () => [], writeBlock: async () => [],
     pickSubject: async input => { asked.push({ focus: input.focus, avoid: input.avoid }); return { subject: asked.length === 1 ? 'Der Mond' : 'Vulkane', reason: 'r' }; },
     pickTracks: async input => { tracksInput = input; return [['Space Oddity', 'David Bowie'], ['Fly Me to the Moon', 'Frank Sinatra'], ['Walking on the Moon', 'The Police']].map(([title, artist]) => ({ title, artist, reason: 'r' })); },
     writeHour: async input => ({ title: `Themen-Stunde: ${input.subject}`, intro: { text: 'Heute der Mond.', sourceIds: ['w1'] },
@@ -474,7 +474,7 @@ test('a song item: AI picks from taste and reactions, Spotify resolves the first
   const requests: any[] = [];
   h.deps.catalog = { find: async pick => pick.title === 'Gibt es nicht' ? null : { uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 250_000 } };
   h.deps.musicWriter = {
-    pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); },
+    pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); }, writeBlock: async () => [],
     pickSongs: async request => {
       requests.push(request);
       return requests.length === 1
@@ -562,7 +562,7 @@ test('a music hour retries research once and, if search stays empty, is written 
   h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title}`, durationMs: 200_000 }) };
   h.deps.pipeline.review = async (_script, _sources, policy) => { reviewed = policy; return { approved: true, reasons: [] }; };
   h.deps.musicWriter = {
-    pickSubject: async () => { throw new Error('fixed'); }, pickSongs: async () => [],
+    pickSubject: async () => { throw new Error('fixed'); }, pickSongs: async () => [], writeBlock: async () => [],
     pickTracks: async () => ['A', 'B', 'C'].map(title => ({ title, artist: 'Portishead', reason: 'r' })),
     writeHour: async input => { writeInput = input; return { title: 'Portishead', intro: { text: 'Hallo.', sourceIds: [] }, tracks: [0, 1, 2].map(index => ({ index, text: `Zu ${String.fromCharCode(65 + index)}.`, sourceIds: [] })), outro: { text: 'Tschüss.', sourceIds: [] } }; },
   };
@@ -573,4 +573,79 @@ test('a music hour retries research once and, if search stays empty, is written 
   assert.deepEqual(writeInput.sources, []);
   assert.equal(reviewed, 'off');
   assert.equal(toView((await h.store.getItem(OWNER, id))!, parsed).verification, 'off');
+});
+
+test('music block settings: defaults, playlist links and IDs, at least one moderation trigger', () => {
+  const base = config();
+  const withBlock = (block: Record<string, unknown>) => parseStationConfig({ ...base, shows: [...base.shows, { id: 'block', name: 'Morgenmusik', enabled: true, format: 'music_block',
+    feedIds: [], verification: 'off', targetMinutes: 30, instructions: '', ...block }] }).shows.at(-1)!;
+  const plain = withBlock({});
+  assert.deepEqual(plain.groups, [{ name: 'Mein Geschmack', playlists: [], taste: '' }]);
+  assert.deepEqual(plain.triggers, { blockStart: true, blockEnd: true, beforeTrack: 1, afterTrack: 0, everyMinutes: 0, groupTransition: true });
+  assert.equal(plain.switchAfterTracks, 3); assert.equal(plain.talkSeconds, 20);
+  const id = '37i9dQZF1DX4sWSpwq3LiO';
+  assert.deepEqual(withBlock({ groups: [{ name: 'Kaffee', playlists: [`https://open.spotify.com/intl-de/playlist/${id}?si=abc`, `spotify:playlist:${id}`, id] }] }).groups,
+    [{ name: 'Kaffee', playlists: [id], taste: '' }]);
+  assert.throws(() => withBlock({ groups: [{ name: 'X', playlists: ['https://example.org/playlist'] }] }), /groups\[0\]\.playlists\[0\]: Spotify-Playlist-Link/);
+  assert.throws(() => withBlock({ groups: [] }), /mindestens eine Gruppe/);
+  assert.throws(() => withBlock({ triggers: { blockStart: false, blockEnd: false, beforeTrack: 0, afterTrack: 0, everyMinutes: 0, groupTransition: false } }), /mindestens ein Moderations-Anlass/);
+  assert.throws(() => withBlock({ textProvider: 'ask' }), /Musikblöcke moderiert nur «gemini»/);
+  assert.throws(() => withBlock({ targetMinutes: 5 }), /10 bis 120 Minuten/);
+});
+
+test('a music block rotates playlist and AI groups, speaks where the triggers fire and never shows playlist tracks to the AI', async () => {
+  const PLAYLIST = '37i9dQZF1DX4sWSpwq3LiO';
+  const station = config({ music: { between: 1, announce: true, taste: 'Indie' } });
+  station.shows = [...station.shows.map(show => ({ ...show, enabled: show.id === 'kurz' })), {
+    id: 'block', name: 'Morgenmusik', enabled: true, format: 'music_block', feedIds: [], verification: 'off', targetMinutes: 20, instructions: '',
+    textProvider: 'gemini', sourceMode: 'web', researchPrompt: '', talkSeconds: 20, switchAfterTracks: 2, switchAfterMinutes: 0,
+    groups: [{ name: 'Kaffee', playlists: [PLAYLIST], taste: '' }, { name: 'Entdeckungen', playlists: [], taste: 'Krautrock' }],
+    triggers: { blockStart: true, blockEnd: true, beforeTrack: 1, afterTrack: 0, everyMinutes: 0, groupTransition: true },
+  }];
+  station.schedule = [{ ...station.schedule[0], showIds: ['kurz', 'block'] }];
+  station.horizonMinutes = 60;
+  const parsed = parseStationConfig(station);
+  // A block brings its own music: no songs are planned after it.
+  assert.deepEqual(planTimeline(parsed, [], { seq: 1, show_id: 'kurz' }, NOW, (() => { let n = 0; return () => `p${++n}`; })(), ['kurz', MUSIC_SHOW_ID]).map(item => item.showId).slice(0, 3),
+    ['block', 'kurz', MUSIC_SHOW_ID]);
+
+  const h = harness({ station: parsed }); await h.setup();
+  const secret = Array.from({ length: 5 }, (_, index) => ({ uri: `spotify:track:P${index + 1}`, title: `Geheim ${index + 1}`, artist: 'Privat', durationMs: 180_000 }));
+  const loaded: string[] = [];
+  h.deps.playlists = { tracks: async (_owner, id) => { loaded.push(id); return secret; } };
+  h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title}`, durationMs: 180_000 }) };
+  const songRequests: any[] = [], blockRequests: any[] = [];
+  let aiTitle = 0;
+  h.deps.musicWriter = {
+    pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); },
+    pickSongs: async request => { songRequests.push(request); return Array.from({ length: request.count ?? 3 }, () => ({ title: `A${++aiTitle}`, artist: 'Neu!', announcement: '' })); },
+    writeBlock: async request => { blockRequests.push(request); return request.moments.map((_, index) => `Moderation ${index}.`); },
+  };
+  const spoken: string[] = [];
+  h.deps.pipeline.voice = async (_owner, script) => { spoken.push(script.text); return { audio: new Uint8Array([1]), contentType: 'audio/mpeg', ttsCharacters: 1 }; };
+
+  const first = (await scheduleShowNow(h.deps, OWNER, 'block'))!;
+  assert.equal(await produceItem(h.deps, OWNER, first), 'ready');
+  const view = toView((await h.store.getItem(OWNER, first))!, parsed);
+  assert.deepEqual(view.parts!.map(part => part.kind === 'track' ? part.title : 'speech'),
+    ['speech', 'Geheim 1', 'Geheim 2', 'speech', 'A1', 'speech', 'A2', 'speech', 'Geheim 3', 'Geheim 4', 'speech']);
+  assert.equal(view.title, 'Morgenmusik'); assert.equal(view.subject, 'Kaffee → Entdeckungen'); assert.equal(view.verification, 'off');
+  assert.equal(view.estimatedMinutes, 18);
+  assert.deepEqual(loaded, [PLAYLIST]);
+  const request = blockRequests[0];
+  assert.deepEqual(request.moments.map((moment: any) => moment.triggers), [['block_start'], ['group_transition', 'before_track'], ['before_track'], ['group_transition'], ['block_end']]);
+  assert.deepEqual(request.moments[1], { triggers: ['group_transition', 'before_track'], fromGroup: 'Kaffee', toGroup: 'Entdeckungen', next: { artist: 'Neu!', title: 'A1' } });
+  assert.equal(request.blockName, 'Morgenmusik'); assert.equal(request.nextShow, 'Kurzbeitrag'); assert.equal(request.daytime, 'Morgen');
+  assert.equal(songRequests[0].taste, 'Krautrock'); assert.equal(songRequests[0].announce, false);
+  // Nothing from the owner's playlists reaches the AI.
+  assert.doesNotMatch(JSON.stringify([songRequests, blockRequests]), /Geheim|Privat|spotify:track:P/);
+  assert.deepEqual(spoken, ['Moderation 0.', 'Moderation 1.', 'Moderation 2.', 'Moderation 3.', 'Moderation 4.']);
+
+  // The next block continues the rotation and prefers playlist tracks it has not played yet.
+  const second = (await scheduleShowNow(h.deps, OWNER, 'block'))!;
+  assert.equal(await produceItem(h.deps, OWNER, second), 'ready');
+  const tracks = toView((await h.store.getItem(OWNER, second))!, parsed).parts!.flatMap(part => part.kind === 'track' ? [part.title] : []);
+  assert.deepEqual(tracks.slice(0, 3), ['A5', 'A6', 'Geheim 5']);
+  assert.ok(songRequests[1].avoid.includes('Neu! – A1'));
+  assert.doesNotMatch(JSON.stringify(songRequests[1]), /Geheim/);
 });

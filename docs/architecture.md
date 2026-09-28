@@ -163,7 +163,7 @@ The Android app arranges the open items (planned, being voiced, ready): `POST /a
 
 ## Music curation (AI → Spotify only)
 
-No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scope `user-top-read`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
+No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scopes `user-top-read` and, for music blocks, `playlist-read-private` and `playlist-read-collaborative`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
 
 1. The LLM picks tracks (artist, title, short reason) from its own knowledge, guided by `MusicRule` and the recent playlist memory (our own records of the LLM's earlier picks).
 2. The backend resolves each pick through the Spotify Search API with an app token (client credentials) and accepts it only if a normalized artist/title comparison matches. This comparison is deterministic code. Unmatched picks are dropped.
@@ -173,16 +173,42 @@ The planner stores the Spotify URI in the timeline; the app plays it through App
 
 ## Music blocks and moderation triggers (milestone 3)
 
-Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (MIT), adapted to our constraints. A schedule slot can contain music blocks; moderation segments inside them fire on triggers:
+Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (MIT), adapted to our constraints. A music block is a show (`format: music_block`, 10–120 minutes) that the schedule rotates like any other show; no songs are planned after it because it brings its own music.
+
+```yaml
+- id: morgenmusik
+  name: Morgenmusik
+  format: music_block
+  targetMinutes: 30
+  groups:                      # rotate; at most 6
+    - name: Kaffee
+      playlists:               # links, spotify:playlist: URIs or IDs; at most 5
+        - https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO
+    - name: Entdeckungen       # no playlists: the AI picks from the group's taste
+      taste: Krautrock und frühe Elektronik
+  switchAfterTracks: 3         # 0 = off
+  switchAfterMinutes: 0        # 0 = off
+  talkSeconds: 20              # 10–120 per moderation
+  triggers:
+    blockStart: true
+    blockEnd: true             # hands over to the next show of the schedule slot
+    beforeTrack: 1             # before every Nth AI-picked song; 0 = off
+    afterTrack: 0              # after every Nth AI-picked song; 0 = off
+    everyMinutes: 0            # after X minutes of music without speech; 0 = off
+    groupTransition: true
+```
 
 | Trigger | Fires | Context available to the prompt |
 | --- | --- | --- |
-| `block_start` / `block_end` | when a music block begins or ends | block name, next block name |
-| `before_track` / `after_track` | every N tracks | only for AI-picked tracks: the LLM's own pick (artist, title, reason) |
-| `interval_minutes` | every X minutes of listening | local time |
-| `group_transition` | between playlist groups | group names |
+| `blockStart` / `blockEnd` | when the block begins or ends | block name, group names, next show, time of day |
+| `beforeTrack` / `afterTrack` | every N AI-picked songs | only the AI's own pick (artist, title) |
+| `everyMinutes` | after X minutes of music without speech | time of day (not the clock: the block is produced ahead of time) |
+| `groupTransition` | between groups | group names |
 
-- **Two music sources.** AI picks (resolved as described above) can be introduced by name. The owner's own Spotify playlists can be used as pools in rotating groups (switch after X minutes or Y tracks), but their tracks are never sent to an AI provider, so their moderation stays generic: transitions, time, weather, the next speech show.
+- **Two music sources.** AI groups: Gemini proposes songs from the group's taste (or the station's taste), the owner's 👍/👎 on songs and, if connected, the listening profile; Spotify search resolves them (AI → Spotify). Playlist groups: the Worker reads the owner's playlists (with the owner's token when the listening profile is connected, which also covers private playlists; otherwise the app token, public playlists only), shuffles them in code and prefers tracks that did not play recently. Playlist tracks are never sent to an AI provider, not even in the avoid list, so their moderation stays generic: transitions, time of day, the next show.
+- Several triggers at the same place become one moderation. If no configured trigger fires (for example only `beforeTrack` with playlist groups), the block still opens with a moderation: every block has generated speech. At least one trigger must be on.
+- The rotation continues across blocks: the next block of the show starts with the group after the last one played.
+- The block is one timeline item with the same `parts` as a music hour, so the Android app plays it without changes. Verification is `off` (the moderations carry no researched claims). A block counts once towards `DAILY_GENERATIONS`; its moderations count towards `DAILY_TTS_CHARACTERS`.
 - **No ducking.** ai-radio-station lowers the music and speaks over it; we never overlay speech on Spotify audio. Moderation plays between tracks.
 - **Never cut a track.** Hand over when Spotify reports the track change, not a few seconds before the end.
 - **Pre-produced.** Moderation is produced with the rest of the timeline, not live, so the handoff has no generation latency.

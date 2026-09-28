@@ -13,8 +13,27 @@ export interface MusicWriter {
   pickSubject(input: { focus: HourFocus; interests: string[]; avoid: string[]; instructions: string }): Promise<{ subject: string; reason: string }>;
   pickTracks(input: { focus: HourFocus; subject: string; count: number; sources: Source[]; instructions: string }): Promise<TrackPick[]>;
   writeHour(input: { focus: HourFocus; subject: string; picks: TrackPick[]; sources: Source[]; talkSeconds: number; direction: EditorialDirection }): Promise<HourScript>;
-  /** A few candidates in order of preference for one song between spoken items. */
+  /** A few candidates in order of preference for one song between spoken items (or `count` for a music block). */
   pickSongs(input: SongRequest): Promise<SongPick[]>;
+  /** One moderation per moment of a music block, in the order of the moments. */
+  writeBlock(input: BlockRequest): Promise<string[]>;
+}
+export type BlockTrigger = 'block_start' | 'block_end' | 'before_track' | 'after_track' | 'interval' | 'group_transition';
+/**
+ * A place in a music block where the host speaks. Only the AI's own picks are named here; tracks from the
+ * owner's playlists are never described to the AI.
+ */
+export interface BlockMoment {
+  triggers: BlockTrigger[];
+  /** The AI-picked song that follows (before_track) or just ended (after_track). */
+  next?: { artist: string; title: string };
+  previous?: { artist: string; title: string };
+  fromGroup?: string;
+  toGroup?: string;
+}
+export interface BlockRequest {
+  blockName: string; groups: string[]; nextShow?: string; daytime: string; talkSeconds: number;
+  moments: BlockMoment[]; direction: EditorialDirection;
 }
 export interface SongPick { title: string; artist: string; announcement: string }
 export interface SongRequest {
@@ -22,9 +41,14 @@ export interface SongRequest {
   /** Artists the owner listens to most on Spotify (the owner's choice to share them). */
   listens: string[];
   announce: boolean; direction: EditorialDirection;
+  /** How many songs to propose; default 3. */
+  count?: number;
 }
 export interface CatalogTrack { uri: string; durationMs: number }
 export interface MusicCatalog { find(pick: Pick<TrackPick, 'title' | 'artist'>): Promise<CatalogTrack | null> }
+/** A track of one of the owner's playlists. Shown to the owner and played; never sent to an AI provider. */
+export interface PlaylistTrack extends CatalogTrack { title: string; artist: string }
+export interface PlaylistSource { tracks(owner: string, playlistId: string): Promise<PlaylistTrack[]> }
 
 const text = (value: unknown, max: number) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 
@@ -153,7 +177,8 @@ export class GeminiMusicWriter implements MusicWriter {
     const announce = input.announce
       ? ' Zu jedem Song eine Ansage von höchstens 35 Wörtern, gesprochen von der Moderation: Künstler und Titel nennen, dazu höchstens eine allgemein bekannte, sichere Einordnung (Album, Jahr, Szene) oder eine Stimmung als Übergang. Erfinde keine Details; wenn du unsicher bist, bleib bei Künstler, Titel und Stimmung.'
       : ' Das Feld «announcement» bleibt leer.';
-    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst den nächsten Song zwischen zwei Wortbeiträgen. Schlage 3 Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers; eher spezifisch und abseits der Charts, Entdeckungen gemischt mit Vertrautem aus dem Geschmack, abwechslungsreich gegenüber den letzten Songs. Nichts aus «vermeiden». «hört» sind die Künstler, die er zurzeit am meisten hört: der Kern seines Geschmacks. Schlage etwa zur Hälfte Songs dieser Künstler vor, sonst nah verwandte, weniger bekannte Künstler, die er wahrscheinlich noch nicht kennt. «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
+    const count = Math.min(15, Math.max(1, input.count ?? 3));
+    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst ${input.count ? 'die nächsten Songs eines Musikblocks' : 'den nächsten Song zwischen zwei Wortbeiträgen'}. Schlage ${count} verschiedene Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers; eher spezifisch und abseits der Charts, Entdeckungen gemischt mit Vertrautem aus dem Geschmack, abwechslungsreich gegenüber den letzten Songs. Nichts aus «vermeiden». «hört» sind die Künstler, die er zurzeit am meisten hört: der Kern seines Geschmacks. Schlage etwa zur Hälfte Songs dieser Künstler vor, sonst nah verwandte, weniger bekannte Künstler, die er wahrscheinlich noch nicht kennt. «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
       (input.announce ? personaPrompt(input.direction, 'brief') : ''),
       { geschmack: input.taste || 'nicht angegeben – orientiere dich an den Interessen', interessen: input.interests.slice(0, 30),
         hört: input.listens.slice(0, 40), vermeiden: input.avoid.slice(0, 60), mag: input.liked.slice(0, 20), 'mag nicht': input.disliked.slice(0, 20) }, 'Gemini song pick', 0.9) as { songs?: unknown[] };
@@ -161,7 +186,23 @@ export class GeminiMusicWriter implements MusicWriter {
       const item = value as Record<string, unknown>;
       const title = text(item?.title, 200), artist = text(item?.artist, 100);
       return title && artist ? [{ title, artist, announcement: input.announce ? text(item?.announcement, 400) : '' }] : [];
-    }).slice(0, 5);
+    }).slice(0, Math.max(5, count));
+  }
+
+  async writeBlock(input: BlockRequest): Promise<string[]> {
+    const words = Math.max(15, Math.round(input.talkSeconds * 130 / 60));
+    const result = await this.ask(`Du moderierst einen Musikblock deines persönlichen Radios. Schreibe für jeden Moment in «momente» genau eine kurze Moderation von höchstens etwa ${words} Wörtern, zwischen zwei Songs gesprochen, nie über Musik. Anlässe: block_start = den Block eröffnen und den Namen nennen; block_end = den Block abschliessen und, falls angegeben, zur nächsten Sendung überleiten; before_track = den folgenden Song («danach») ankündigen; after_track = den eben gehörten Song («davor») nennen und einordnen; interval = ein kurzes Lebenszeichen zwischendurch, zur Tageszeit passend; group_transition = von einer Gruppe zur nächsten überleiten, beide Gruppennamen dürfen genannt werden. Hat ein Moment mehrere Anlässe, verbinde sie in einer Moderation. Nenne Künstler und Titel nur, wenn sie im Moment stehen; über andere Songs weisst du nichts, erfinde keine und sprich allgemein über Musik, Stimmung und Tageszeit. Keine Uhrzeiten, keine Wetterangaben, keine erfundenen Details; bei Songs höchstens eine allgemein bekannte, sichere Einordnung. Antworte als JSON: {"moderationen":[{"index":0,"text":"..."}]}; index bezieht sich auf «momente».` +
+      personaPrompt(input.direction, 'brief') + showInstructions(input.direction),
+      { block: input.blockName, gruppen: input.groups, 'nächste Sendung': input.nextShow ?? null, tageszeit: input.daytime,
+        momente: input.moments.map((moment, index) => ({ index, anlässe: moment.triggers, ...(moment.next ? { danach: moment.next } : {}),
+          ...(moment.previous ? { davor: moment.previous } : {}), ...(moment.fromGroup ? { von: moment.fromGroup, nach: moment.toGroup } : {}) })) },
+      'Gemini block moderation', 0.8) as { moderationen?: unknown[] };
+    const texts = new Array<string>(input.moments.length).fill('');
+    for (const value of Array.isArray(result?.moderationen) ? result.moderationen : []) {
+      const item = value as Record<string, unknown>, index = Number(item?.index);
+      if (Number.isInteger(index) && index >= 0 && index < texts.length && !texts[index]) texts[index] = text(item?.text, 2000);
+    }
+    return texts;
   }
 }
 
@@ -225,5 +266,34 @@ export class SpotifyCatalog implements MusicCatalog {
       return null;
     }
     return null;
+  }
+
+  /**
+   * The tracks of one playlist, at most 300. The owner's own token (when connected) also reads private
+   * playlists; otherwise the app token reads public ones.
+   */
+  async playlistTracks(playlistId: string, userToken?: string): Promise<PlaylistTrack[]> {
+    if (!/^[A-Za-z0-9]{22}$/.test(playlistId)) throw new Error('invalid playlist id');
+    // Spotify renamed the playlist tracks endpoint to /items; /tracks remains the fallback.
+    for (const endpoint of ['items', 'tracks']) {
+      const tracks: PlaylistTrack[] = [];
+      let missing = false;
+      let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/${endpoint}?${new URLSearchParams({ limit: '100', market: this.market })}`;
+      for (let page = 0; url && page < 3; page++) {
+        const response: Response = await this.fetcher(url, { headers: { Authorization: `Bearer ${userToken ?? await this.accessToken()}` }, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+        if (response.status === 404 && endpoint === 'items') { missing = true; break; }
+        if (!response.ok) throw new ProviderError('Spotify playlist', response.status);
+        const body = await response.json() as { next?: unknown; items?: Array<{ track?: unknown; item?: unknown }> };
+        for (const entry of body.items ?? []) {
+          const item = (entry.item ?? entry.track) as { uri?: unknown; name?: unknown; duration_ms?: unknown; is_local?: unknown; artists?: Array<{ name?: unknown }> } | null;
+          if (!item || item.is_local === true || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
+          const artist = (item.artists ?? []).map(value => typeof value.name === 'string' ? value.name : '').filter(Boolean).join(', ');
+          tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0 });
+        }
+        url = typeof body.next === 'string' && body.next.startsWith('https://api.spotify.com/') ? body.next : null;
+      }
+      if (!missing) return tracks;
+    }
+    return [];
   }
 }

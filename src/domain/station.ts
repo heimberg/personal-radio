@@ -2,11 +2,13 @@ import { defaultProfile, parseProfile } from './program.ts';
 import type { HostPersona, Profile } from './program.ts';
 
 // Server-side station configuration. Everything that shapes the program is data the owner can edit.
-export type ShowFormat = 'brief' | 'podcast' | 'artist_hour' | 'genre_hour' | 'theme_hour';
+export type ShowFormat = 'brief' | 'podcast' | 'artist_hour' | 'genre_hour' | 'theme_hour' | 'music_block';
 /** Music hours: spoken parts with Spotify tracks in between, about one artist, one genre or one theme. */
 export type HourFocus = 'artist' | 'genre' | 'theme';
 export const HOUR_FOCUS: Partial<Record<ShowFormat, HourFocus>> = { artist_hour: 'artist', genre_hour: 'genre', theme_hour: 'theme' };
 export const isMusicHour = (format: ShowFormat): boolean => HOUR_FOCUS[format] !== undefined;
+/** Music hours and music blocks bring their own music, so no songs are planned after them. */
+export const bringsOwnMusic = (format: ShowFormat): boolean => isMusicHour(format) || format === 'music_block';
 /** The fixed artist, genre or theme of a music hour; undefined lets the AI choose. */
 export function hourSubject(show: ShowConfig): string | undefined {
   return HOUR_FOCUS[show.format] === 'artist' ? show.artist : HOUR_FOCUS[show.format] === 'genre' ? show.genre : show.theme;
@@ -39,6 +41,34 @@ export interface ShowConfig {
   /** Music hours: number of tracks and spoken seconds before each track. */
   tracks?: number;
   talkSeconds?: number;
+  /** Music blocks: rotating groups of songs, when to switch groups and when the host speaks. */
+  groups?: PlaylistGroup[];
+  switchAfterTracks?: number;
+  switchAfterMinutes?: number;
+  triggers?: BlockTriggers;
+}
+/**
+ * One group of a music block: the owner's Spotify playlists, or – without playlists – songs the AI picks
+ * from `taste`. Playlist tracks are never sent to an AI provider, so their moderation stays generic.
+ */
+export interface PlaylistGroup { name: string; playlists: string[]; taste: string }
+/** When the host speaks inside a music block; 0 turns a counting trigger off. */
+export interface BlockTriggers {
+  blockStart: boolean;
+  blockEnd: boolean;
+  /** Before every Nth AI-picked song, naming it. */
+  beforeTrack: number;
+  /** After every Nth AI-picked song, naming it. */
+  afterTrack: number;
+  /** After at least X minutes of music without speech. */
+  everyMinutes: number;
+  groupTransition: boolean;
+}
+export const DEFAULT_TRIGGERS: BlockTriggers = { blockStart: true, blockEnd: true, beforeTrack: 1, afterTrack: 0, everyMinutes: 0, groupTransition: true };
+/** Accepts a playlist link, a `spotify:playlist:` URI or the bare ID; returns the ID or undefined. */
+export function playlistId(value: string): string | undefined {
+  const match = value.trim().match(/^(?:https:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}(?:-[a-z]{2})?\/)?playlist\/|spotify:playlist:)?([A-Za-z0-9]{22})(?:[?#].*)?$/);
+  return match?.[1];
 }
 /** Songs between spoken items, picked by the AI from the owner's taste and played through Spotify. */
 export interface MusicConfig {
@@ -98,7 +128,7 @@ export interface TimelineItemView {
 }
 
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */
-export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90], genre_hour: [20, 90], theme_hour: [20, 90] };
+export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90], genre_hour: [20, 90], theme_hour: [20, 90], music_block: [10, 120] };
 export const FORMATS = Object.keys(MINUTES_LIMITS) as ShowFormat[];
 
 export class ConfigError extends Error {}
@@ -143,6 +173,37 @@ function voiceIdOf(value: unknown, path: string): string {
 function minutesOf(time: string) { const [h, m] = time.split(':').map(Number); return h * 60 + m; }
 export function isValidTimezone(timezone: string) {
   try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }); return true; } catch { return false; }
+}
+
+function musicBlock(s: Record<string, unknown>, path: string, whole: (value: unknown, name: string, min: number, max: number, fallback: number) => number)
+  : Pick<ShowConfig, 'groups' | 'switchAfterTracks' | 'switchAfterMinutes' | 'triggers' | 'talkSeconds'> {
+  const groups = list(s.groups ?? [{ name: 'Mein Geschmack', playlists: [], taste: '' }], `${path}.groups`, 6).map((value, index): PlaylistGroup => {
+    const g = record(value, `${path}.groups[${index}]`);
+    const playlists = list(g.playlists ?? [], `${path}.groups[${index}].playlists`, 5).map((item, i) => {
+      const found = typeof item === 'string' ? playlistId(item) : undefined;
+      if (!found) fail(`${path}.groups[${index}].playlists[${i}]`, 'Spotify-Playlist-Link oder -ID erwartet');
+      return found;
+    });
+    return { name: text(g.name, `${path}.groups[${index}].name`, 60), playlists: [...new Set(playlists)], taste: text(g.taste ?? '', `${path}.groups[${index}].taste`, 500, false) };
+  });
+  if (!groups.length) fail(`${path}.groups`, 'mindestens eine Gruppe');
+  const t = s.triggers === undefined ? DEFAULT_TRIGGERS : record(s.triggers, `${path}.triggers`);
+  const flag = (name: keyof BlockTriggers) => {
+    if (t[name] === undefined) return DEFAULT_TRIGGERS[name] as boolean;
+    if (typeof t[name] !== 'boolean') fail(`${path}.triggers.${name}`, 'true oder false');
+    return t[name] as boolean;
+  };
+  const count = (name: keyof BlockTriggers, max: number) => whole(t[name], `triggers.${name}`, 0, max, DEFAULT_TRIGGERS[name] as number);
+  const triggers: BlockTriggers = {
+    blockStart: flag('blockStart'), blockEnd: flag('blockEnd'), beforeTrack: count('beforeTrack', 10), afterTrack: count('afterTrack', 10),
+    everyMinutes: count('everyMinutes', 60), groupTransition: flag('groupTransition'),
+  };
+  // Every block has generated speech: the host must get a word in somewhere.
+  if (!Object.values(triggers).some(Boolean)) fail(`${path}.triggers`, 'mindestens ein Moderations-Anlass');
+  return {
+    groups, triggers, talkSeconds: whole(s.talkSeconds, 'talkSeconds', 10, 120, 20),
+    switchAfterTracks: whole(s.switchAfterTracks, 'switchAfterTracks', 0, 20, 3), switchAfterMinutes: whole(s.switchAfterMinutes, 'switchAfterMinutes', 0, 120, 0),
+  };
 }
 
 export function parseStationConfig(raw: unknown): StationConfig {
@@ -190,6 +251,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     if (textProvider !== 'gemini' && textProvider !== 'ask') fail(`${path}.textProvider`, '«gemini» oder «ask»');
     if (s.format === 'podcast' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Dialoge schreibt nur «gemini»');
     if (focus && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Musikstunden schreibt nur «gemini» (Websuche)');
+    if (format === 'music_block' && textProvider !== 'gemini') fail(`${path}.textProvider`, 'Musikblöcke moderiert nur «gemini»');
     const whole = (value: unknown, name: string, min: number, max: number, fallback: number) => {
       if (value === undefined) return fallback;
       if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) fail(`${path}.${name}`, `ganze Zahl von ${min} bis ${max}`);
@@ -208,6 +270,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
         // Theme hours talk more: the topic is the content, the music accompanies it.
         talkSeconds: whole(s.talkSeconds, 'talkSeconds', 20, 180, focus === 'theme' ? 120 : 60),
       } : {}),
+      ...(format === 'music_block' ? musicBlock(s, path, whole) : {}),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),
     };
   });
