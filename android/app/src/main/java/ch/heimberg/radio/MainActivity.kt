@@ -67,6 +67,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spotifyButton: Button
     private lateinit var spotifyStatus: TextView
     private lateinit var spotify: SpotifyLink
+    private lateinit var updater: AppUpdater
+    private lateinit var sleepButton: MaterialButton
     private var spotifyClientId: String? = null
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -136,6 +138,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.archive).setOnClickListener { archive.launch(Intent(this, LibraryActivity::class.java)) }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
         findViewById<Button>(R.id.connection).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
+        sleepButton = findViewById(R.id.sleep)
+        sleepButton.setOnClickListener { chooseSleep() }
+        updater = AppUpdater(this, api)
+        lifecycleScope.launch { updater.available()?.let(::offerUpdate) }
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -169,7 +175,11 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         if (!::api.isInitialized) return
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, token).buildAsync()
+        val future = MediaController.Builder(this, token)
+            .setListener(object : MediaController.Listener {
+                override fun onExtrasChanged(controller: MediaController, extras: Bundle) = renderSleep(extras)
+            })
+            .buildAsync()
         controllerFuture = future
         future.addListener({
             val player = controller
@@ -181,6 +191,7 @@ class MainActivity : AppCompatActivity() {
             }
             player.addListener(playerListener)
             renderPlayer(player)
+            renderSleep(player.sessionExtras)
             pendingPlay?.let {
                 pendingPlay = null
                 playItem(it)
@@ -226,6 +237,63 @@ class MainActivity : AppCompatActivity() {
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = renderPlayer(player)
+    }
+
+    /** A newer build is on the Worker: download, verify and install it with one tap. */
+    private fun offerUpdate(build: ch.heimberg.radio.core.AppBuild) {
+        val installed = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
+        findViewById<View>(R.id.update).visibility = View.VISIBLE
+        val text = findViewById<TextView>(R.id.update_text)
+        text.text = getString(R.string.update_available, build.versionName, installed)
+        findViewById<Button>(R.id.update_install).setOnClickListener { button ->
+            if (!updater.mayInstall()) {
+                text.text = getString(R.string.update_permission)
+                updater.askForPermission()
+                return@setOnClickListener
+            }
+            button.isEnabled = false
+            text.text = getString(R.string.update_loading)
+            lifecycleScope.launch {
+                runCatching { updater.install(build) }.onFailure { text.text = it.message ?: getString(R.string.connection_failed) }
+                button.isEnabled = true
+            }
+        }
+    }
+
+    /** Sleep timer: pause after 15/30/60 minutes or after the playing item. */
+    private fun chooseSleep() {
+        val choices = listOf(15, 30, 60, PlaybackService.SLEEP_END_OF_ITEM, 0)
+        val labels = choices.map {
+            when (it) {
+                PlaybackService.SLEEP_END_OF_ITEM -> getString(R.string.sleep_end_of_item)
+                0 -> getString(R.string.sleep_off)
+                else -> getString(R.string.sleep_minutes, it)
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.sleep)
+            .setItems(labels.toTypedArray()) { _, which ->
+                val player = controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SLEEP) } ?: run {
+                    Toast.makeText(this, R.string.play_unavailable, Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
+                player.sendCustomCommand(PlaybackService.SLEEP, Bundle().apply { putInt(PlaybackService.EXTRA_SLEEP_MINUTES, choices[which]) })
+            }
+            .show()
+    }
+
+    private fun renderSleep(extras: Bundle) {
+        val at = extras.getLong(PlaybackService.EXTRA_SLEEP_AT, 0L)
+        val label = when {
+            at > 0 -> getString(R.string.sleep_at, java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at)))
+            extras.getBoolean(PlaybackService.EXTRA_SLEEP_AFTER_ITEM, false) -> getString(R.string.sleep_after_item)
+            else -> null
+        }
+        sleepButton.iconTint = if (label != null) ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_300))
+        else ContextCompat.getColorStateList(this, R.color.button_text)
+        sleepButton.contentDescription = label ?: getString(R.string.sleep)
+        sleepButton.tooltipText = label ?: getString(R.string.sleep)
+        if (label != null) statusView.text = label
     }
 
     private fun renderPlayer(player: Player) {

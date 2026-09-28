@@ -81,4 +81,16 @@
     <string name="transcript_loading">Text wird geladen …</string>
     <string name="transcript_empty">Für diesen Beitrag gibt es noch keinen Text.</string>
     <string name="sources">Quellen</string>
+    <string name="sleep">Einschlaf-Timer</string>
+    <string name="sleep_off">Aus</string>
+    <string name="sleep_end_of_item">Nach diesem Beitrag</string>
+    <string name="sleep_minutes">%1$d Minuten</string>
+    <string name="sleep_at">Pausiert um %1$s</string>
+    <string name="sleep_after_item">Pausiert nach diesem Beitrag</string>
+    <string name="sleep_cleared">Einschlaf-Timer aus.</string>
+    <string name="update_available">Version %1$s ist bereit (installiert: %2$s).</string>
+    <string name="update_install">Update installieren</string>
+    <string name="update_loading">Update wird geladen …</string>
+    <string name="update_permission">Erlaube «Personal Radio», Apps zu installieren, dann tippe nochmals auf «Update installieren».</string>
+    <string name="update_corrupt">Das Update ist unvollständig angekommen. Bitte nochmals versuchen.</string>
 </resources>

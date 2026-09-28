@@ -48,6 +48,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -88,6 +89,9 @@ class PlaybackService : MediaLibraryService() {
     private var watch: TrackWatch? = null
     private var handingBack = false
     private var holdsFocus = true
+    /** Sleep timer: a pause at a set time, or when the playing item ends. */
+    private var sleepJob: Job? = null
+    private var sleepAfterItem = false
     /** True while jumping to a chosen production: the item left behind is neither rated nor dropped. */
     private var jumping = false
 
@@ -215,6 +219,33 @@ class PlaybackService : MediaLibraryService() {
         scope.launch { sync() }
     }
 
+    /**
+     * Sets the sleep timer: [minutes] > 0 pauses after that time, [SLEEP_END_OF_ITEM] when the playing item
+     * ends, 0 turns it off. The app reads the state from the session extras.
+     */
+    private fun setSleep(minutes: Int) {
+        sleepJob?.cancel()
+        sleepJob = null
+        sleepAfterItem = false
+        val extras = Bundle()
+        when {
+            minutes > 0 -> {
+                val durationMs = minutes * 60_000L
+                extras.putLong(EXTRA_SLEEP_AT, System.currentTimeMillis() + durationMs)
+                sleepJob = scope.launch {
+                    delay(durationMs)
+                    player.pause()
+                    setSleep(0)
+                }
+            }
+            minutes == SLEEP_END_OF_ITEM -> {
+                sleepAfterItem = true
+                extras.putBoolean(EXTRA_SLEEP_AFTER_ITEM, true)
+            }
+        }
+        session?.setSessionExtras(extras)
+    }
+
     /** Rates what is playing, from the notification, the lock screen or the car. */
     private fun rate(liked: Boolean) {
         val itemId = player.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return
@@ -295,7 +326,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(PLAY_ITEM).add(SYNC).add(LIKE).add(DISLIKE).build()
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(PLAY_ITEM).add(SYNC).add(LIKE).add(DISLIKE).add(SLEEP).build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
         }
 
@@ -307,6 +338,10 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<SessionResult> {
             if (customCommand.customAction == LIKE.customAction || customCommand.customAction == DISLIKE.customAction) {
                 rate(customCommand.customAction == LIKE.customAction)
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            if (customCommand.customAction == SLEEP.customAction) {
+                setSleep(args.getInt(EXTRA_SLEEP_MINUTES, 0))
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             if (customCommand.customAction == SYNC.customAction) {
@@ -447,7 +482,14 @@ class PlaybackService : MediaLibraryService() {
             val natural = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION || handingBack
             reportLeaving(left.mediaId, natural, oldPosition.positionMs)
             val leftItem = Program.itemIdOf(left.mediaId)
-            if (leftItem != newPosition.mediaItem?.mediaId?.let(Program::itemIdOf)) queue.markPassed(leftItem)
+            if (leftItem != newPosition.mediaItem?.mediaId?.let(Program::itemIdOf)) {
+                queue.markPassed(leftItem)
+                // "After this item": the next one waits at its start.
+                if (sleepAfterItem && natural) {
+                    player.pause()
+                    setSleep(0)
+                }
+            }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = follow()
@@ -460,6 +502,7 @@ class PlaybackService : MediaLibraryService() {
                     if (player.duration != C.TIME_UNSET && steps[it.mediaId] is SpeechStep) durations[it.mediaId] = player.duration
                 }
                 Player.STATE_ENDED -> {
+                    if (sleepAfterItem) setSleep(0)
                     // The last segment ended on its own; look for the next one right away.
                     stopTrack()
                     player.currentMediaItem?.let {
@@ -494,6 +537,13 @@ class PlaybackService : MediaLibraryService() {
         /** Custom session command: play the production in [EXTRA_ITEM] (a timeline item as JSON) now. */
         val PLAY_ITEM = SessionCommand("ch.heimberg.radio.PLAY_ITEM", Bundle.EMPTY)
         const val EXTRA_ITEM = "item"
+        /** Custom session command: the sleep timer, minutes in [EXTRA_SLEEP_MINUTES] ([SLEEP_END_OF_ITEM], 0 = off). */
+        val SLEEP = SessionCommand("ch.heimberg.radio.SLEEP", Bundle.EMPTY)
+        const val EXTRA_SLEEP_MINUTES = "minutes"
+        const val SLEEP_END_OF_ITEM = -1
+        /** Session extras: when the timer pauses (epoch ms), or that it pauses after the playing item. */
+        const val EXTRA_SLEEP_AT = "sleepAt"
+        const val EXTRA_SLEEP_AFTER_ITEM = "sleepAfterItem"
         val LIKE = SessionCommand("ch.heimberg.radio.LIKE", Bundle.EMPTY)
         val DISLIKE = SessionCommand("ch.heimberg.radio.DISLIKE", Bundle.EMPTY)
         private const val ROOT = "root"

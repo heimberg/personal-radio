@@ -304,6 +304,8 @@ async function readJson(request: Request, maxBytes: number): Promise<{ value?: u
   try { return { value: JSON.parse(raw) }; } catch { return { error: json({ error: 'invalid_json' }, 400) }; }
 }
 
+const APP_APK = 'app/personal-radio.apk', APP_LATEST = 'app/latest.json';
+
 async function stationRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
   const store = new StationStore(env.DB);
   const sameOrigin = request.headers.get('Origin') === url.origin;
@@ -336,6 +338,17 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (name.length < 2) return json({ places: [] }, 200);
     try { return json({ places: await new OpenMeteo().places(name) }, 200); }
     catch { return json({ error: 'places_unavailable' }, 502); }
+  }
+  // In-app updates: CI stores the signed APK and its description next to the audio (key prefix app/).
+  if (url.pathname === '/api/app/latest' || url.pathname === '/api/app/apk') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const object = await env.AUDIO.get(url.pathname === '/api/app/apk' ? APP_APK : APP_LATEST);
+    if (!object) return json({ error: 'no_app_build' }, 404);
+    if (url.pathname === '/api/app/latest') return json(await new Response(object.body).json(), 200);
+    return new Response(object.body, { headers: {
+      'Content-Type': 'application/vnd.android.package-archive', 'Content-Length': String(object.size),
+      'Content-Disposition': 'attachment; filename="personal-radio.apk"', 'Cache-Control': 'no-store',
+    } });
   }
   if (url.pathname === '/api/library') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

@@ -201,3 +201,13 @@ class TranscriptTest {
         assertEquals("https://example.org/a", transcript.sources.single().url)
     }
 }
+
+class AppBuildTest {
+    @Test fun offersOnlyNewerCompleteBuilds() {
+        val build = AppBuild.parse("""{"versionCode":110,"versionName":"0.2.110","sha256":"${"a".repeat(64)}","size":6700000,"extra":true}""")
+        assertTrue(build.newerThan(102))
+        assertTrue(!build.newerThan(110))
+        assertTrue(!build.copy(sha256 = "kaputt").newerThan(1))
+        assertTrue(!build.copy(size = 0).newerThan(1))
+    }
+}
