@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One building block: tap and it comes next in the program. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="148dp"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="@dimen/space_2"
+    android:background="@drawable/card_background"
+    android:foreground="?attr/selectableItemBackground"
+    android:minHeight="76dp"
+    android:orientation="vertical"
+    android:padding="@dimen/space_3">
+
+    <TextView
+        android:id="@+id/name"
+        style="@style/Widget.PersonalRadio.Text.ItemTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="2" />
+
+    <TextView
+        android:id="@+id/description"
+        style="@style/Widget.PersonalRadio.Text.Meta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:maxLines="2" />
+</LinearLayout>

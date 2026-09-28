@@ -13,12 +13,17 @@ export interface Weather {
   report(location: StationLocation, timezone: string, now: Date): Promise<WeatherReport>;
 }
 
-const PLACEHOLDER = /\{(datum|wochentag|uhrzeit|ort|wetter)\}/gi;
-export type PlaceholderValues = Partial<Record<'datum' | 'wochentag' | 'uhrzeit' | 'ort' | 'wetter', string>>;
+const PLACEHOLDER = /\{(datum|wochentag|uhrzeit|ort|wetter|schlagzeilen)\}/gi;
+export type PlaceholderValues = Partial<Record<'datum' | 'wochentag' | 'uhrzeit' | 'ort' | 'wetter' | 'schlagzeilen', string>>;
 
 /** True when the show asks for the weather in its instructions or research brief. */
 export function usesWeather(show: Pick<ShowConfig, 'instructions' | 'researchPrompt'>): boolean {
   return /\{wetter\}/i.test(`${show.instructions} ${show.researchPrompt}`);
+}
+
+/** True when the show asks for the headlines in its instructions or research brief. */
+export function usesHeadlines(show: Pick<ShowConfig, 'instructions' | 'researchPrompt'>): boolean {
+  return /\{schlagzeilen\}/i.test(`${show.instructions} ${show.researchPrompt}`);
 }
 
 /** Replaces known placeholders; a value that is missing leaves the placeholder's name, never the braces. */

@@ -5,7 +5,8 @@ import type { Profile, Script, Source, TextGenerator } from '../src/domain/progr
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
 import { ProviderError } from './providers.ts';
-import { clockValues, expandPlaceholders, usesWeather } from './tools.ts';
+import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
+import { BLOCKS, BLOCK_PREFIX, blockOf, blockShow } from '../src/domain/blocks.ts';
 import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
@@ -66,7 +67,7 @@ export interface PlannedItem { id: string; seq: number; showId: string; plannedA
 
 /** Spoken items need songs after them; music hours bring their own music. */
 function needsSongsAfter(config: StationConfig, showId: string | undefined): boolean {
-  const show = config.shows.find(item => item.id === showId);
+  const show = config.shows.find(item => item.id === showId) ?? (showId ? blockOf(showId)?.show : undefined);
   return !!show && !bringsOwnMusic(show.format);
 }
 
@@ -159,6 +160,27 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
   }));
 }
 
+/**
+ * The headlines of the day: the newest items of the owner's feeds (last 36 hours); without feeds, a
+ * web search for today's most important news.
+ */
+async function headlines(deps: StationDeps, owner: string, config: StationConfig, now: Date, date: string): Promise<{ text: string; sources: Source[] }> {
+  const collected: FeedItem[] = [];
+  for (const feed of config.feeds) {
+    try { await deps.reserveFeed(owner); } catch { break; }
+    try { collected.push(...await deps.fetchFeed(feed.url)); } catch { /* One unreachable feed must not block the others. */ }
+  }
+  let sources: Source[] = [...new Map(collected.map(item => [item.url, item])).values()]
+    .filter(item => now.getTime() - Date.parse(item.publishedAt) <= 36 * 3_600_000)
+    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 6)
+    .map((item, index) => ({ id: `h${index + 1}`, url: item.url, title: item.title, excerpt: item.excerpt.slice(0, 1500), publishedAt: item.publishedAt, retrievedAt: now.toISOString() }));
+  if (!sources.length && deps.researcher) {
+    const found = await deps.researcher.research({ brief: `Die wichtigsten Nachrichten von heute${date ? `, ${date}` : ''}: sechs Schlagzeilen aus der Schweiz und der Welt, jeweils mit einem Satz Einordnung.`, interests: [], avoidTopics: [], now });
+    sources = found.sources.slice(0, 6).map((source, index) => ({ ...source, id: `h${index + 1}` }));
+  }
+  return { text: sources.map(source => `– ${source.title}`).join('\n'), sources };
+}
+
 /** Topic memory: titles of the most recent produced segments. */
 async function recentTopics(deps: StationDeps, owner: string): Promise<string[]> {
   const titles: string[] = [];
@@ -184,22 +206,40 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const row = await deps.store.lease(owner, itemId, now, minutes(now, LEASE_MINUTES));
   if (!row) return 'skipped';
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
-  const configured = config.shows.find(item => item.id === row.show_id);
+  // A building block added from the app is produced with its template.
+  const block = blockOf(row.show_id);
+  const configured = config.shows.find(item => item.id === row.show_id) ?? (block ? blockShow(block, config, requestedHourSubject(row)) : undefined);
   if (!configured && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
   try {
-    // Placeholders ({datum}, {wetter} …) are filled in once per production; the weather also becomes a source.
+    // Tools (switched on per show, or as placeholders like {wetter}) are filled in once per production;
+    // weather and headlines also become sources, so the writer can cite them.
     let show = configured, toolSources: Source[] = [];
     if (configured) {
       const values = clockValues(now, config.timezone, config.location);
-      // Only a new draft needs the weather; a retry of the voice keeps the approved script.
-      if (usesWeather(configured) && row.state === 'planned') {
-        if (!config.location) return fail('NO_LOCATION');
-        if (!deps.weather) return fail('WEATHER_NOT_CONFIGURED');
-        const report = await deps.weather.report(config.location, config.timezone, now);
-        values.wetter = report.text;
-        toolSources = [report.source];
+      const tools = new Set(configured.tools ?? []);
+      if (usesWeather(configured)) tools.add('weather');
+      if (usesHeadlines(configured)) tools.add('headlines');
+      const notes: string[] = [];
+      if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}, es ist ${values.uhrzeit} Uhr.`);
+      // Only a new draft needs fresh information; a retry of the voice keeps the approved script.
+      if (row.state === 'planned') {
+        if (tools.has('weather')) {
+          if (!config.location) return fail('NO_LOCATION');
+          if (!deps.weather) return fail('WEATHER_NOT_CONFIGURED');
+          const report = await deps.weather.report(config.location, config.timezone, now);
+          values.wetter = report.text;
+          toolSources.push(report.source);
+          notes.push('Das aktuelle Wetter steht in der Quelle «wetter».');
+        }
+        if (tools.has('headlines')) {
+          const news = await headlines(deps, owner, config, now, values.datum ?? '');
+          values.schlagzeilen = news.text;
+          toolSources.push(...news.sources);
+          if (news.sources.length) notes.push('Die aktuellen Schlagzeilen stehen in den Quellen «h1» bis «h' + news.sources.length + '».');
+        }
       }
-      show = { ...configured, instructions: expandPlaceholders(configured.instructions, values), researchPrompt: expandPlaceholders(configured.researchPrompt, values) };
+      const instructions = [expandPlaceholders(configured.instructions, values), ...notes].filter(Boolean).join(' ');
+      show = { ...configured, instructions, researchPrompt: expandPlaceholders(configured.researchPrompt, values) };
     }
     if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
@@ -665,6 +705,43 @@ export async function scheduleShowNow(deps: StationDeps, owner: string, showId: 
   return id;
 }
 
+export const SHOW_BLOCK = 'show:';
+
+/**
+ * Adds a building block to the program, right after [after] (the item that is playing) or at the start,
+ * and returns its ID for production. [subject] is the one optional word the block asks for.
+ */
+export async function addBlock(deps: StationDeps, owner: string, blockId: string, subject?: string, after?: string): Promise<string | null> {
+  const config = await deps.store.getConfig(owner);
+  if (!config) return null;
+  if (blockId === 'song') {
+    const song = await scheduleShowNow(deps, owner, MUSIC_SHOW_ID);
+    if (song) await placeAfter(deps, owner, song, after);
+    return song;
+  }
+  // The owner's own shows are blocks too ("show:<id>"); music hours among them take a subject.
+  const own = blockId.startsWith(SHOW_BLOCK) ? config.shows.find(show => show.id === blockId.slice(SHOW_BLOCK.length)) : undefined;
+  const block = own ? undefined : BLOCKS.find(item => item.id === blockId);
+  if (!own && !block) return null;
+  const now = deps.now();
+  const last = await deps.store.lastItem(owner);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: own ? own.id : `${BLOCK_PREFIX}${block!.id}`, plannedAt: now.toISOString(),
+    estimatedMinutes: own ? own.targetMinutes : block!.show.targetMinutes }, now);
+  const takesWord = own ? isMusicHour(own.format) : !!block!.input;
+  const word = takesWord ? subject?.trim().slice(0, 200) : undefined;
+  if (word) await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: word }) }, now);
+  await placeAfter(deps, owner, id, after);
+  return id;
+}
+
+/** Moves a new item right after [after] (the item that is playing), or to the start of the program. */
+async function placeAfter(deps: StationDeps, owner: string, id: string, after?: string) {
+  const others = (await deps.store.openItems(owner)).map(item => item.id).filter(item => item !== id);
+  const at = after ? others.indexOf(after) + 1 : 0;
+  await arrangeTimeline(deps, owner, [...others.slice(0, at), id, ...others.slice(at)]);
+}
+
 /** Puts the open items into the owner's order; unknown or missing IDs leave the program as it is. */
 export async function arrangeTimeline(deps: StationDeps, owner: string, order: string[]): Promise<boolean> {
   const open = await deps.store.openItems(owner);
@@ -733,7 +810,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { ({ queries = [], team } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team'] }); } catch { /* Research details are optional. */ }
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
-    showName: row.show_id === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
+    showName: row.show_id === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
@@ -767,7 +844,7 @@ export function transcriptView(row: TimelineRow, config: StationConfig | null): 
     lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: turn.text }));
   } else lines = script.text ? [{ text: script.text }] : [];
   return {
-    title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? row.show_id,
+    title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,
     lines: lines.filter(line => line.text?.trim()),
     sources: sources.map(source => ({ title: source.title, url: source.url })),
   };

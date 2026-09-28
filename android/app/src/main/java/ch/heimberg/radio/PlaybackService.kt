@@ -78,6 +78,7 @@ class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     /** Items seen in the program or the archive, so a choice in Android Auto can be played. */
     private val known = HashMap<String, TimelineItem>()
+    private val notices by lazy { ProductionNotices(this) }
     private var connection: Connection? = null
     private var api: ApiClient? = null
     private lateinit var player: ExoPlayer
@@ -165,6 +166,7 @@ class PlaybackService : MediaLibraryService() {
         val timeline = runCatching { api.response() }.getOrElse { return }
         val items = timeline.items
         items.forEach { known[it.id] = it }
+        notices.update(timeline)
         spotifyClientId = timeline.spotify?.clientId
         if (items.none { it.isOpen }) runCatching { api.plan() }
         if (items.any { it.isPlayable && it.hasMusic }) connectSpotify()

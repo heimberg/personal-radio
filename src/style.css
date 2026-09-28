@@ -194,8 +194,6 @@ fieldset.spaced { margin-top: 16px; }
 .advanced-link { margin: 16px 0; text-align: center; }
 details.more { margin: 12px 0; }
 details.more > summary { cursor: pointer; color: var(--muted); font-size: 0.9em; padding: 6px 0; }
-.chips.placeholders { align-items: center; margin-top: -4px; }
-.chips.placeholders small { margin-right: 4px; }
 .advanced-link .button { white-space: normal; max-width: 100%; }
 /* Settings overview: one row per area. */
 .section-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; text-align: left; margin-bottom: 10px; padding: 16px 18px; }
@@ -204,3 +202,13 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: 0.9em;
 .section-row > span:last-child { color: var(--brand); font-size: 1.4rem; line-height: 1; }
 .section-row:hover { border-color: var(--brand); }
 .back-link { border: 0; background: transparent; color: var(--brand); padding: 4px 0; margin-bottom: 8px; font-weight: 600; }
+/* Building blocks: tap one and it comes next. */
+.blocks { margin-bottom: 14px; }
+.block-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.block { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); min-height: 64px; }
+.block small { color: var(--muted); font-size: .78rem; line-height: 1.3; }
+.block.own { border-style: dashed; }
+.block:hover:not(:disabled), .block[aria-pressed=true] { border-color: var(--brand); }
+.block-ask { margin-top: 8px; }
+.chips.tools { align-items: center; margin-top: -4px; }
+.chips.tools small { margin-right: 4px; }

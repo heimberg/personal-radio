@@ -54,9 +54,31 @@ data class SourceRef(val title: String, val url: String)
 @Serializable
 data class SpotifySetup(val clientId: String)
 
+/** Failed productions, summarised: how many and the latest reason. */
+@Serializable
+data class FailureSummary(val count: Int = 0, val latestError: String? = null, val latestAt: String? = null)
+
 /** `GET /api/timeline`: the items plus the public Spotify client ID when the Worker has one. */
 @Serializable
-data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null)
+data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null, val failures: FailureSummary = FailureSummary())
+
+/** A ready-made building block (`GET /api/blocks`): tap it, at most type one word, and it comes next. */
+@Serializable
+data class BlockView(
+    val id: String,
+    val name: String,
+    val description: String,
+    val minutes: Double = 0.0,
+    val music: Boolean = false,
+    val own: Boolean = false,
+    val input: BlockInput? = null,
+)
+
+@Serializable
+data class BlockInput(val kind: String, val label: String, val example: String)
+
+@Serializable
+data class BlockList(val blocks: List<BlockView> = emptyList())
 
 /** `GET /api/timeline/{id}/script`: what was said, for reading along, and the sources behind it. */
 @Serializable
@@ -71,6 +93,7 @@ data class Library(val items: List<TimelineItem>, val retentionDays: Int = 7)
 
 object TimelineJson {
     private val json = Json { ignoreUnknownKeys = true }
+    fun parseBlocks(body: String): List<BlockView> = json.decodeFromString(BlockList.serializer(), body).blocks
     fun parseTranscript(body: String): Transcript = json.decodeFromString(Transcript.serializer(), body)
     fun parseLibrary(body: String): Library = json.decodeFromString(Library.serializer(), body)
     fun encodeItem(item: TimelineItem): String = json.encodeToString(TimelineItem.serializer(), item)

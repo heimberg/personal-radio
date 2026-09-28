@@ -62,7 +62,7 @@ test('a show with {wetter} gets the report in its instructions and as evidence; 
   await store.saveConfig('o', station, NOW);
   const id = (await scheduleShowNow(deps, 'o', 'morgen'))!;
   assert.equal(await produceItem(deps, 'o', id), 'ready');
-  assert.equal(direction?.instructions, 'Begrüsse mich zum Montag in Bern. Wetter in Bern: sonnig.');
+  assert.equal(direction?.instructions, 'Begrüsse mich zum Montag in Bern. Wetter in Bern: sonnig. Das aktuelle Wetter steht in der Quelle «wetter».');
   assert.deepEqual(drafted.map(source => source.id), ['wetter']);
 
   await store.saveConfig('o', parseStationConfig({ ...station, location: undefined }), NOW);

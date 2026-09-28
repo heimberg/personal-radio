@@ -18,6 +18,9 @@ export type VerificationPolicy = 'strict' | 'light' | 'off';
 export type TextProvider = 'gemini' | 'ask';
 export type SourceMode = 'feeds' | 'web';
 export interface FeedConfig { id: string; name: string; url: string }
+export type ShowTool = 'clock' | 'weather' | 'headlines';
+export const SHOW_TOOLS: readonly ShowTool[] = ['clock', 'weather', 'headlines'];
+
 export interface ShowConfig {
   id: string;
   name: string;
@@ -35,6 +38,8 @@ export interface ShowConfig {
   sourceMode: SourceMode;
   /** Research brief for `web` shows, written by the owner. */
   researchPrompt: string;
+  /** Live information the show works in: date and time, the weather, the headlines. */
+  tools?: ShowTool[];
   /** Music hours: fixed artist, genre or theme; without it the AI picks one from the listener's interests. */
   artist?: string;
   genre?: string;
@@ -289,6 +294,10 @@ export function parseStationConfig(raw: unknown): StationConfig {
       } : {}),
       ...(format === 'music_block' ? musicBlock(s, path, whole) : {}),
       ...(typeof s.voiceId === 'string' ? { voiceId: s.voiceId } : {}),
+      ...(s.tools !== undefined ? { tools: [...new Set(list(s.tools, `${path}.tools`, 3).map((tool, i) => {
+        if (!SHOW_TOOLS.includes(tool as ShowTool)) fail(`${path}.tools[${i}]`, SHOW_TOOLS.map(name => `«${name}»`).join(', '));
+        return tool as ShowTool;
+      }))] } : {}),
     };
   });
 
