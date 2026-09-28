@@ -144,6 +144,7 @@ class MainActivity : AppCompatActivity() {
         updater = AppUpdater(this, api)
         lifecycleScope.launch { updater.available()?.let(::offerUpdate) }
         lifecycleScope.launch { loadBlocks() }
+        NoticeWorker.schedule(this)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

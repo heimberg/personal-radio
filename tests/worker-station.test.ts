@@ -222,6 +222,14 @@ test('the Android app authenticates with an Access service token and acts as the
     assert.equal(unconfigured.status, 401);
     assert.equal(((await unconfigured.json()) as { reason: string }).reason, 'service_token_not_configured');
 
+    // The app's background check only peeks: it does not count as listening, so the cron does not plan paid content.
+    const timeline = (query: string) => worker.fetch(new Request(`${ORIGIN}/api/timeline${query}`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), env as never);
+    const seen = () => (env.DB as any).raw.prepare('SELECT COUNT(*) AS n FROM station_activity').get().n;
+    assert.equal((await timeline('?peek=1')).status, 200);
+    assert.equal(seen(), 0);
+    await timeline('');
+    assert.equal(seen(), 1);
+
     // Spotify listening profile: connect sets a state cookie; a callback without the matching state is refused.
     const spotifyEnv = { ...env, SPOTIFY_CLIENT_ID: 'sid', SPOTIFY_CLIENT_SECRET: 'ssecret' };
     const spotify = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, { ...init, headers: { 'Cf-Access-Jwt-Assertion': app, ...(init.headers ?? {}) } }), spotifyEnv as never);

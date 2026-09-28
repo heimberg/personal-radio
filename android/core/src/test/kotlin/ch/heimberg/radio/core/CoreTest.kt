@@ -246,3 +246,15 @@ class NoticeTrackerTest {
         assertEquals(null, tracker.update(Timeline(emptyList(), failures = failed)).failure)
     }
 }
+
+class NoticeStateTest {
+    @Test fun aSavedTrackerContinuesWhereItStopped() {
+        val first = NoticeTracker()
+        first.update(Timeline(listOf(TimelineItem("hour", 1, "s", "Show", "2026-09-28T08:00:00Z", "voicing", 60.0))))
+        val saved = NoticeState.parse(first.state.toJson())
+        val second = NoticeTracker(saved)
+        val notices = second.update(Timeline(listOf(TimelineItem("hour", 1, "s", "Show", "2026-09-28T08:00:00Z", "ready", 60.0))))
+        assertEquals(listOf("hour"), notices.ready.map { it.id })
+        assertEquals(NoticeState(), NoticeState.parse("kaputt"))
+    }
+}
