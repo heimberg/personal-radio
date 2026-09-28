@@ -62,6 +62,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var noticeText: TextView
     private var upcomingItems: List<TimelineItem> = emptyList()
     private var currentItemId: String? = null
+    /** Chosen in the archive while the player connection is being rebuilt; sent once it is connected. */
+    private var pendingPlay: TimelineItem? = null
     private lateinit var spotifyButton: Button
     private lateinit var spotifyStatus: TextView
     private lateinit var spotify: SpotifyLink
@@ -147,9 +149,18 @@ class MainActivity : AppCompatActivity() {
         val future = MediaController.Builder(this, token).buildAsync()
         controllerFuture = future
         future.addListener({
-            controller?.let { player ->
-                player.addListener(playerListener)
-                renderPlayer(player)
+            val player = controller
+            if (player == null) {
+                // The connection failed: a waiting choice cannot be played.
+                if (pendingPlay != null) statusView.text = getString(R.string.play_unavailable)
+                pendingPlay = null
+                return@addListener
+            }
+            player.addListener(playerListener)
+            renderPlayer(player)
+            pendingPlay?.let {
+                pendingPlay = null
+                playItem(it)
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -247,6 +258,13 @@ class MainActivity : AppCompatActivity() {
 
     /** Asks the playback service to play [item] now; the program continues afterwards. */
     private fun playItem(item: TimelineItem) {
+        // Coming back from the archive, the connection to the player is released (onStop) or still being
+        // rebuilt (onStart): keep the choice and send it as soon as the controller is connected.
+        val future = controllerFuture
+        if (future == null || !future.isDone) {
+            pendingPlay = item
+            return
+        }
         val player = controller
         if (player == null || !player.isSessionCommandAvailable(PlaybackService.PLAY_ITEM)) {
             Toast.makeText(this, R.string.play_unavailable, Toast.LENGTH_SHORT).show()
