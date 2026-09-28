@@ -192,3 +192,6 @@ a.button { display: inline-flex; align-items: center; text-decoration: none; col
   .feed > input:first-child { flex-basis: 100%; }
   .timeline li { grid-template-columns: 40px 1fr auto; gap: 8px; }
 }
+
+fieldset.spaced { margin-top: 16px; }
+.location p { margin: 0 0 8px; }

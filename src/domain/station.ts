@@ -86,12 +86,16 @@ export interface MusicConfig {
 export const MUSIC_SHOW_ID = '_musik';
 export const SONG_MINUTES = 4;
 export interface ScheduleSlot { id: string; days: number[]; from: string; to: string; showIds: string[] }
+/** Where the listener is: the weather placeholder `{wetter}` and `{ort}` use it. */
+export interface StationLocation { name: string; latitude: number; longitude: number }
+
 export interface StationConfig {
   version: 1;
   /** Station name the host uses on air. */
   name: string;
   host: HostPersona;
   timezone: string;
+  location?: StationLocation;
   horizonMinutes: number;
   music: MusicConfig;
   profile: Profile;
@@ -317,7 +321,16 @@ export function parseStationConfig(raw: unknown): StationConfig {
   if (m.announce !== undefined && typeof m.announce !== 'boolean') fail('music.announce', 'true oder false');
   const music: MusicConfig = { between, announce: m.announce !== false, taste: text(m.taste ?? '', 'music.taste', 500, false) };
 
-  return { version: 1, name, host, timezone, horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule };
+  let location: StationLocation | undefined;
+  if (c.location !== undefined && c.location !== null) {
+    const l = record(c.location, 'location');
+    const latitude = Number(l.latitude), longitude = Number(l.longitude);
+    if (typeof l.latitude !== 'number' || !(latitude >= -90 && latitude <= 90)) fail('location.latitude', 'Breitengrad von -90 bis 90');
+    if (typeof l.longitude !== 'number' || !(longitude >= -180 && longitude <= 180)) fail('location.longitude', 'Längengrad von -180 bis 180');
+    location = { name: text(l.name, 'location.name', 80), latitude, longitude };
+  }
+
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */
