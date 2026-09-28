@@ -128,8 +128,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
-function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+interface SectionProps { id: string; title: string; description: string; summary: string; open: string | null; onOpen(id: string | null): void; children: ReactNode }
+
+/**
+ * Settings are an overview first: one row per area with what is set. A tap opens only that area, which
+ * keeps the page short on a phone.
+ */
+function Section({ id, title, description, summary, open, onOpen, children }: SectionProps) {
+  if (open === null) return <button type="button" className="card section-row" onClick={() => onOpen(id)} aria-label={`${title}: ${summary}`}>
+    <span><strong>{title}</strong><small>{summary}</small></span><span aria-hidden="true">›</span>
+  </button>;
+  if (open !== id) return null;
   return <section className="card editor-section" aria-label={title}>
+    <button type="button" className="back-link" onClick={() => onOpen(null)}>← Alle Einstellungen</button>
     <h2>{title}</h2><p className="muted">{description}</p>{children}
   </section>;
 }
@@ -145,6 +156,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
   const [newFormat, setNewFormat] = useState<ShowFormat>('theme_hour');
   const [problem, setProblem] = useState('');
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
   // Show cards are collapsed to one line; new ones open right away.
   const [expanded, setExpanded] = useState<string[]>([]);
   const toggle = (id: string) => setExpanded(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
@@ -178,8 +190,11 @@ export function StationEditor({ config: stored, onSave }: Props) {
       {current && !known && <option value={current}>{current}</option>}</>;
   };
 
+  const nav = { open, onOpen: (id: string | null) => { setOpen(id); window.scrollTo({ top: 0 }); } };
+  const activeShows = draft.shows.filter(show => show.enabled).length;
+  const interests = [...draft.profile.topics, ...draft.profile.interests];
   return <div className="editor">
-    <Section title="Sender und Moderation" description="Wie dein Radio heisst und wer spricht. Die Persona prägt jeden Beitrag.">
+    <Section {...nav} id="sender" summary={`${draft.name} · ${draft.host.name}${draft.location ? ` · ${draft.location.name}` : ''}`} title="Sender und Moderation" description="Wie dein Radio heisst und wer spricht. Die Persona prägt jeden Beitrag.">
       <div className="grid">
         <Field label="Name des Senders"><input value={draft.name} maxLength={60} onChange={event => change(next => { next.name = event.target.value; })} /></Field>
         <Field label="Moderation"><input value={draft.host.name} maxLength={40} onChange={event => change(next => { next.host.name = event.target.value; })} /></Field>
@@ -203,7 +218,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </fieldset>
     </Section>
 
-    <Section title="Interessen" description="Worüber recherchiert wird, wenn eine Sendung selbst wählen darf. Dein Feedback gewichtet sie mit der Zeit.">
+    <Section {...nav} id="interessen" summary={interests.length ? interests.slice(0, 4).join(', ') + (interests.length > 4 ? ` und ${interests.length - 4} weitere` : '') : 'Noch keine'} title="Interessen" description="Worüber recherchiert wird, wenn eine Sendung selbst wählen darf. Dein Feedback gewichtet sie mit der Zeit.">
       <div className="chips">{TOPICS.map(topic => <button type="button" key={topic} aria-pressed={draft.profile.topics.includes(topic)}
         onClick={() => change(next => { next.profile.topics = next.profile.topics.includes(topic) ? next.profile.topics.filter(item => item !== topic) : [...next.profile.topics, topic]; })}>{topic}</button>)}</div>
       <form className="inline" onSubmit={event => {
@@ -223,7 +238,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </Field>
     </Section>
 
-    <Section title="Musik" description="Songs zwischen den Beiträgen. Die KI wählt nach deinem Geschmack, Spotify spielt sie in der App. Deine 👍/👎 auf Songs verfeinern die Auswahl.">
+    <Section {...nav} id="musik" summary={`${draft.music.between === 0 ? 'Keine Songs zwischen Beiträgen' : `${draft.music.between} ${draft.music.between === 1 ? 'Song' : 'Songs'} zwischen Beiträgen`}${draft.music.taste ? ` · ${draft.music.taste.slice(0, 40)}${draft.music.taste.length > 40 ? '…' : ''}` : ''}`} title="Musik" description="Songs zwischen den Beiträgen. Die KI wählt nach deinem Geschmack, Spotify spielt sie in der App. Deine 👍/👎 auf Songs verfeinern die Auswahl.">
       <Field label={draft.music.between === 0 ? 'Songs zwischen Beiträgen: aus' : `Songs zwischen Beiträgen: ${draft.music.between}`} hint="Nach jedem Wortbeitrag. Musikstunden bringen ihre eigene Musik mit.">
         <input type="range" min={0} max={3} value={draft.music.between} onChange={event => change(next => { next.music.between = Number(event.target.value); })} />
       </Field>
@@ -234,7 +249,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       <label className="check"><input type="checkbox" checked={draft.music.announce} onChange={event => change(next => { next.music.announce = event.target.checked; })} />Kurze Ansage vor jedem Song</label>
     </Section>
 
-    <Section title="Sendungen" description="Jede Sendung ist ein Format mit eigenem Auftrag. Musikstunden und Musikblöcke wechseln Moderation und Songs über Spotify ab.">
+    <Section {...nav} id="sendungen" summary={`${activeShows} aktiv von ${draft.shows.length}`} title="Sendungen" description="Jede Sendung ist ein Format mit eigenem Auftrag. Musikstunden und Musikblöcke wechseln Moderation und Songs über Spotify ab.">
       <div className="shows">{draft.shows.map((show, index) => {
         const focus = HOUR_FOCUS[show.format], block = show.format === 'music_block';
         const [min, max] = MINUTES_LIMITS[show.format];
@@ -336,7 +351,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </div>
     </Section>
 
-    <Section title="Sendeuhr" description="Wann welche Sendungen laufen. Innerhalb eines Zeitfensters wechseln sie sich ab.">
+    <Section {...nav} id="sendeuhr" summary={`${draft.schedule.length} Zeitfenster · ${draft.timezone}`} title="Sendeuhr" description="Wann welche Sendungen laufen. Innerhalb eines Zeitfensters wechseln sie sich ab.">
       <div className="slots">{draft.schedule.map((slot, index) => <div key={slot.id} className="slot" aria-label={`Zeitfenster ${index + 1}`}>
         <div className="days" role="group" aria-label="Wochentage">{DAYS.map(([day, label]) => <button type="button" key={day} aria-pressed={slot.days.includes(day)}
           onClick={() => changeSlot(index, current => ({ ...current, days: current.days.includes(day) ? current.days.filter(value => value !== day) : [...current.days, day].sort() }))}>{label}</button>)}</div>
@@ -360,7 +375,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </div>
     </Section>
 
-    <Section title="Feeds" description="RSS- oder Atom-Feeds für Sendungen mit der Quelle «Meine Feeds».">
+    <Section {...nav} id="feeds" summary={draft.feeds.length ? `${draft.feeds.length} ${draft.feeds.length === 1 ? 'Feed' : 'Feeds'}` : 'Keine'} title="Feeds" description="RSS- oder Atom-Feeds für Sendungen mit der Quelle «Meine Feeds».">
       <div className="feeds">{draft.feeds.map((feed, index) => <div key={feed.id} className="inline feed">
         <input aria-label="Name des Feeds" value={feed.name} maxLength={80} onChange={event => changeFeed(index, current => ({ ...current, name: event.target.value }))} />
         <input aria-label="Adresse des Feeds" type="url" value={feed.url} placeholder="https://…" onChange={event => changeFeed(index, current => ({ ...current, url: event.target.value }))} />

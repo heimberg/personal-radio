@@ -1,6 +1,7 @@
 package ch.heimberg.radio
 
 import ch.heimberg.radio.core.AccessDiagnosis
+import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.Library
@@ -52,6 +53,27 @@ class ApiClient(private val connection: Connection) {
     suspend fun arrange(order: List<String>) {
         val body = JSONObject().put("order", org.json.JSONArray(order)).toString()
         withContext(Dispatchers.IO) { request("POST", "api/timeline/arrange", body) }
+    }
+
+    /** The newest build CI published for in-app updates, or null when there is none. */
+    suspend fun latestApp(): AppBuild? = withContext(Dispatchers.IO) {
+        try { AppBuild.parse(request("GET", "api/app/latest")) } catch (error: ApiException) { if (error.status == 404) null else throw error }
+    }
+
+    /** Streams a binary response (the APK) into [file]. */
+    fun download(path: String, file: java.io.File) {
+        val http = URL(connection.resolve(path)).openConnection() as HttpURLConnection
+        try {
+            http.connectTimeout = 15_000
+            http.readTimeout = 60_000
+            http.instanceFollowRedirects = false
+            connection.headers().forEach { (name, value) -> http.setRequestProperty(name, value) }
+            val status = http.responseCode
+            if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, http.getHeaderField("Location"), ""))
+            http.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+        } finally {
+            http.disconnect()
+        }
     }
 
     /** The text of an item and its sources, for reading along. */

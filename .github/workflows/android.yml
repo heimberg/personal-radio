@@ -60,6 +60,19 @@ jobs:
           RADIO_KEY_ALIAS: ${{ secrets.RADIO_KEY_ALIAS }}
           RADIO_KEY_PASSWORD: ${{ secrets.RADIO_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Publish the APK for in-app updates
+        # Only signed builds of the deployed branch: the app on the phone can update itself from the Worker.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/ai-segment-pipeline' && env.RADIO_KEYSTORE_PATH != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          printf '{"versionCode":%s,"versionName":"0.2.%s","sha256":"%s","size":%s}' \
+            "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_NUMBER" "$(sha256sum "$apk" | cut -d' ' -f1)" "$(stat -c%s "$apk")" > "$RUNNER_TEMP/latest.json"
+          # The APK first: the description only points to a build that is already there.
+          npx --yes wrangler@4 r2 object put personal-radio-audio/app/personal-radio.apk --file "$apk" --content-type application/vnd.android.package-archive --remote
+          npx --yes wrangler@4 r2 object put personal-radio-audio/app/latest.json --file "$RUNNER_TEMP/latest.json" --content-type application/json --remote
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: personal-radio-android
