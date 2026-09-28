@@ -5,7 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -21,8 +23,12 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.SilenceMediaSource
+import androidx.media3.session.CommandButton
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import ch.heimberg.radio.core.Connection
@@ -36,8 +42,10 @@ import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import ch.heimberg.radio.core.TrackStep
 import ch.heimberg.radio.core.TrackWatch
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,13 +68,15 @@ import kotlinx.coroutines.launch
  * archive). It plays after the current step; the program then continues where the sync puts it.
  */
 @OptIn(UnstableApi::class)
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val queue = ProgramQueue()
     private val steps = HashMap<String, Step>()
     private val durations = HashMap<String, Long>()
     private val reported = HashSet<String>()
-    private var session: MediaSession? = null
+    private var session: MediaLibrarySession? = null
+    /** Items seen in the program or the archive, so a choice in Android Auto can be played. */
+    private val known = HashMap<String, TimelineItem>()
     private var connection: Connection? = null
     private var api: ApiClient? = null
     private lateinit var player: ExoPlayer
@@ -105,7 +115,16 @@ class PlaybackService : MediaSessionService() {
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaSession.Builder(this, player).setSessionActivity(openApp).setCallback(sessionCallback).build()
+        // 👍/👎 sit next to the transport controls in the notification, on the lock screen and in the car.
+        session = MediaLibrarySession.Builder(this, player, sessionCallback)
+            .setSessionActivity(openApp)
+            .setMediaButtonPreferences(
+                listOf(
+                    CommandButton.Builder(CommandButton.ICON_THUMB_DOWN_UNFILLED).setDisplayName(getString(R.string.dislike)).setSessionCommand(DISLIKE).build(),
+                    CommandButton.Builder(CommandButton.ICON_THUMB_UP_UNFILLED).setDisplayName(getString(R.string.like)).setSessionCommand(LIKE).build(),
+                ),
+            )
+            .build()
 
         scope.launch {
             while (isActive) {
@@ -115,7 +134,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Keep playing when the app is swiped away; stop only if nothing is playing.
@@ -141,6 +160,7 @@ class PlaybackService : MediaSessionService() {
         val api = api ?: return
         val timeline = runCatching { api.response() }.getOrElse { return }
         val items = timeline.items
+        items.forEach { known[it.id] = it }
         spotifyClientId = timeline.spotify?.clientId
         if (items.none { it.isOpen }) runCatching { api.plan() }
         if (items.any { it.isPlayable && it.hasMusic }) connectSpotify()
@@ -195,9 +215,87 @@ class PlaybackService : MediaSessionService() {
         scope.launch { sync() }
     }
 
-    private val sessionCallback = object : MediaSession.Callback {
+    /** Rates what is playing, from the notification, the lock screen or the car. */
+    private fun rate(liked: Boolean) {
+        val itemId = player.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return
+        val api = api ?: return
+        scope.launch {
+            val result = runCatching { api.send(FeedbackPolicy.rating(itemId, liked)) }
+            Toast.makeText(this@PlaybackService, result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" }), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Library entries for Android Auto: folders and playable productions. */
+    private fun folder(id: String, title: String) = MediaItem.Builder().setMediaId(id).setMediaMetadata(
+        MediaMetadata.Builder().setTitle(title).setIsBrowsable(true).setIsPlayable(false).setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build(),
+    ).build()
+
+    private fun entry(item: TimelineItem): MediaItem {
+        known[item.id] = item
+        return MediaItem.Builder().setMediaId("$ITEM_PREFIX${item.id}").setMediaMetadata(
+            MediaMetadata.Builder().setTitle(item.displayTitle).setArtist(item.showName).setAlbumTitle(getString(R.string.app_name))
+                .setIsBrowsable(false).setIsPlayable(true).build(),
+        ).build()
+    }
+
+    private suspend fun children(parentId: String): List<MediaItem> {
+        val api = api ?: return emptyList()
+        return when (parentId) {
+            ROOT -> listOf(folder(PROGRAM, getString(R.string.upcoming)), folder(ARCHIVE, getString(R.string.archive)))
+            PROGRAM -> api.response().items.filter { it.isPlayable }.map(::entry)
+            ARCHIVE -> api.library().items.filter { it.hasAudio }.map(::entry)
+            else -> emptyList()
+        }
+    }
+
+    /** A production chosen in the car becomes its playlist steps; the program follows when it ends. */
+    private fun resolve(mediaItems: List<MediaItem>): ListenableFuture<List<MediaItem>> {
+        val future = SettableFuture.create<List<MediaItem>>()
+        scope.launch {
+            val resolved = mediaItems.flatMap { requested ->
+                val id = requested.mediaId.removePrefix(ITEM_PREFIX)
+                val item = known[id] ?: runCatching { children(ARCHIVE); children(PROGRAM) }.let { known[id] } ?: return@flatMap emptyList()
+                reported.remove(item.id)
+                if (item.hasMusic) connectSpotify()
+                Program.steps(item).onEach { steps[it.mediaId] = it }.map(::mediaItemFor)
+            }
+            if (resolved.isEmpty()) future.setException(IllegalArgumentException("unknown item")) else future.set(resolved)
+        }
+        return future
+    }
+
+    private val sessionCallback = object : MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.immediateFuture(LibraryResult.ofItem(folder(ROOT, getString(R.string.app_name)), params))
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+            scope.launch {
+                val items = runCatching { children(parentId) }.getOrDefault(emptyList())
+                future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+            }
+            return future
+        }
+
+        override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String): ListenableFuture<LibraryResult<MediaItem>> {
+            val item = known[mediaId.removePrefix(ITEM_PREFIX)]
+            return Futures.immediateFuture(if (item != null) LibraryResult.ofItem(entry(item), null) else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+        }
+
+        override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
+            if (mediaItems.none { it.mediaId.startsWith(ITEM_PREFIX) }) return super.onAddMediaItems(mediaSession, controller, mediaItems)
+            return Futures.transform(resolve(mediaItems), { it.toMutableList() }, ContextCompat.getMainExecutor(this@PlaybackService))
+        }
+
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(PLAY_ITEM).add(SYNC).build()
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(PLAY_ITEM).add(SYNC).add(LIKE).add(DISLIKE).build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
         }
 
@@ -207,6 +305,10 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == LIKE.customAction || customCommand.customAction == DISLIKE.customAction) {
+                rate(customCommand.customAction == LIKE.customAction)
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction == SYNC.customAction) {
                 scope.launch { sync() }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -392,6 +494,12 @@ class PlaybackService : MediaSessionService() {
         /** Custom session command: play the production in [EXTRA_ITEM] (a timeline item as JSON) now. */
         val PLAY_ITEM = SessionCommand("ch.heimberg.radio.PLAY_ITEM", Bundle.EMPTY)
         const val EXTRA_ITEM = "item"
+        val LIKE = SessionCommand("ch.heimberg.radio.LIKE", Bundle.EMPTY)
+        val DISLIKE = SessionCommand("ch.heimberg.radio.DISLIKE", Bundle.EMPTY)
+        private const val ROOT = "root"
+        private const val PROGRAM = "program"
+        private const val ARCHIVE = "archive"
+        private const val ITEM_PREFIX = "item:"
         /** Custom session command: fetch the program now (after the owner changed its order). */
         val SYNC = SessionCommand("ch.heimberg.radio.SYNC", Bundle.EMPTY)
 

@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The archive: every production that can still be heard, grouped by day, newest first. -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Pull down to refresh. -->
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/refresh"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
+    android:fitsSystemWindows="true">
+
+<ScrollView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:scrollbars="none">
 
     <LinearLayout
@@ -59,3 +65,4 @@
             android:orientation="vertical" />
     </LinearLayout>
 </ScrollView>
+</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
