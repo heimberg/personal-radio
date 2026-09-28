@@ -67,4 +67,14 @@
     <string name="play_item">%1$s jetzt hören</string>
     <string name="settings">Einstellungen</string>
     <string name="produce_subject_intro">Worüber? Leer lassen, dann wählt die KI passend zu deinen Interessen.</string>
+    <string name="move">Verschieben</string>
+    <string name="now_playing_short">läuft</string>
+    <string name="arrange_saved">Reihenfolge gespeichert.</string>
+    <string name="arrange_stale">Das Programm hat sich inzwischen geändert – bitte nochmals verschieben.</string>
+    <string name="upcoming_hint">Tippen: sofort hören · am Griff ziehen: verschieben</string>
+    <string name="archive_hint_delete">Lange drücken: löschen</string>
+    <string name="delete">Löschen</string>
+    <string name="delete_title">«%1$s» löschen?</string>
+    <string name="delete_message">Die Produktion und ihr Audio werden endgültig entfernt.</string>
+    <string name="deleted">Gelöscht.</string>
 </resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drag handle: two columns of three dots. Tinted by the view that shows it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="?attr/colorControlNormal"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M92,60m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0M164,60m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0M92,128m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0M164,128m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0M92,196m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0M164,196m-14,0a14,14 0,1 0,28 0a14,14 0,1 0,-28 0" />
+</vector>

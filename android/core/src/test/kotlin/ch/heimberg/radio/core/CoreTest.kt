@@ -164,3 +164,27 @@ class LibraryTest {
         assertEquals(library.items[0], TimelineJson.parseItem(TimelineJson.encodeItem(library.items[0])))
     }
 }
+
+class ProgramClockTest {
+    private fun item(id: String, seq: Int, minutes: Double) = TimelineItem(id, seq, "s", "Show", "2026-09-28T08:00:00Z", "ready", minutes)
+
+    @Test fun startTimesFollowTheListFromNowWithThePlayingItemFirst() {
+        val items = listOf(item("a", 1, 2.0), item("b", 2, 4.0), item("c", 3, 60.0))
+        val now = java.time.Instant.parse("2026-09-28T08:00:00Z")
+        val ordered = ProgramClock.playingOrder(items, "b")
+        assertEquals(listOf("b", "a", "c"), ordered.map { it.id })
+        val starts = ProgramClock.startTimes(ordered, now, "b", 90_000)
+        assertEquals(now, starts["b"])
+        assertEquals(now.plusSeconds(90), starts["a"])
+        assertEquals(now.plusSeconds(90 + 120), starts["c"])
+        // Nothing playing: the list starts now.
+        assertEquals(now.plusSeconds(120), ProgramClock.startTimes(items, now, null, null)["b"])
+    }
+
+    @Test fun movingKeepsThePlayingItemFirst() {
+        val items = listOf(item("b", 2, 4.0), item("a", 1, 2.0), item("c", 3, 60.0))
+        assertEquals(listOf("b", "c", "a"), ProgramClock.move(items, 2, 1, "b").map { it.id })
+        assertEquals(items, ProgramClock.move(items, 1, 0, "b"))
+        assertEquals(listOf("a", "b", "c"), ProgramClock.move(items, 1, 0, null).map { it.id })
+    }
+}

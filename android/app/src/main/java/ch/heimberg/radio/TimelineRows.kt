@@ -12,25 +12,25 @@ import ch.heimberg.radio.core.TimelineItem
 
 /**
  * One row of the program list or the archive: time, title, show, state and Spotify songs. A row with
- * [onPlay] can be tapped to hear the item right away.
+ * [onPlay] can be tapped to hear the item right away. [bind] resets everything, so recycled rows are clean.
  */
 object TimelineRows {
-    fun inflate(inflater: LayoutInflater, parent: ViewGroup, item: TimelineItem, time: String, playing: Boolean, onPlay: ((TimelineItem) -> Unit)?): View {
-        val row = inflater.inflate(R.layout.item_timeline, parent, false)
+    fun inflate(inflater: LayoutInflater, parent: ViewGroup, item: TimelineItem, time: String, playing: Boolean, onPlay: ((TimelineItem) -> Unit)?): View =
+        inflater.inflate(R.layout.item_timeline, parent, false).also { bind(it, item, time, playing, onPlay) }
+
+    fun bind(row: View, item: TimelineItem, time: String, playing: Boolean, onPlay: ((TimelineItem) -> Unit)?) {
         val context = row.context
         val accent = ContextCompat.getColor(context, R.color.accent_300)
         row.findViewById<TextView>(R.id.time).text = time
         row.findViewById<TextView>(R.id.title).apply {
             text = item.displayTitle
-            if (playing) setTextColor(accent)
+            setTextColor(if (playing) accent else ContextCompat.getColor(context, R.color.text))
         }
         val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + context.getString(R.string.spotify_tracks, it) } ?: ""
         row.findViewById<TextView>(R.id.meta).text = "${item.showName} · ${Labels.state(item.state)}$tracks"
-        item.error?.let { error ->
-            row.findViewById<TextView>(R.id.error).apply {
-                text = Labels.error(error)
-                visibility = View.VISIBLE
-            }
+        row.findViewById<TextView>(R.id.error).apply {
+            text = item.error?.let(Labels::error) ?: ""
+            visibility = if (item.error != null) View.VISIBLE else View.GONE
         }
         row.findViewById<ImageView>(R.id.state).apply {
             setImageResource(
@@ -42,12 +42,16 @@ object TimelineRows {
                     else -> R.drawable.ic_clock
                 },
             )
-            if (playing || onPlay != null || item.state == "ready") imageTintList = ColorStateList.valueOf(accent)
+            val highlighted = playing || onPlay != null || item.state == "ready"
+            imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, if (highlighted) R.color.accent_300 else R.color.neutral_500))
         }
         if (onPlay != null) {
             row.contentDescription = context.getString(R.string.play_item, item.displayTitle)
             row.setOnClickListener { onPlay(item) }
+        } else {
+            row.contentDescription = null
+            row.setOnClickListener(null)
+            row.isClickable = false
         }
-        return row
     }
 }

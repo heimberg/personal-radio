@@ -223,12 +223,20 @@
                 android:layout_height="wrap_content" />
         </LinearLayout>
 
-        <LinearLayout
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:text="@string/upcoming_hint" />
+
+        <!-- Rows move with the finger on their handle; times say when each item starts from now. -->
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/upcoming"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_2"
-            android:orientation="vertical" />
+            android:overScrollMode="never" />
 
         <TextView
             android:id="@+id/upcoming_empty"
