@@ -39,6 +39,15 @@ base64 -w0 radio.jks   # value of RADIO_KEYSTORE_B64
 
 Repository secrets: `RADIO_KEYSTORE_B64`, `RADIO_KEYSTORE_PASSWORD`, `RADIO_KEY_ALIAS` (`radio`), `RADIO_KEY_PASSWORD`. Keep `radio.jks` outside the repository.
 
+## Design
+
+The app follows the Nocturne design system, direction "1c Kompakt" from the Claude Design handoff: a dark blue-grey ground, Inter at 400/500, one blurple accent used for lines and glow, outlined buttons, and rules that fade at their ends. The player is a compact card with a glowing orb (`OrbView`) and a waveform that shows the segment's progress (`WaveformView`, display only). The program list follows, then the actions.
+
+- Tokens: `res/values/colors.xml` (ground, surface, text, accent and the 100–900 ramps) and `res/values/dimens.xml` (the compact 0.7× spacing scale and radii). Take colours and spacing from there instead of hard-coding them.
+- Styles: `res/values/themes.xml` holds the theme, the button variants (`Button`, `.Primary`, `.Ghost`, `.Icon`, `.Play`), the input and the text styles (apply them with `style=`).
+- Assets: Inter 4.1 (Latin subset, SIL OFL 1.1) in `res/font`, Phosphor icons (MIT) as vector drawables `ic_*`. License texts are in `app/licenses/`.
+- Motion: the orb breathes and the waveform sways only while audio plays, and both stay still when the system's animations are turned off.
+
 ## Build and test
 
 - Program logic (pure Kotlin, no Android SDK needed): `cd android && ./gradlew -p core test`

@@ -1,65 +1,137 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:scrollbars="none">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingStart="@dimen/space_6"
+        android:paddingEnd="@dimen/space_6"
+        android:paddingBottom="@dimen/space_8">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setup_title"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingTop="@dimen/space_4"
+            android:paddingBottom="@dimen/space_3">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/brand_mark" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_2"
+                android:fontFamily="@font/inter_medium"
+                android:letterSpacing="-0.01"
+                android:text="@string/brand"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+        </LinearLayout>
 
         <TextView
+            style="@style/Widget.PersonalRadio.Text.Eyebrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_2"
+            android:text="@string/connection" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Headline"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/setup_intro"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
+            android:layout_marginTop="@dimen/space_1"
+            android:accessibilityHeading="true"
+            android:text="@string/setup_title" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_2"
+            android:text="@string/setup_intro" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_6"
+            android:labelFor="@+id/base_url"
+            android:text="@string/base_url"
+            android:textColor="@color/neutral_400"
+            android:textSize="12sp" />
 
         <EditText
             android:id="@+id/base_url"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/space_1"
             android:autofillHints="url"
-            android:hint="@string/base_url"
             android:inputType="textUri" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_4"
+            android:labelFor="@+id/client_id"
+            android:text="@string/client_id"
+            android:textColor="@color/neutral_400"
+            android:textSize="12sp" />
 
         <EditText
             android:id="@+id/client_id"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
             android:autofillHints="username"
-            android:hint="@string/client_id"
             android:inputType="text" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_4"
+            android:labelFor="@+id/client_secret"
+            android:text="@string/client_secret"
+            android:textColor="@color/neutral_400"
+            android:textSize="12sp" />
 
         <EditText
             android:id="@+id/client_secret"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
             android:autofillHints="password"
-            android:hint="@string/client_secret"
             android:inputType="textPassword" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/save"
+            style="@style/Widget.PersonalRadio.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/save" />
+            android:layout_marginTop="@dimen/space_6"
+            android:text="@string/save"
+            app:icon="@drawable/ic_plugs" />
 
+        <!-- The test result; a refusal names the layer (Access or the Worker) and the setting to check. -->
         <TextView
             android:id="@+id/setup_message"
+            style="@style/Widget.PersonalRadio.Text.Body"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
+            android:layout_marginTop="@dimen/space_3"
+            android:accessibilityLiveRegion="polite"
+            android:textColor="@color/accent_300" />
     </LinearLayout>
 </ScrollView>
