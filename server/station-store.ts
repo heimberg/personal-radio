@@ -1,5 +1,5 @@
 // D1 persistence for the station: configuration, timeline, feedback and memory.
-import { parseStationConfig } from '../src/domain/station.ts';
+import { MUSIC_SHOW_ID, parseStationConfig } from '../src/domain/station.ts';
 import type { StationConfig, TimelineState } from '../src/domain/station.ts';
 import { parseFeedback } from '../src/domain/recommendation.ts';
 import type { FeedbackEvent } from '../src/domain/recommendation.ts';
@@ -177,16 +177,28 @@ export class StationStore {
     return Number(row?.failures ?? 0);
   }
 
-  /** Unplayed items created before the cutoff are stale; played audio older than the retention cutoff is released. */
+  /**
+   * Items created before the cutoff leave the program: unfinished ones expire, finished but unheard ones
+   * move to the archive, where they stay playable until their audio is released.
+   */
   async expire(owner: string, createdBefore: Date, now: Date): Promise<TimelineRow[]> {
-    return (await this.db.prepare(`UPDATE timeline_items SET state = 'expired', lease_until = NULL, updated_at = ?
+    return (await this.db.prepare(`UPDATE timeline_items SET state = CASE WHEN state = 'ready' THEN 'archived' ELSE 'expired' END,
+      lease_until = NULL, updated_at = ?
       WHERE owner_id = ? AND state IN ('planned', 'voicing', 'ready') AND created_at < ? RETURNING *`)
       .bind(now.toISOString(), owner, createdBefore.toISOString()).all<TimelineRow>()).results;
   }
 
+  /** Audio of items that left the program before the retention cutoff. */
   async audioToRelease(owner: string, updatedBefore: Date): Promise<TimelineRow[]> {
     return (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND audio_key IS NOT NULL
-      AND state IN ('played', 'skipped', 'expired', 'failed') AND updated_at < ?`).bind(owner, updatedBefore.toISOString()).all<TimelineRow>()).results;
+      AND state IN ('played', 'skipped', 'archived', 'expired', 'failed') AND updated_at < ?`).bind(owner, updatedBefore.toISOString()).all<TimelineRow>()).results;
+  }
+
+  /** Everything that can still be heard, newest first: ready, heard and archived productions with audio. Single songs are left out. */
+  async library(owner: string, limit = 60): Promise<TimelineRow[]> {
+    return (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND audio_key IS NOT NULL AND show_id != ?
+      AND state IN ('ready', 'played', 'skipped', 'archived') ORDER BY created_at DESC, seq DESC LIMIT ?`)
+      .bind(owner, MUSIC_SHOW_ID, limit).all<TimelineRow>()).results;
   }
 
   async addFeedback(owner: string, event: FeedbackEvent) {

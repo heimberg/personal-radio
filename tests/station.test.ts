@@ -171,16 +171,24 @@ test('no fresh articles fails the item; three recent failures pause planning', a
   assert.ok((await tick(h.deps, OWNER)).planned > 0);
 });
 
-test('stale unplayed items expire and release their audio', async () => {
+test('stale items leave the program: unfinished ones expire, unheard productions stay in the archive until their audio is released', async () => {
   const h = harness(); await h.setup();
-  const [id] = (await tick(h.deps, OWNER)).due;
+  const [id, other] = (await tick(h.deps, OWNER)).due;
   await produceItem(h.deps, OWNER, id);
   h.advance(13 * 60);
   const result = await tick(h.deps, OWNER);
   assert.equal(result.expired, 10);
-  assert.equal((await h.store.getItem(OWNER, id))?.state, 'expired');
-  assert.equal(h.bucket.size, 0);
+  assert.equal((await h.store.getItem(OWNER, id))?.state, 'archived');
+  assert.equal((await h.store.getItem(OWNER, other))?.state, 'expired');
+  assert.equal(h.bucket.size, 1);
+  assert.deepEqual((await h.store.library(OWNER)).map(row => row.id), [id]);
+  assert.equal(toView((await h.store.getItem(OWNER, id))!, null).audioUrl, `api/timeline/${id}/audio`);
   assert.equal(result.planned, 10); // fresh program replaces the stale one
+  // After the retention period the audio is released and the item leaves the archive.
+  h.advance(7 * 24 * 60 + 1);
+  await tick(h.deps, OWNER);
+  assert.equal(h.bucket.size, 0);
+  assert.deepEqual(await h.store.library(OWNER), []);
 });
 
 test('the cron plans new content only while the owner has listened recently', async () => {
@@ -380,10 +388,14 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
     `api/timeline/${id}/audio?part=4`, 'Sour Times', `api/timeline/${id}/audio?part=6`,
   ]);
   assert.equal(h.bucket.size, 4);
-  // Expiry releases every part's audio.
+  // Unheard, the hour moves to the archive with its audio; after the retention period every part is released.
   h.advance(13 * 60);
   await tick(h.deps, OWNER);
+  assert.equal(h.bucket.size, 4);
+  h.advance(7 * 24 * 60 + 1);
+  await tick(h.deps, OWNER);
   assert.equal(h.bucket.size, 0);
+  assert.ok(toView((await h.store.getItem(OWNER, id))!, null).parts!.every(part => part.kind === 'track' || !part.audioUrl));
 });
 
 test('an artist hour without enough Spotify matches fails with the count; missing Spotify is reported', async () => {

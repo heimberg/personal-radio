@@ -146,3 +146,21 @@ class AccessDiagnosisTest {
         assertEquals("Tageslimit erreicht.", AccessDiagnosis.message(429, null, ""))
     }
 }
+
+class LibraryTest {
+    @Test fun listsWhatCanStillBeHeardAndRoundTripsAnItem() {
+        val library = TimelineJson.parseLibrary(
+            """{"items":[
+              {"id":"a","seq":9,"showId":"news","showName":"News","plannedAt":"2026-09-28T08:00:00Z","state":"archived","estimatedMinutes":2,"audioUrl":"api/timeline/a/audio"},
+              {"id":"b","seq":3,"showId":"k","showName":"Künstler","plannedAt":"2026-09-27T08:00:00Z","state":"played","estimatedMinutes":60,
+               "parts":[{"kind":"speech"},{"kind":"track","spotifyUri":"spotify:track:x","durationMs":1000}]}
+            ],"retentionDays":7,"future":1}""",
+        )
+        assertEquals(listOf("a", "b"), library.items.map { it.id })
+        assertEquals(7, library.retentionDays)
+        assertTrue(library.items[0].hasAudio && !library.items[0].isPlayable && !library.items[0].isHeard)
+        assertTrue(!library.items[1].hasAudio && library.items[1].isHeard)
+        assertEquals("Nicht gehört", Labels.state("archived"))
+        assertEquals(library.items[0], TimelineJson.parseItem(TimelineJson.encodeItem(library.items[0])))
+    }
+}

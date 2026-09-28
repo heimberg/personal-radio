@@ -12,7 +12,6 @@ import android.widget.Button
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.text.InputFilter
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -28,11 +27,12 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.FeedbackPolicy
-import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
+import ch.heimberg.radio.core.TimelineJson
 import com.google.android.material.button.MaterialButton
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
@@ -68,6 +68,13 @@ class MainActivity : AppCompatActivity() {
     private var spotifyClientId: String? = null
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** The archive hands back the production to play. */
+    private val archive = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        result.data?.getStringExtra(LibraryActivity.EXTRA_ITEM)
+            ?.let { runCatching { TimelineJson.parseItem(it) }.getOrNull() }
+            ?.let(::playItem)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         spotifyButton.setOnClickListener { connectSpotify() }
         findViewById<Button>(R.id.plan).setOnClickListener { planNow() }
         findViewById<Button>(R.id.produce_now).setOnClickListener { chooseShowToProduce() }
+        findViewById<Button>(R.id.archive).setOnClickListener { archive.launch(Intent(this, LibraryActivity::class.java)) }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
         findViewById<Button>(R.id.connection).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
 
@@ -237,6 +245,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Asks the playback service to play [item] now; the program continues afterwards. */
+    private fun playItem(item: TimelineItem) {
+        val player = controller
+        if (player == null || !player.isSessionCommandAvailable(PlaybackService.PLAY_ITEM)) {
+            Toast.makeText(this, R.string.play_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val args = Bundle().apply { putString(PlaybackService.EXTRA_ITEM, TimelineJson.encodeItem(item)) }
+        val result = player.sendCustomCommand(PlaybackService.PLAY_ITEM, args)
+        result.addListener({
+            val ok = runCatching { result.get().resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+            statusView.text = if (ok) getString(R.string.playing_now, item.displayTitle) else getString(R.string.play_unavailable)
+        }, ContextCompat.getMainExecutor(this))
+    }
+
     private fun planNow() {
         lifecycleScope.launch {
             statusView.text = runCatching { api.plan() }.fold({ getString(R.string.planned) }, { it.message ?: "" })
@@ -342,33 +365,10 @@ class MainActivity : AppCompatActivity() {
         upcomingView.removeAllViews()
         val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
         for (item in items) {
-            val row = layoutInflater.inflate(R.layout.item_timeline, upcomingView, false)
             val playing = item.id == currentItemId
-            row.findViewById<TextView>(R.id.time).text = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
-            row.findViewById<TextView>(R.id.title).apply {
-                text = item.displayTitle
-                if (playing) setTextColor(ContextCompat.getColor(context, R.color.accent_300))
-            }
-            val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + getString(R.string.spotify_tracks, it) } ?: ""
-            row.findViewById<TextView>(R.id.meta).text = "${item.showName} · ${Labels.state(item.state)}$tracks"
-            item.error?.let { error ->
-                row.findViewById<TextView>(R.id.error).apply {
-                    text = Labels.error(error)
-                    visibility = View.VISIBLE
-                }
-            }
-            row.findViewById<ImageView>(R.id.state).apply {
-                setImageResource(
-                    when {
-                        playing -> R.drawable.ic_waveform
-                        item.state == "ready" -> R.drawable.ic_check_circle
-                        item.state == "voicing" -> R.drawable.ic_waveform
-                        else -> R.drawable.ic_clock
-                    },
-                )
-                if (playing || item.state == "ready") imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_300))
-            }
-            upcomingView.addView(row)
+            val planned = runCatching { time.format(Instant.parse(item.plannedAt)) }.getOrDefault("")
+            // Finished productions can be heard right away with a tap.
+            upcomingView.addView(TimelineRows.inflate(layoutInflater, upcomingView, item, planned, playing, if (item.isPlayable && !playing) ::playItem else null))
         }
     }
 

@@ -9,7 +9,7 @@ import { fetchFeed, FeedError, validateFeedUrl } from './feed.ts';
 import { listMistralVoices } from './mistral-voices.ts';
 import { StationStore } from './station-store.ts';
 import type { D1Database } from './station-store.ts';
-import { arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
+import { AUDIO_RETENTION_DAYS, arrangeTimeline, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -328,6 +328,11 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
     return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify }, 200);
   }
+  if (url.pathname === '/api/library') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const config = await store.getConfig(owner);
+    return json({ items: (await store.library(owner)).map(row => toView(row, config)), retentionDays: AUDIO_RETENTION_DAYS }, 200);
+  }
   if (url.pathname === '/api/timeline/cleanup') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
@@ -436,8 +441,11 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   let interests: string[] = [];
   try { interests = (JSON.parse(row.script_json ?? '{}') as { interestTags?: string[] }).interestTags ?? []; } catch { /* Feedback without tags still marks playback. */ }
   const now = new Date();
+  // Listening again from the archive does not count twice; ratings always count.
+  const listening = action === 'complete' || action === 'skip';
+  if (listening && row.state !== 'ready' && row.state !== 'archived') return json({ ok: true }, 200);
   await store.addFeedback(owner, { itemId: row.id, interests, action: action as FeedbackAction, listenedRatio, createdAt: now.toISOString() });
-  if ((action === 'complete' || action === 'skip') && row.state === 'ready') await store.update(owner, row.id, { state: action === 'complete' ? 'played' : 'skipped' }, now);
+  if (listening) await store.update(owner, row.id, { state: action === 'complete' ? 'played' : 'skipped' }, now);
   return json({ ok: true }, 200);
 }
 

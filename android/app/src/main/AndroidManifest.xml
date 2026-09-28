@@ -31,6 +31,7 @@
         </activity>
         <activity android:name=".SetupActivity" android:exported="false" />
         <activity android:name=".CockpitActivity" android:exported="false" />
+        <activity android:name=".LibraryActivity" android:exported="false" />
 
         <!-- One foreground media service owns playback, the lock-screen controls and Bluetooth buttons. -->
         <service

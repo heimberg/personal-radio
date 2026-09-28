@@ -3,6 +3,7 @@ package ch.heimberg.radio
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -22,6 +23,8 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackPolicy
@@ -30,8 +33,11 @@ import ch.heimberg.radio.core.ProgramQueue
 import ch.heimberg.radio.core.SpeechStep
 import ch.heimberg.radio.core.Step
 import ch.heimberg.radio.core.TimelineItem
+import ch.heimberg.radio.core.TimelineJson
 import ch.heimberg.radio.core.TrackStep
 import ch.heimberg.radio.core.TrackWatch
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +55,9 @@ import kotlinx.coroutines.launch
  * title, so the notification, pause and "next" work the same for speech and music. While a
  * placeholder is current, the Spotify app plays the track through App Remote and our player gives up
  * audio focus; when Spotify reports the track's end, the playlist moves on to the next spoken part.
+ *
+ * The app can ask for any production to play right away ([PLAY_ITEM], from the program list or the
+ * archive). It plays after the current step; the program then continues where the sync puts it.
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -69,6 +78,8 @@ class PlaybackService : MediaSessionService() {
     private var watch: TrackWatch? = null
     private var handingBack = false
     private var holdsFocus = true
+    /** True while jumping to a chosen production: the item left behind is neither rated nor dropped. */
+    private var jumping = false
 
     override fun onCreate() {
         super.onCreate()
@@ -94,7 +105,7 @@ class PlaybackService : MediaSessionService() {
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaSession.Builder(this, player).setSessionActivity(openApp).build()
+        session = MediaSession.Builder(this, player).setSessionActivity(openApp).setCallback(sessionCallback).build()
 
         scope.launch {
             while (isActive) {
@@ -155,6 +166,53 @@ class PlaybackService : MediaSessionService() {
             player.prepare()
         }
         prefetch(newSteps.filterIsInstance<SpeechStep>())
+    }
+
+    /**
+     * Plays [item] now: its steps replace the rest of the playlist after the current item and playback
+     * jumps there. An interrupted program item is not marked as passed, so the next sync queues it again.
+     */
+    private fun playNow(item: TimelineItem) {
+        val newSteps = Program.steps(item)
+        if (newSteps.isEmpty()) return
+        newSteps.forEach { steps[it.mediaId] = it }
+        // Heard again: the server decides whether it counts (only unheard items are rated as listened).
+        reported.remove(item.id)
+        if (item.hasMusic) connectSpotify()
+        val currentItem = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)
+        var insertAt = if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
+        while (insertAt < player.mediaItemCount && Program.itemIdOf(player.getMediaItemAt(insertAt).mediaId) == currentItem) insertAt++
+        if (insertAt < player.mediaItemCount) player.removeMediaItems(insertAt, player.mediaItemCount)
+        player.addMediaItems(insertAt, newSteps.map(::mediaItemFor))
+        jumping = true
+        try {
+            player.seekTo(insertAt, 0)
+        } finally {
+            jumping = false
+        }
+        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) player.prepare()
+        player.play()
+        scope.launch { sync() }
+    }
+
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(PLAY_ITEM).build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != PLAY_ITEM.customAction) return super.onCustomCommand(session, controller, customCommand, args)
+            val item = args.getString(EXTRA_ITEM)?.let { runCatching { TimelineJson.parseItem(it) }.getOrNull() }
+                ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+            playNow(item)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
     }
 
     /** Connects in the background; the one-time permission is granted with "Spotify verbinden" in the app. */
@@ -279,7 +337,7 @@ class PlaybackService : MediaSessionService() {
     private val listener = object : Player.Listener {
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             val left = oldPosition.mediaItem ?: return
-            if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex) return
+            if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex || jumping) return
             val natural = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION || handingBack
             reportLeaving(left.mediaId, natural, oldPosition.positionMs)
             val leftItem = Program.itemIdOf(left.mediaId)
@@ -327,6 +385,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /** Custom session command: play the production in [EXTRA_ITEM] (a timeline item as JSON) now. */
+        val PLAY_ITEM = SessionCommand("ch.heimberg.radio.PLAY_ITEM", Bundle.EMPTY)
+        const val EXTRA_ITEM = "item"
+
         private val AUDIO = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build()
 
         /** Spotify reports the end; the placeholder only runs out if Spotify never does. */

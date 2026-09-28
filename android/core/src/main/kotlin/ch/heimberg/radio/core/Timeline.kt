@@ -26,10 +26,13 @@ data class TimelineItem(
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }
-    val isPlayable: Boolean get() = state == "ready" && (
+    /** All spoken audio is still on the server (it is released some days after the item left the program). */
+    val hasAudio: Boolean get() =
         if (parts.isEmpty()) audioUrl != null
         else parts.all { if (it.isTrack) it.spotifyUri != null else it.audioUrl != null }
-    )
+    val isPlayable: Boolean get() = state == "ready" && hasAudio
+    /** Heard before, or left the program unheard: listening again from the archive. */
+    val isHeard: Boolean get() = state == "played" || state == "skipped"
     val isOpen: Boolean get() = state == "planned" || state == "voicing" || state == "ready"
 }
 
@@ -55,8 +58,15 @@ data class SpotifySetup(val clientId: String)
 @Serializable
 data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null)
 
+/** `GET /api/library`: productions that can still be heard, newest first, and how long heard audio is kept. */
+@Serializable
+data class Library(val items: List<TimelineItem>, val retentionDays: Int = 7)
+
 object TimelineJson {
     private val json = Json { ignoreUnknownKeys = true }
+    fun parseLibrary(body: String): Library = json.decodeFromString(Library.serializer(), body)
+    fun encodeItem(item: TimelineItem): String = json.encodeToString(TimelineItem.serializer(), item)
+    fun parseItem(body: String): TimelineItem = json.decodeFromString(TimelineItem.serializer(), body)
     fun parseResponse(body: String): Timeline = json.decodeFromString(Timeline.serializer(), body).let { it.copy(items = it.items.sortedBy { item -> item.seq }) }
     fun parse(body: String): List<TimelineItem> = parseResponse(body).items
 }
@@ -69,6 +79,7 @@ object Labels {
         "ready" -> "Bereit"
         "played" -> "Gehört"
         "skipped" -> "Übersprungen"
+        "archived" -> "Nicht gehört"
         "failed" -> "Fehlgeschlagen"
         "expired" -> "Abgelaufen"
         else -> state

@@ -59,4 +59,15 @@
     <string name="spotify_connected_button">Spotify verbunden ✓</string>
     <string name="spotify_missing">Installiere die Spotify-App und melde dich dort an.</string>
     <string name="spotify_tracks">%1$d Songs über Spotify</string>
+    <string name="archive">Archiv</string>
+    <string name="archive_open">Archiv · frei hören</string>
+    <string name="archive_intro">Tippe auf eine Produktion, um sie sofort zu hören. Danach geht das Programm weiter. Gehörtes bleibt %1$d Tage abrufbar.</string>
+    <string name="archive_empty">Noch nichts im Archiv. Sobald eine Produktion fertig ist, steht sie hier.</string>
+    <string name="archive_loading">Archiv wird geladen …</string>
+    <string name="back">Zurück</string>
+    <string name="today">Heute</string>
+    <string name="yesterday">Gestern</string>
+    <string name="playing_now">Spielt jetzt: %1$s</string>
+    <string name="play_unavailable">Der Player ist noch nicht bereit. Versuche es gleich nochmals.</string>
+    <string name="play_item">%1$s jetzt hören</string>
 </resources>
