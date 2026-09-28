@@ -65,6 +65,14 @@ const nextUtcMidnight = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(),
 
 export interface PlannedItem { id: string; seq: number; showId: string; plannedAt: string; estimatedMinutes: number }
 
+/** A show of the day plan: an enabled show of the owner, or a building block. */
+function scheduledShow(config: StationConfig, id: string): ShowConfig | undefined {
+  const own = config.shows.find(show => show.id === id);
+  if (own) return own.enabled ? own : undefined;
+  const block = blockOf(id);
+  return block ? blockShow(block, config) : undefined;
+}
+
 /** Spoken items need songs after them; music hours bring their own music. */
 function needsSongsAfter(config: StationConfig, showId: string | undefined): boolean {
   const show = config.shows.find(item => item.id === showId) ?? (showId ? blockOf(showId)?.show : undefined);
@@ -95,7 +103,7 @@ export function planTimeline(config: StationConfig, open: Array<Pick<TimelineRow
       ahead += SONG_MINUTES; songsOwed--;
       continue;
     }
-    const rotation = slot.showIds.map(id => config.shows.find(show => show.id === id)).filter((show): show is ShowConfig => !!show?.enabled);
+    const rotation = slot.showIds.map(id => scheduledShow(config, id)).filter((show): show is ShowConfig => !!show);
     if (!rotation.length) break;
     const show = rotation[(rotation.findIndex(item => item.id === lastShow) + 1) % rotation.length];
     planned.push({ id: newId(), seq: seq++, showId: show.id, plannedAt: at.toISOString(), estimatedMinutes: show.targetMinutes });
@@ -534,7 +542,7 @@ function daytime(date: Date, timezone: string): string {
 
 /** The show that follows in the schedule slot, for the host's hand-over at the end of a block. */
 function nextShowName(config: StationConfig, show: ShowConfig, at: Date): string | undefined {
-  const rotation = (activeSlot(config, at)?.showIds ?? []).map(id => config.shows.find(item => item.id === id)).filter((item): item is ShowConfig => !!item?.enabled);
+  const rotation = (activeSlot(config, at)?.showIds ?? []).map(id => scheduledShow(config, id)).filter((item): item is ShowConfig => !!item);
   const index = rotation.findIndex(item => item.id === show.id);
   const next = index >= 0 && rotation.length > 1 ? rotation[(index + 1) % rotation.length] : undefined;
   return next?.name;

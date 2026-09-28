@@ -4,7 +4,7 @@ import { defaultStationConfig, parseStationConfig } from '../src/domain/station.
 import type { EditorialDirection, Script, Source } from '../src/domain/program.ts';
 import { BLOCKS, blockViews } from '../src/domain/blocks.ts';
 import { StationStore } from '../server/station-store.ts';
-import { addBlock, produceItem, scheduleShowNow, toView } from '../server/station.ts';
+import { addBlock, planTimeline, produceItem, scheduleShowNow, toView } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
 
@@ -93,4 +93,15 @@ test('a discovery block researches the word the owner typed; unknown blocks are 
   assert.equal(await addBlock(h.deps, 'o', 'show:gibt-es-nicht'), null);
   const song = (await addBlock(h.deps, 'o', 'song'))!;
   assert.equal((await h.store.openItems('o'))[0].id, song);
+});
+
+test('a day plan of blocks: slots take blocks, the planner rotates them with songs in between, and it counts as spoken content', () => {
+  const base = station();
+  const plan = parseStationConfig({ ...base, music: { ...base.music, between: 1 }, shows: base.shows.map(show => ({ ...show, enabled: false })),
+    schedule: [{ id: 'morgen', days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '24:00', showIds: ['_block:morgen', '_block:entdeckung'] }] });
+  let n = 0;
+  const planned = planTimeline({ ...plan, horizonMinutes: 20 }, [], null, NOW, () => `p${++n}`);
+  assert.deepEqual(planned.map(item => item.showId), ['_block:morgen', '_musik', '_block:entdeckung', '_musik', '_block:morgen', '_musik', '_block:entdeckung']);
+  assert.throws(() => parseStationConfig({ ...plan, schedule: [{ ...plan.schedule[0], showIds: ['_block:Kein Baustein'] }] }), /unbekannte Sendung/);
+  assert.throws(() => parseStationConfig({ ...plan, schedule: [] }), /KI-Sprechbeiträge sind Pflicht/);
 });

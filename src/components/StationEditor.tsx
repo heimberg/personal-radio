@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Topic } from '../domain/program.ts';
 import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId } from '../domain/station.ts';
-import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ScheduleSlot, ShowConfig, ShowFormat, ShowTool, StationConfig } from '../domain/station.ts';
+import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ShowConfig, ShowFormat, ShowTool, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
 import { LocationPicker } from './LocationPicker.tsx';
+import { DayPlan } from './DayPlan.tsx';
 
 interface Props { config: StationConfig; onSave(next: StationConfig): Promise<boolean> }
 interface Voice { id: string; name: string }
 
 const TOPICS: Topic[] = ['Technologie', 'Wissenschaft', 'Kultur'];
-const DAYS: Array<[number, string]> = [[1, 'Mo'], [2, 'Di'], [3, 'Mi'], [4, 'Do'], [5, 'Fr'], [6, 'Sa'], [0, 'So']];
 const SUBJECT: Record<HourFocus, { key: 'artist' | 'genre' | 'theme'; label: string; example: string }> = {
   artist: { key: 'artist', label: 'Künstler oder Band', example: 'z. B. Portishead' },
   genre: { key: 'genre', label: 'Genre oder Szene', example: 'z. B. Krautrock' },
@@ -172,7 +172,6 @@ export function StationEditor({ config: stored, onSave }: Props) {
 
   const change = (update: (next: StationConfig) => void) => setDraft(current => { const next = structuredClone(current); update(next); return next; });
   const changeShow = (index: number, update: (show: ShowConfig) => ShowConfig) => change(next => { next.shows[index] = update(next.shows[index]); });
-  const changeSlot = (index: number, update: (slot: ScheduleSlot) => ScheduleSlot) => change(next => { next.schedule[index] = update(next.schedule[index]); });
   const changeFeed = (index: number, update: (feed: FeedConfig) => FeedConfig) => change(next => { next.feeds[index] = update(next.feeds[index]); });
 
   async function save() {
@@ -356,21 +355,8 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </div>
     </Section>
 
-    <Section {...nav} id="sendeuhr" summary={`${draft.schedule.length} Zeitfenster · ${draft.timezone}`} title="Sendeuhr" description="Wann welche Sendungen laufen. Innerhalb eines Zeitfensters wechseln sie sich ab.">
-      <div className="slots">{draft.schedule.map((slot, index) => <div key={slot.id} className="slot" aria-label={`Zeitfenster ${index + 1}`}>
-        <div className="days" role="group" aria-label="Wochentage">{DAYS.map(([day, label]) => <button type="button" key={day} aria-pressed={slot.days.includes(day)}
-          onClick={() => changeSlot(index, current => ({ ...current, days: current.days.includes(day) ? current.days.filter(value => value !== day) : [...current.days, day].sort() }))}>{label}</button>)}</div>
-        <div className="inline times">
-          <Field label="Von"><input value={slot.from} inputMode="numeric" pattern="\d\d:\d\d" maxLength={5} onChange={event => changeSlot(index, current => ({ ...current, from: event.target.value }))} /></Field>
-          <Field label="Bis"><input value={slot.to} inputMode="numeric" pattern="\d\d:\d\d" maxLength={5} onChange={event => changeSlot(index, current => ({ ...current, to: event.target.value }))} /></Field>
-        </div>
-        <div className="chips">{draft.shows.map(show => <button type="button" key={show.id} aria-pressed={slot.showIds.includes(show.id)}
-          onClick={() => changeSlot(index, current => ({ ...current, showIds: current.showIds.includes(show.id) ? current.showIds.filter(id => id !== show.id) : [...current.showIds, show.id] }))}>{show.name}</button>)}</div>
-        <div className="row-end"><button type="button" className="button ghost small danger" onClick={() => change(next => { next.schedule.splice(index, 1); })}>Zeitfenster entfernen</button></div>
-      </div>)}</div>
-      <button type="button" className="button" disabled={draft.schedule.length >= 50} onClick={() => change(next => {
-        next.schedule.push({ id: uniqueId('fenster', next.schedule.map(slot => slot.id)), days: [1, 2, 3, 4, 5], from: '07:00', to: '09:00', showIds: next.shows.filter(show => show.enabled).map(show => show.id).slice(0, 3) });
-      })}>Zeitfenster hinzufügen</button>
+    <Section {...nav} id="sendeuhr" summary={draft.schedule.length ? draft.schedule.map(slot => `${slot.from}–${slot.to}`).join(', ') : 'Noch leer'} title="Tagesplan" description="Wann was läuft: Zeitfenster mit Bausteinen, die sich abwechseln. Dazwischen kommen Songs, wenn Musik eingeschaltet ist.">
+      <DayPlan schedule={draft.schedule} shows={draft.shows} onChange={schedule => change(next => { next.schedule = schedule; })} />
       <div className="grid spaced">
         <Field label="Zeitzone"><input list="timezones" value={draft.timezone} maxLength={64} onChange={event => change(next => { next.timezone = event.target.value; })} /></Field>
         <datalist id="timezones">{TIMEZONES.map(zone => <option key={zone} value={zone} />)}</datalist>

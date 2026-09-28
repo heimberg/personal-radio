@@ -180,10 +180,18 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await discovery.getByRole('group', { name: 'Aktuelles einbauen' }).getByRole('button', { name: 'Wetter' }).click();
   await expect(discovery.getByRole('button', { name: 'Wetter' })).toHaveAttribute('aria-pressed', 'true');
 
-  await openArea(page, 'Sendeuhr');
-  const slot = page.getByRole('group', { name: 'Wochentage' }).first();
-  await slot.getByRole('button', { name: 'So' }).click();
-  await page.getByLabel('Zeitfenster 1').getByRole('button', { name: 'Themen-Stunde' }).click();
+  // The day plan: windows of building blocks; a ready-made evening window, own shows as blocks.
+  await openArea(page, 'Tagesplan');
+  const slot = page.getByLabel('Zeitfenster 1');
+  await slot.getByRole('group', { name: 'Wochentage' }).getByRole('button', { name: 'So' }).click();
+  await slot.getByRole('button', { name: '+ Baustein' }).click();
+  await slot.getByRole('button', { name: 'Themen-Stunde (deine Sendung) hinzufügen' }).click();
+  await slot.getByRole('button', { name: '+ Baustein' }).click();
+  await slot.getByRole('button', { name: 'Wetter hinzufügen' }).click();
+  await page.getByRole('group', { name: 'Zeitfenster hinzufügen' }).getByRole('button', { name: /\+ Abend/ }).click();
+  const evening = page.getByLabel('Zeitfenster 2');
+  await expect(evening.getByRole('group', { name: 'Bausteine im Zeitfenster' })).toContainText('Künstler-Stunde');
+  await evening.getByRole('group', { name: 'Tage' }).getByRole('button', { name: 'Wochenende' }).click();
 
   await openArea(page, 'Musik');
   const music = page.getByRole('region', { name: 'Musik' });
@@ -204,10 +212,11 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.music).toEqual({ between: 2, announce: true, taste: 'Industrial, Indie, Rock' });
   expect(saved.shows.find((show: any) => show.id === 'entdecken').tools).toEqual(['weather']);
   expect(saved.location).toEqual({ name: 'Bern', latitude: 46.9481, longitude: 7.4474 });
-  expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });
+  expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde', '_block:wetter'] });
+  expect(saved.schedule[1]).toMatchObject({ days: [0, 6], from: '18:00', to: '22:00', showIds: ['_block:kuenstler', '_block:musik'] });
 
   // Invalid input is explained before anything is sent.
-  await openArea(page, 'Sendeuhr');
+  await openArea(page, 'Tagesplan');
   await page.getByLabel('Zeitfenster 1').getByLabel('Von').fill('25:00');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Bitte korrigieren – schedule[0].from');

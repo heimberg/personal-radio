@@ -212,3 +212,15 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: 0.9em;
 .block-ask { margin-top: 8px; }
 .chips.tools { align-items: center; margin-top: -4px; }
 .chips.tools small { margin-right: 4px; }
+/* Day plan: windows of blocks. */
+.day-plan .slot { display: flex; flex-direction: column; gap: 8px; }
+.slot-head { display: flex; align-items: center; gap: 10px; }
+.slot-head .time { display: flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--muted); }
+.slot-head .time input { width: 72px; text-align: center; }
+.slot-head .button { margin-left: auto; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; border-radius: 999px; background: var(--soft); border: 1px solid var(--brand); color: var(--brand-strong); font-size: .88rem; font-weight: 600; }
+.chip button { border: 0; background: transparent; color: var(--brand-strong); padding: 0 6px; font-size: 1rem; }
+.add-block { border: 1px dashed var(--brand); background: transparent; color: var(--brand); border-radius: 999px; padding: 6px 12px; font-weight: 600; }
+.block-list.picker { margin-top: 4px; }
+.presets button small { color: var(--muted); margin-left: 4px; }
+.block-list.picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
