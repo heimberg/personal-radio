@@ -36,6 +36,7 @@ async function fakeWorker(page: Page, initial: unknown) {
       title: 'Portishead', focus: 'artist', subject: 'Portishead', team: { songs: 10, specialists: 1, corrections: 2 }, parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
         { kind: 'track', spotifyUri: 'spotify:track:1', title: 'Glory Box', artist: 'Portishead', durationMs: 1 }] },
   ] : [], failures: state.stored ? { count: 1, latestError: 'NO_SOURCES', latestAt: '2026-09-27T13:31:00.000Z' } : { count: 0 } }) }));
+  await page.route('**/api/places?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ places: [{ name: 'Bern', region: 'Bern', country: 'Schweiz', latitude: 46.94809, longitude: 7.44744 }] }) }));
   await page.route('**/api/spotify/profile', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ connected: true, artists: ['Nine Inch Nails', 'Protomartyr'] }) }));
   await page.route('**/api/timeline/arrange', route => { state.calls.push(`arrange ${JSON.parse(route.request().postData() ?? '{}').order.join(',')}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   await page.route('**/api/timeline/shuffle', route => { state.calls.push('shuffle'); return route.fulfill({ contentType: 'application/json', body: '{"added":1}' }); });
@@ -151,6 +152,11 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   await expect(music.getByRole('group', { name: 'Spotify-Hörprofil' })).toContainText('Nine Inch Nails, Protomartyr');
   await music.getByRole('slider').fill('2');
   await music.getByRole('textbox').fill('Industrial, Indie, Rock');
+  // The place for {ort} and {wetter} is found by name.
+  await page.getByLabel('Ort suchen').fill('Bern');
+  await page.getByRole('button', { name: 'Suchen' }).click();
+  await page.getByRole('button', { name: 'Bern, Bern, Schweiz' }).click();
+  await expect(page.getByText('Ort: Bern')).toBeVisible();
 
   await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Ungespeicherte Änderungen');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
@@ -163,6 +169,7 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   expect(saved.shows.find((show: any) => show.id === 'kuenstler')).toMatchObject({ format: 'genre_hour', genre: 'Krautrock', enabled: true, production: 'agents' });
   expect(saved.shows.find((show: any) => show.id === 'kuenstler').artist).toBeUndefined();
   expect(saved.music).toEqual({ between: 2, announce: true, taste: 'Industrial, Indie, Rock' });
+  expect(saved.location).toEqual({ name: 'Bern', latitude: 46.9481, longitude: 7.4474 });
   expect(saved.schedule[0]).toMatchObject({ days: [1, 2, 3, 4, 5, 6], showIds: ['entdecken', 'themen-stunde'] });
 
   // Invalid input is explained before anything is sent.

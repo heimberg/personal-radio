@@ -5,6 +5,8 @@ import type { Profile, Script, Source, TextGenerator } from '../src/domain/progr
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
 import { ProviderError } from './providers.ts';
+import { clockValues, expandPlaceholders, usesWeather } from './tools.ts';
+import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
@@ -37,6 +39,8 @@ export interface StationDeps {
   catalog?: MusicCatalog;
   /** Music blocks: the owner's Spotify playlists. */
   playlists?: PlaylistSource;
+  /** Tool: the weather for `{wetter}` (Open-Meteo). */
+  weather?: Weather;
   /** The owner's Spotify top artists, when the owner connected the listening profile. */
   listening?: { topArtists(owner: string, now: Date): Promise<string[]> };
   /** The editorial team's model and durable step storage (music hours with `production: agents`). */
@@ -180,9 +184,23 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const row = await deps.store.lease(owner, itemId, now, minutes(now, LEASE_MINUTES));
   if (!row) return 'skipped';
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
-  const show = config.shows.find(item => item.id === row.show_id);
-  if (!show && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
+  const configured = config.shows.find(item => item.id === row.show_id);
+  if (!configured && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
   try {
+    // Placeholders ({datum}, {wetter} …) are filled in once per production; the weather also becomes a source.
+    let show = configured, toolSources: Source[] = [];
+    if (configured) {
+      const values = clockValues(now, config.timezone, config.location);
+      // Only a new draft needs the weather; a retry of the voice keeps the approved script.
+      if (usesWeather(configured) && row.state === 'planned') {
+        if (!config.location) return fail('NO_LOCATION');
+        if (!deps.weather) return fail('WEATHER_NOT_CONFIGURED');
+        const report = await deps.weather.report(config.location, config.timezone, now);
+        values.wetter = report.text;
+        toolSources = [report.source];
+      }
+      show = { ...configured, instructions: expandPlaceholders(configured.instructions, values), researchPrompt: expandPlaceholders(configured.researchPrompt, values) };
+    }
     if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
     if (show.format === 'music_block') return await produceMusicBlock(deps, owner, config, show, row, fail);
@@ -199,9 +217,11 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (show.sourceMode === 'web') {
         ({ sources, queries } = await deps.researcher!.research({ brief: show.researchPrompt, interests: [...profile.topics, ...profile.interests], avoidTopics, now }));
       } else sources = await collectSources(deps, owner, config, show, profile);
-      if (!sources.length) return fail('NO_SOURCES');
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
+      // Tool results are evidence too; a show can live on them alone (a weather report).
+      sources = [...toolSources, ...sources];
+      if (!sources.length) return fail('NO_SOURCES');
       const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics };
       const script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       await deps.pipeline.review(script, sources, show.verification);
