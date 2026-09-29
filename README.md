@@ -53,7 +53,7 @@ flowchart LR
 2. The queue produces one item at a time: research → draft → final edit and jury → fact check → speech synthesis → audio in R2.
 3. The app syncs the timeline, streams speech from the Worker and hands songs to Spotify.
 
-The AI picks songs from its own knowledge; Spotify only resolves them to tracks. Spotify audio, playback data, playlist tracks and track metadata are never sent to an AI provider. The only exception is opt-in: if you connect your Spotify listening profile, the names of your top artists guide the song picks.
+The AI picks songs from its own knowledge; Spotify only resolves them to tracks. Spotify audio, playback data, playlist tracks and track metadata are never sent to an AI provider. Two exceptions apply only if you connect your Spotify listening profile: the names of your top artists guide the song picks, and the «new from your artists» block names each new release (artist and title) in its moderation.
 
 ## Tech stack
 

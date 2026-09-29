@@ -52,9 +52,10 @@ export const BLOCKS: readonly Block[] = [
     show: { ...spoken, format: 'music_block', targetMinutes: 30, verification: 'off', sourceMode: 'web', instructions: '',
       groups: [{ name: 'Mein Geschmack', playlists: [], taste: '' }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20, triggers: { ...DEFAULT_TRIGGERS } } },
   { id: 'neu', name: 'Neu von deinen Künstlern', description: 'Neue Alben und Singles aus deinem Spotify-Hörprofil', music: true,
-    show: { ...spoken, format: 'music_block', targetMinutes: 20, verification: 'off', sourceMode: 'web', instructions: '',
+    show: { ...spoken, format: 'music_block', targetMinutes: 20, verification: 'off', sourceMode: 'web',
+      instructions: 'Stelle jeden Song als Neuerscheinung eines Künstlers vor, den der Hörer gern hört: Künstler und Titel nennen, erfinde keine Details zum Album.',
       groups: [{ name: 'Neuerscheinungen', playlists: [], taste: '', releases: true }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20,
-      triggers: { ...DEFAULT_TRIGGERS, beforeTrack: 0, afterTrack: 0, everyMinutes: 10 } } },
+      triggers: { ...DEFAULT_TRIGGERS, beforeTrack: 1, afterTrack: 0, everyMinutes: 0 } } },
   // Surprises: the planner mixes them in by the station's surprise level; «Überraschung» in the palette draws one.
   { id: 'zufallsfund', name: 'Zufallsfund', description: 'Eine überraschende Geschichte von nebenan deiner Interessen', hidden: true, surprise: { weight: 3 },
     show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'strict', sourceMode: 'web',

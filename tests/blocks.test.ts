@@ -128,7 +128,7 @@ test('«Mehr dazu» places a follow-up right after the item; it starts from its 
   assert.equal(await addBlock(h.deps, 'o', 'vertiefung'), null);
 });
 
-test('«Neu von deinen Künstlern» plays new releases newest first; their titles never reach the moderation', async () => {
+test('«Neu von deinen Künstlern» plays new releases newest first and the moderation names each one as new', async () => {
   const h = harness(); await h.setup();
   let moments: unknown;
   const releases = [
@@ -145,7 +145,9 @@ test('«Neu von deinen Künstlern» plays new releases newest first; their title
   assert.equal(await produceItem(h.deps, 'o', id), 'ready');
   const view = toView((await h.store.getItem('o', id))!, null);
   assert.deepEqual(view.parts?.filter(part => part.kind === 'track').map(part => part.kind === 'track' && part.spotifyUri), ['spotify:track:new1', 'spotify:track:new2']);
-  assert.doesNotMatch(JSON.stringify(moments), /Neuer Song|Zweiter Song|Band A/);
+  // The owner's decision (29.09.2026): new releases are named; playlist tracks still never are.
+  assert.deepEqual((moments as Array<{ next?: unknown }>).flatMap(moment => moment.next ? [moment.next] : []),
+    [{ artist: 'Band A', title: 'Neuer Song', release: true }, { artist: 'Band B', title: 'Zweiter Song', release: true }]);
   assert.equal(view.showName, 'Neu von deinen Künstlern');
 });
 

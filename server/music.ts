@@ -26,9 +26,9 @@ export type BlockTrigger = 'block_start' | 'block_end' | 'before_track' | 'after
  */
 export interface BlockMoment {
   triggers: BlockTrigger[];
-  /** The AI-picked song that follows (before_track) or just ended (after_track). */
-  next?: { artist: string; title: string };
-  previous?: { artist: string; title: string };
+  /** The song that follows (before_track) or just ended (after_track): an AI pick or a new release. */
+  next?: { artist: string; title: string; release?: boolean };
+  previous?: { artist: string; title: string; release?: boolean };
   fromGroup?: string;
   toGroup?: string;
 }
@@ -232,7 +232,7 @@ export class GeminiMusicWriter implements MusicWriter {
 
   async writeBlock(input: BlockRequest): Promise<string[]> {
     const words = Math.max(15, Math.round(input.talkSeconds * 130 / 60));
-    const result = await this.ask(`Du moderierst einen Musikblock deines persönlichen Radios. Schreibe für jeden Moment in «momente» genau eine kurze Moderation von höchstens etwa ${words} Wörtern, zwischen zwei Songs gesprochen, nie über Musik. Anlässe: block_start = den Block eröffnen und den Namen nennen; block_end = den Block abschliessen und, falls angegeben, zur nächsten Sendung überleiten; before_track = den folgenden Song («danach») ankündigen; after_track = den eben gehörten Song («davor») nennen und einordnen; interval = ein kurzes Lebenszeichen zwischendurch, zur Tageszeit passend; group_transition = von einer Gruppe zur nächsten überleiten, beide Gruppennamen dürfen genannt werden. Hat ein Moment mehrere Anlässe, verbinde sie in einer Moderation. Nenne Künstler und Titel nur, wenn sie im Moment stehen; über andere Songs weisst du nichts, erfinde keine und sprich allgemein über Musik, Stimmung und Tageszeit. Keine Uhrzeiten, keine Wetterangaben, keine erfundenen Details; bei Songs höchstens eine allgemein bekannte, sichere Einordnung. Antworte als JSON: {"moderationen":[{"index":0,"text":"..."}]}; index bezieht sich auf «momente».` +
+    const result = await this.ask(`Du moderierst einen Musikblock deines persönlichen Radios. Schreibe für jeden Moment in «momente» genau eine kurze Moderation von höchstens etwa ${words} Wörtern, zwischen zwei Songs gesprochen, nie über Musik. Anlässe: block_start = den Block eröffnen und den Namen nennen; block_end = den Block abschliessen und, falls angegeben, zur nächsten Sendung überleiten; before_track = den folgenden Song («danach») ankündigen; after_track = den eben gehörten Song («davor») nennen und einordnen; interval = ein kurzes Lebenszeichen zwischendurch, zur Tageszeit passend; group_transition = von einer Gruppe zur nächsten überleiten, beide Gruppennamen dürfen genannt werden. Hat ein Moment mehrere Anlässe, verbinde sie in einer Moderation. Nenne Künstler und Titel nur, wenn sie im Moment stehen; ein Song mit «release» ist eine Neuerscheinung eines Künstlers, den der Hörer gern hört – stelle ihn als neu vor, ohne Details zu erfinden; über andere Songs weisst du nichts, erfinde keine und sprich allgemein über Musik, Stimmung und Tageszeit. Keine Uhrzeiten, keine Wetterangaben, keine erfundenen Details; bei Songs höchstens eine allgemein bekannte, sichere Einordnung. Antworte als JSON: {"moderationen":[{"index":0,"text":"..."}]}; index bezieht sich auf «momente».` +
       personaPrompt(input.direction, 'brief') + showInstructions(input.direction),
       { block: input.blockName, gruppen: input.groups, 'nächste Sendung': input.nextShow ?? null, tageszeit: input.daytime,
         momente: input.moments.map((moment, index) => ({ index, anlässe: moment.triggers, ...(moment.next ? { danach: moment.next } : {}),
