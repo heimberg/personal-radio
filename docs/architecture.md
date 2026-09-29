@@ -208,7 +208,7 @@ Settings → Redaktion lists every editorial agent (`src/domain/agents.ts`): res
 
 ### New releases, «Mehr dazu», station sound
 
-- **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). Like playlist tracks, release titles and dates never go to an AI provider or to speech synthesis; the moderation stays generic (block start, interval, block end) and the app shows artist and title.
+- **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). The moderation announces each release by artist and title as new (the owner's decision, 29.09.2026: these release names go to the AI and to speech synthesis); release dates and other metadata stay on the Worker.
 - **«Mehr dazu».** In the app and the browser player, one tap puts a *Vertiefung* right after the playing spoken item (`POST /api/timeline/{id}/more`). It starts from that item's sources (`p1`…), researches more on the web, is told what was already said and is checked strictly like any item. The hidden block `vertiefung` is not offered in the palette or the day plan.
 - **Station sound.** The Worker synthesises a short ident jingle and a time signal (three pips and a long one) as WAV (`server/sounds.ts`, no third-party audio). The host speaks the hour announcement («Es ist 8 Uhr. Du hörst …») once per hour, voice and station name and keeps it in R2 (`sounds/hour-…`). The app plays the ident before a spoken item that follows music and, at the first change of item in the first 20 minutes of a new hour, the time signal and the spoken hour. Both can be switched off (`sounds.ident`, `sounds.hourChange`; default on).
 
@@ -222,7 +222,7 @@ Items are produced ahead of their air time, so no script names a clock time: the
 
 ## Music curation (AI → Spotify only)
 
-No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scopes `user-top-read` and, for music blocks, `playlist-read-private` and `playlist-read-collaborative`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
+No Spotify audio, playback data, search results or track metadata are sent to an AI provider. **One exception, decided by the owner (27.09.2026):** when the owner connects the *listening profile* (OAuth, scopes `user-top-read` and, for music blocks, `playlist-read-private` and `playlist-read-collaborative`), the names of the owner's top artists (at most 40, refreshed at most every 12 hours) go into the song picks and into the subject picks of artist and genre hours. **A second exception (29.09.2026):** the artist and title of each new release in the «Neu von deinen Künstlern» block go into its moderation. Spotify's developer policy restricts feeding Spotify content into AI models; the owner accepted that risk for this private station and can disconnect at any time (the stored token and list are deleted). Otherwise the data flow goes one way:
 
 1. The LLM picks tracks (artist, title, short reason) from its own knowledge, guided by `MusicRule` and the recent playlist memory (our own records of the LLM's earlier picks).
 2. The backend resolves each pick through the Spotify Search API with an app token (client credentials) and accepts it only if a normalized artist/title comparison matches. This comparison is deterministic code. Unmatched picks are dropped.
@@ -313,7 +313,7 @@ Remaining gaps:
 3. **Spotify in the app** (done): App Remote, music hours, music blocks with moderation triggers, AI picks and playlist groups, listening profile.
 4. **Customization** (done): tools (date, weather, headlines), building blocks, day plan, configurable agents, station sound, surprises. Open: ElevenLabs as TTS option, MCP tools.
 5. **Learning and memory** (in progress): feedback weights, 👎 reasons as listener notes, quality trend. Open: per-kind learning for surprises, series.
-6. **Next:** radio alarm clock, longer offline buffer, Google Drive archive for liked items.
+6. **Next:** surprises step 2, longer offline buffer, Google Drive archive for liked items.
 7. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
 8. **Agentic production** (beta): the music-hour editorial team runs on the agent registry with durable steps; see [agentic workflow spike](agentic-workflow-spike.md).
 

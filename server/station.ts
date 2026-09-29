@@ -373,7 +373,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
 
 /** Stored in script_json: the hour's speech and tracks in playing order. */
 interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
-interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string; group?: string; picked?: 'ai' | 'playlist' }
+interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string; group?: string; picked?: 'ai' | 'playlist' | 'release' }
 /** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
 interface HourPackage {
   kind: 'music_hour' | 'artist_hour' | 'song' | 'music_block'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart>;
@@ -638,7 +638,7 @@ async function blockHistory(deps: StationDeps, owner: string, showId: string): P
       if (pkg.kind !== 'music_block' && pkg.kind !== 'song') continue;
       for (const part of pkg.parts ?? []) if (part.kind === 'track') {
         uris.add(part.uri);
-        if (part.picked !== 'playlist') names.push(`${part.artist} – ${part.title}`);
+        if (part.picked === 'ai' || !part.picked) names.push(`${part.artist} – ${part.title}`);
       }
       if (pkg.kind === 'music_block' && row.show_id === showId && Number.isInteger(pkg.nextGroup)) nextGroup = pkg.nextGroup!;
     } catch { /* Skip corrupt rows. */ }
@@ -646,7 +646,7 @@ async function blockHistory(deps: StationDeps, owner: string, showId: string): P
   return { uris, names: [...new Set(names)].reverse(), nextGroup };
 }
 
-interface BlockTrack extends PlaylistTrack { group: number; picked: 'ai' | 'playlist' }
+interface BlockTrack extends PlaylistTrack { group: number; picked: 'ai' | 'playlist' | 'release' }
 
 /**
  * A music block: songs from rotating groups – the owner's playlists or AI picks from a taste – with
@@ -679,9 +679,9 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
     if (group.playlists.length || group.releases) {
       if (exhausted.has(index)) return;
       exhausted.add(index); // A playlist group is loaded once per block.
-      const pool: PlaylistTrack[] = [];
+      const pool: PlaylistTrack[] = [], releases = new Set<string>();
       if (group.releases) {
-        try { pool.push(...await deps.playlists!.releases!(owner)); }
+        try { for (const track of await deps.playlists!.releases!(owner)) { pool.push(track); releases.add(track.uri); } }
         catch (error) { problems.push(`Neuerscheinungen: ${error instanceof Error ? error.message : 'nicht lesbar'}`.slice(0, 160)); }
       }
       for (const id of group.playlists) {
@@ -694,7 +694,8 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
       const candidates = unheard.length ? unheard : fresh;
       // Releases stay newest first; playlists are shuffled.
       if (!group.releases) for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
-      queue.push(...candidates.map(track => ({ ...track, group: index, picked: 'playlist' as const })));
+      // New releases are named in the moderation (the owner's decision, 29.09.2026); playlist tracks never are.
+      queue.push(...candidates.map(track => ({ ...track, group: index, picked: releases.has(track.uri) ? 'release' as const : 'playlist' as const })));
       return;
     }
     if (aiBatches >= MAX_AI_BATCHES) { exhausted.add(index); return; }
@@ -738,7 +739,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   // Moments: index i means "before track i"; tracks.length is after the last track.
   const moments = new Map<number, BlockMoment>();
   const at = (index: number) => { let moment = moments.get(index); if (!moment) moments.set(index, moment = { triggers: [] }); return moment; };
-  const named = (track: BlockTrack) => ({ artist: track.artist, title: track.title });
+  const named = (track: BlockTrack) => ({ artist: track.artist, title: track.title, ...(track.picked === 'release' ? { release: true } : {}) });
   if (triggers.blockStart) at(0).triggers.push('block_start');
   let aiCount = 0, sinceSpeech = 0;
   tracks.forEach((track, index) => {
@@ -746,7 +747,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
       Object.assign(at(index), { fromGroup: groups[tracks[index - 1].group].name, toGroup: groups[track.group].name }).triggers.push('group_transition');
     }
     if (triggers.everyMinutes && sinceSpeech >= triggers.everyMinutes * 60_000 && !moments.has(index)) at(index).triggers.push('interval');
-    if (track.picked === 'ai') {
+    if (track.picked !== 'playlist') {
       if (triggers.beforeTrack && aiCount % triggers.beforeTrack === 0) Object.assign(at(index), { next: named(track) }).triggers.push('before_track');
       if (triggers.afterTrack && aiCount % triggers.afterTrack === triggers.afterTrack - 1) Object.assign(at(index + 1), { previous: named(track) }).triggers.push('after_track');
       aiCount++;

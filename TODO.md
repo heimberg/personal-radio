@@ -7,14 +7,12 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 ## Für Matthias
 
 - [ ] **Neues App-Design ansehen:** 1–2 Screenshots (Player mit Programm, Bausteinleiste) schicken, damit Abstände, Farben und Symbole nachgeschärft werden können.
-- [ ] **Entscheid Neuerscheinungen:** Soll die Moderation bei «Neu von deinen Künstlern» Titel und Künstler nennen? Dafür gingen diese Spotify-Metadaten an die KI und die Sprachausgabe (Erweiterung der bisherigen Ausnahme für Top-Künstler).
 - [ ] **Ausprobieren:** Redaktionsteam für eine Musikstunde («Produktion → Redaktionsteam (Beta)») mit einer Standard-Stunde vergleichen; Musikblock mit eigenen Playlists; Überraschungsregler im Tagesplan.
 - [ ] **Feeds auswählen** (optional): RSS/Atom-Feeds eintragen und deren Nutzungsbedingungen prüfen.
 - [ ] **ASK / Mistral** (optional): ASK als unabhängige Prüfinstanz, Mistral als zusätzliche Stimmen – nur falls gewünscht.
 
 ## Nächste Ausbauschritte
 
-- [ ] **Radiowecker:** Weckzeit in der App; kurz vorher ein frisches Morgenbriefing, zur Weckzeit sanft eingeblendet.
 - [ ] **Überraschungen, Schritt 2:** Zeitfenster ohne Zufall, «heute ohne Überraschungen», Lernen pro Überraschungsart aus 👍/👎.
 - [ ] **Offline-Puffer ausbauen:** statt der nächsten vier Beiträge 30–60 Minuten Sprache inklusive Stationssound vorladen.
 - [ ] Google-Drive-Archiv für 👍-Beiträge und Musikstunden.
@@ -27,7 +25,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - **Bausteine und Tagesplan:** ein Tipp fügt einen Baustein ein; Tagesplan mit Zeitfenstern; Songs zwischen Beiträgen; 🎲 Überraschungen mit Regler; «Mehr dazu»; «Neu von deinen Künstlern».
 - **Redaktion:** alle Agenten konfigurierbar (Anweisungen, Freiheit, An/Aus, Stil-Vorlagen, Probeläufe), Qualitätsverlauf, Hinweise aus 👎-Gründen, Verbrauchsübersicht.
 - **Android-App:** Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound, In-App-Updates, Farbe und Symbol pro Inhaltsart.
-- **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; Spotify-Daten gehen nicht an die KI.
+- **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; an die KI gehen davon nur die Namen der Top-Künstler und der Neuerscheinungen.
 
 ## Architekturentscheidungen
 
@@ -35,5 +33,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - Dirigent statt Mischpult: Der Server plant und produziert vor, das Gerät spielt eigene Sprache und Spotify strikt abwechselnd, ohne Sprache über Musik.
 - Die Android-App ist das Produkt zum Hören; das Web-Cockpit (auch eingebettet in der App) ist die Werkbank für Einstellungen und Planung.
 - Konfiguration serverseitig in D1, weil der Server ohne offenen Browser produziert.
+- Neuerscheinungen (29.09.2026): Die Moderation von «Neu von deinen Künstlern» nennt Künstler und Titel jeder Neuerscheinung; diese Spotify-Metadaten gehen dafür an die KI und die Sprachausgabe. Playlist-Titel bleiben weiterhin bei Spotify.
+- Kein Radiowecker (verworfen am 29.09.2026).
 - Hosting auf Cloudflare (Worker, D1, R2, Queues, Cron, Access); keine Graph- oder Vektordatenbank.
 - Details: [docs/architecture.md](docs/architecture.md).
