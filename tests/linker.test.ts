@@ -13,10 +13,10 @@ const row = (id: string, showId: string, script: unknown): TimelineRow => ({
 const NOW = new Date('2026-09-29T18:35:00Z');
 const next = row('n1', 'kurz', { title: 'Die Sonde ist gelandet', text: '…', sourceIds: [] });
 
-test('the link knows the time, what comes next and the song before, unless it came from a playlist', () => {
+test('the link knows the time of day (never the clock), what comes next and the song before, unless it came from a playlist', () => {
   const song = row('a1', '_musik', { kind: 'song', title: 'Björk – Joga', parts: [{ kind: 'speech', text: 'x' }, { kind: 'track', title: 'Joga', artist: 'Björk' }] });
   assert.deepEqual(linkerFacts(config, song, next, 'Kurzbeitrag', NOW), {
-    station: 'Radio Melchnau', host: config.host.name, weekday: 'Dienstag', time: '20:35',
+    station: 'Radio Melchnau', host: config.host.name, weekday: 'Dienstag', daytime: 'Abend',
     before: { music: true, song: 'Björk – Joga' }, next: { title: 'Die Sonde ist gelandet', show: 'Kurzbeitrag' },
   });
   const block = row('b1', '_block:musik', { kind: 'music_block', title: 'Indie am Abend', parts: [
@@ -37,6 +37,7 @@ test('the link text is short and clean; the station is named only after music or
   assert.ok(long.length <= 320 && long.endsWith('.'));
   assert.match(linkerSystem(config, true), /Nenne den Sender «Radio Melchnau» einmal/);
   assert.match(linkerSystem(config, false), /Nenne den Sender nicht/);
+  assert.match(linkerSystem(config, true), /Nenne keine Uhrzeit/);
   assert.match(linkerKey('2026-09-29', null, 'n1', 'v'), /^linkers\/2026-09-29\/start-n1-[a-z0-9]+$/);
   assert.notEqual(linkerKey('2026-09-29', 'a', 'n1', 'v1'), linkerKey('2026-09-29', 'a', 'n1', 'v2'));
   assert.equal(new TextDecoder().decode(silentWav().subarray(0, 4)), 'RIFF');

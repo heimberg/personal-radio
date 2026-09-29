@@ -17,7 +17,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
 - Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.
-- Live transitions: right before a spoken item airs, the host links it to what just ran (and may mention the time), written and voiced on the spot.
+- Live transitions: right before a spoken item airs, the host links it to what just ran, written and voiced on the spot.
 
 **Listening (Android)**
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
