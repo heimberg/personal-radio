@@ -4,7 +4,7 @@ import { defaultStationConfig, parseStationConfig } from '../src/domain/station.
 import type { EditorialDirection, Script, Source } from '../src/domain/program.ts';
 import { BLOCKS, blockViews, drawSurprise } from '../src/domain/blocks.ts';
 import { StationStore } from '../server/station-store.ts';
-import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, swapSurprise, tick, toView } from '../server/station.ts';
+import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, swapItem, tick, toView } from '../server/station.ts';
 import { briefSystemPrompt } from '../server/providers.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
@@ -169,7 +169,7 @@ test('pre-produced items: time of day of the expected air time, no clock time, a
   assert.match(briefSystemPrompt(undefined), /vorproduziert und läuft später: nenne keine Uhrzeit/);
 });
 
-test('🎲 surprises: the planner mixes them in by the level, «Überraschung» draws one, «Anderes» swaps it in place', async () => {
+test('🎲 surprises: the planner mixes them in by the level, «Überraschung» draws one, «Anders» swaps any item in place', async () => {
   const base = station();
   // Level 0: never. Level 100 with a low draw: the turn becomes a surprise, and songs still follow it.
   const draws = (...values: number[]) => { let index = 0; return () => values[index++ % values.length]; };
@@ -193,11 +193,15 @@ test('🎲 surprises: the planner mixes them in by the level, «Überraschung» 
   const second = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
   const row = (await h.store.getItem('o', surprise))!;
   assert.equal(toView(row, null).surprise, true);
-  assert.equal(await swapSurprise(h.deps, 'o', first), null);
-  const swapped = (await swapSurprise(h.deps, 'o', surprise))!;
+  const swapped = (await swapItem(h.deps, 'o', surprise))!;
   assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, swapped, second]);
   assert.notEqual((await h.store.getItem('o', swapped))!.show_id, row.show_id);
   assert.equal((await h.store.getItem('o', surprise))!.state, 'expired');
+  // Any other item gives way to a surprise at its place; gone items cannot be swapped.
+  const instead = (await swapItem(h.deps, 'o', second))!;
+  assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, swapped, instead]);
+  assert.equal(toView((await h.store.getItem('o', instead))!, null).surprise, true);
+  assert.equal(await swapItem(h.deps, 'o', second), null);
   assert.ok(blockViews(base).some(view => view.id === 'ueberraschung'));
   assert.ok(!blockViews(base).some(view => view.id === 'zufallsfund'));
 });

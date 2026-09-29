@@ -96,6 +96,15 @@ class ApiClient(private val connection: Connection) {
         withContext(Dispatchers.IO) { request("POST", "api/blocks/${java.net.URLEncoder.encode(blockId, "UTF-8")}/add", body) }
     }
 
+    /** Mixes the open program; the server adds songs between items where they are missing. */
+    suspend fun shuffle() { withContext(Dispatchers.IO) { request("POST", "api/timeline/shuffle") } }
+
+    /** Picks one song and appends it to the program. */
+    suspend fun addSong() { withContext(Dispatchers.IO) { request("POST", "api/shows/_musik/produce") } }
+
+    /** Clears failed productions from the list. */
+    suspend fun cleanup() { withContext(Dispatchers.IO) { request("POST", "api/timeline/cleanup") } }
+
     /** Retires failed productions and starts waiting ones again. */
     suspend fun retry() { withContext(Dispatchers.IO) { request("POST", "api/timeline/retry") } }
 

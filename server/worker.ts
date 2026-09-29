@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, swapSurprise, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, swapItem, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -538,7 +538,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (match[2] === 'swap') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    const itemId = await swapSurprise(stationDeps(env), owner, row.id);
+    const itemId = await swapItem(stationDeps(env), owner, row.id);
     if (!itemId) return json({ error: 'not_swappable' }, 409);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);

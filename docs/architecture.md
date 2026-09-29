@@ -10,15 +10,15 @@ A private, single-user radio: tune in and hear a continuous program of AI-genera
 
 These two requirements override every other decision in this document:
 
-1. **One app on Android.** Tuning in, listening, feedback and configuration happen in a single Android app; the settings are the web cockpit embedded in it, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
+1. **One app on Android.** Tuning in, listening, feedback, the program and configuration happen in a single Android app; the settings are the web studio shown in its «Studio» tab, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
 2. **AI-generated speech in every program.** Generated spoken segments are the reason the station exists; music alone is not a program. The configuration is rejected without at least one enabled speech show (`parseStationConfig`), and music blocks always carry generated moderation.
 
 ## Decisions
 
 1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
 2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
-3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web cockpit on the phone. The Spotify Web Playback SDK is not part of the product.
-4. **Settings and planning live in the web cockpit.** Shows, persona, voices, sources, program clock, music rules and arranging the timeline are forms in the web cockpit, used on a computer or embedded in the app; YAML is optional for bulk edits. See [Division of work](#division-of-work-app-and-web-cockpit).
+3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web studio. The Spotify Web Playback SDK is not part of the product.
+4. **Settings live in the web studio.** Shows, persona, voices, sources, day plan, music rules and the editorial team are forms in the web studio, used on a computer or in the app's «Studio» tab; YAML is optional for bulk edits. Arranging the program is native in the app. See [Division of work](#division-of-work-app-and-web-studio).
 5. **Server-side configuration.** The backend stores configuration, sources, schedule, feedback, production state and memory in D1 so it can produce without the app being open. The device keeps UI preferences and a playback cache. Export and delete remain available.
 6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
@@ -29,18 +29,18 @@ These two requirements override every other decision in this document:
 
 Per show, `production: agents` hands a music hour to a team of registered agents instead of a single writer: director, per-song researchers, lyric analyst, optional specialists, segment editor, fact checker and continuity editor, run as a validated plan with durable D1 checkpoints. Details, roles and costs: [agentic-workflow-spike.md](agentic-workflow-spike.md).
 
-## Division of work: app and web cockpit
+## Division of work: app and web studio
 
-Decided by the owner on 28.09.2026.
+Decided by the owner on 28.09.2026; on 29.09.2026 the browser player and the web program view were dropped, the web is the studio only.
 
-| | Android app (native) | Web cockpit (Worker page, behind Access) |
+| | Android app (native, Jetpack Compose) | Web studio (Worker page, behind Access) |
 |---|---|---|
-| Role | The product for listening | The workbench for settings and planning |
-| Contents | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over and «Spotify verbinden», feedback (👍/👎, skips), program list, immediate production | Persona and voices, shows of every format, program clock, music and playlist groups, feeds, arranging the timeline (move, remove, shuffle, add songs), YAML, Spotify listening profile, failures and sources |
-| Where | Phone | Browser on a computer; embedded in the app via «Programm einstellen» |
+| Role | The product for listening and steering the program | The workbench for settings |
+| Contents | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over and «Spotify verbinden», feedback (👍/👎, skips), the program («Jetzt · Gleich · Später»: move, remove, «Anders», shuffle, add songs, plan, retry), building blocks, archive, text and sources | Persona and voices, shows of every format, day plan and surprise level, music and playlist groups, feeds, the editorial team, quality and usage, YAML, Spotify listening profile |
+| Where | Phone | The app's «Studio» tab; a browser on a computer |
 | Changes ship | With a new APK | With every Worker deploy, no reinstall |
 
-Rules for new features: anything used while listening or often on the phone goes native (and may later move from the cockpit into the app); settings, planning and anything with larger forms goes into the web cockpit. Both use the same Worker API, so a feature can exist in both without duplicating server logic. The cockpit's small browser player only checks spoken segments; listening happens in the app.
+Rules for new features: anything used while listening or often on the phone goes native; settings and anything with larger forms go into the web studio. Both use the same Worker API, so a feature can move between them without duplicating server logic.
 
 ## System overview
 
@@ -184,7 +184,7 @@ Finished productions do not disappear when they leave the program. A ready item 
 
 ## Tools for shows (milestone 4, first step)
 
-A show's instructions and research brief may contain placeholders that are filled in when the item is produced: `{datum}`, `{wochentag}`, `{uhrzeit}` (in the station's time zone), `{ort}` and `{wetter}`. The station's `location` (name, latitude, longitude; found by name in the cockpit through `GET /api/places`, Open-Meteo geocoding) feeds `{ort}` and `{wetter}`. The weather comes from Open-Meteo (no key, nothing about the listener leaves the Worker except the coordinates) and is also handed to the writer as a source with the ID `wetter`, so strict verification accepts weather statements like any other evidence. A show can live on tools alone: a brief with `{wetter}` and no feeds is a weather report. Without a location such a show fails with `NO_LOCATION`. Next tools: headlines, MCP servers.
+A show's instructions and research brief may contain placeholders that are filled in when the item is produced: `{datum}`, `{wochentag}`, `{uhrzeit}` (in the station's time zone), `{ort}` and `{wetter}`. The station's `location` (name, latitude, longitude; found by name in the studio through `GET /api/places`, Open-Meteo geocoding) feeds `{ort}` and `{wetter}`. The weather comes from Open-Meteo (no key, nothing about the listener leaves the Worker except the coordinates) and is also handed to the writer as a source with the ID `wetter`, so strict verification accepts weather statements like any other evidence. A show can live on tools alone: a brief with `{wetter}` and no feeds is a weather report. Without a location such a show fails with `NO_LOCATION`. Next tools: headlines, MCP servers.
 
 ## Building blocks
 
@@ -192,7 +192,7 @@ Ready-made blocks replace typing prompts for everyday use: each block (`src/doma
 
 ## Final desk: style book, bridges, quality jury, loudness
 
-Every spoken item (briefs, dialogs, blocks) goes through a final desk after the draft (`server/editing.ts`): an editor rewrites it for the ear by a radio style book (one thought per sentence, rounded numbers, abbreviations spelled out, people introduced with their role, a concrete hook, the key point repeated at the end) and connects it to the program: a one-sentence bridge from the item before, the station ident after music or at the start, no announcement of what comes next (the owner may reorder). A jury then scores hook, clarity, facts, novelty and length from 1 to 5; below its bar (default 3.5, see Redaktion) the script goes back once with the jury's notes and the better version is kept. A rewrite that changes the format, cites unknown sources or grows or shrinks by more than half is discarded in favour of the draft, and the evidence check runs on the final text. The marks are shown in the cockpit (★) and in the app's text view. Voiced WAV audio (Gemini voices) is brought to one speech level (about −19 dBFS RMS of the voiced parts, soft limiter below full scale) and silent edges are trimmed to 120 ms (`server/audio.ts`); Mistral MP3 passes unchanged.
+Every spoken item (briefs, dialogs, blocks) goes through a final desk after the draft (`server/editing.ts`): an editor rewrites it for the ear by a radio style book (one thought per sentence, rounded numbers, abbreviations spelled out, people introduced with their role, a concrete hook, the key point repeated at the end) and connects it to the program: a one-sentence bridge from the item before, the station ident after music or at the start, no announcement of what comes next (the owner may reorder). A jury then scores hook, clarity, facts, novelty and length from 1 to 5; below its bar (default 3.5, see Redaktion) the script goes back once with the jury's notes and the better version is kept. A rewrite that changes the format, cites unknown sources or grows or shrinks by more than half is discarded in favour of the draft, and the evidence check runs on the final text. The marks are shown in the studio (★) and in the app's text view. Voiced WAV audio (Gemini voices) is brought to one speech level (about −19 dBFS RMS of the voiced parts, soft limiter below full scale) and silent edges are trimmed to 120 ms (`server/audio.ts`); Mistral MP3 passes unchanged.
 
 ## Redaktion: configurable agents
 
@@ -200,7 +200,7 @@ Settings → Redaktion lists every editorial agent (`src/domain/agents.ts`): res
 
 ### Learning from listening, quality trend, usage
 
-- **Reasons with 👎.** After a down-rating the app and the browser player offer one optional tap: too long, boring, wrong tone, known already, wrong. A reason that came up at least twice in 30 days becomes a note for the writer, the dialog, the final editor, the jury (which scores that point more strictly) and the music-hour writers (`src/domain/listener-notes.ts`). The owner can reset the collected reasons in Redaktion.
+- **Reasons with 👎.** After a down-rating the app offers one optional tap: too long, boring, wrong tone, known already, wrong. A reason that came up at least twice in 30 days becomes a note for the writer, the dialog, the final editor, the jury (which scores that point more strictly) and the music-hour writers (`src/domain/listener-notes.ts`). The owner can reset the collected reasons in Redaktion.
 - **Style presets.** One tap sets instructions and freedom of several agents (news, chatty, science magazine, morning show; `src/domain/agent-presets.ts`); «Standard» resets all.
 - **Quality trend.** Every jury mark is kept in `quality_log` (it survives the timeline cleanup); saving changed agents writes `agent_changes`. Redaktion shows the daily average of the last 30 days per show with a marker on each change.
 - **Usage.** Requests to Gemini, Mistral and ASK go through a counting fetch (`server/usage.ts`) that records calls and the tokens the providers report per UTC day and model (`model_usage`). Settings → Verbrauch shows them next to the daily productions and speech characters and their limits.
@@ -209,7 +209,7 @@ Settings → Redaktion lists every editorial agent (`src/domain/agents.ts`): res
 ### New releases, «Mehr dazu», station sound
 
 - **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). The moderation announces each release by artist and title as new (the owner's decision, 29.09.2026: these release names go to the AI and to speech synthesis); release dates and other metadata stay on the Worker.
-- **«Mehr dazu».** In the app and the browser player, one tap puts a *Vertiefung* right after the playing spoken item (`POST /api/timeline/{id}/more`). It starts from that item's sources (`p1`…), researches more on the web, is told what was already said and is checked strictly like any item. The hidden block `vertiefung` is not offered in the palette or the day plan.
+- **«Mehr dazu».** In the app, one tap puts a *Vertiefung* right after the playing spoken item (`POST /api/timeline/{id}/more`). It starts from that item's sources (`p1`…), researches more on the web, is told what was already said and is checked strictly like any item. The hidden block `vertiefung` is not offered in the palette or the day plan.
 - **Station sound.** The Worker synthesises a short ident jingle and a time signal (three pips and a long one) as WAV (`server/sounds.ts`, no third-party audio). The host speaks the hour announcement («Es ist 8 Uhr. Du hörst …») once per hour, voice and station name and keeps it in R2 (`sounds/hour-…`). The app plays the ident before a spoken item that follows music and, at the first change of item in the first 20 minutes of a new hour, the time signal and the spoken hour. Both can be switched off (`sounds.ident`, `sounds.hourChange`; default on).
 
 ### Pre-produced, but never wrong about the time
@@ -298,7 +298,7 @@ Public repository, private application. Cloudflare Access protects the Worker AP
 
 ## Current state and gaps
 
-Built and in daily use: the Worker with Access, D1, R2, Queue and cron; research, writing, final edit, jury and fact check; the building blocks, day plan, surprises and follow-ups; music hours, music blocks and songs through Spotify; configurable agents with trials, quality trend and usage; the Android app with Media3 playback, Spotify handoff, station sound and in-app updates; the web cockpit for settings and planning.
+Built and in daily use: the Worker with Access, D1, R2, Queue and cron; research, writing, final edit, jury and fact check; the building blocks, day plan, surprises and follow-ups; music hours, music blocks and songs through Spotify; configurable agents with trials, quality trend and usage; the Android app (Compose: Hören, Programm, Archiv, Studio) with Media3 playback, Spotify handoff, station sound and in-app updates; the web studio for settings.
 
 Remaining gaps:
 
@@ -309,7 +309,7 @@ Remaining gaps:
 ## Milestones
 
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; queue production with R2 audio; cron horizon with listener gate; authenticated timeline API.
-2. **Android app** (done): Media3 service, timeline sync, prefetch, feedback, service-token auth, embedded cockpit, in-app updates.
+2. **Android app** (done): Media3 service, timeline sync, prefetch, feedback, service-token auth, embedded studio, in-app updates, Compose screens with a mini player.
 3. **Spotify in the app** (done): App Remote, music hours, music blocks with moderation triggers, AI picks and playlist groups, listening profile.
 4. **Customization** (done): tools (date, weather, headlines), building blocks, day plan, configurable agents, station sound, surprises. Open: ElevenLabs as TTS option, MCP tools.
 5. **Learning and memory** (in progress): feedback weights, 👎 reasons as listener notes, quality trend. Open: per-kind learning for surprises, series.

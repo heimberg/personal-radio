@@ -2,7 +2,7 @@ package ch.heimberg.radio.core
 
 /**
  * What kind of content an item or block is, with its colour and icon, so the program reads at a
- * glance. Mirrors the web cockpit (src/domain/kinds.ts); colours are always paired with an icon.
+ * glance. The colours are shared with the web studio (src/domain/kinds.ts); they are always paired with an icon.
  */
 enum class Kind(val label: String, val argb: Long) {
     NEWS("Aktuell", 0xFFD08A2A),
