@@ -75,4 +75,5 @@ test('production runs the final edit with the program around the item; the trans
   assert.deepEqual(seen, { stationName: 'Radio Melchnau', when: 'Montag, 07:30', afterMusic: true });
   assert.match(reviewed!.text, /Geschliffen\.$/);
   assert.equal(transcriptView((await store.getItem('o', id))!, config).quality?.overall, 4);
+  assert.deepEqual((await store.qualityLog('o', new Date(0))).map(entry => [entry.showId, entry.overall]), [['_block:wetter', 4]]);
 });

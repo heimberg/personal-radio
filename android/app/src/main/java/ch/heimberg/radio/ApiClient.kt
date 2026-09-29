@@ -5,6 +5,7 @@ import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
+import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
@@ -100,6 +101,10 @@ class ApiClient(private val connection: Connection) {
 
     /** Deletes a production from the archive (or takes it out of the program). */
     suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }
+
+    suspend fun sendReason(itemId: String, reason: FeedbackReason) {
+        withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/reason", reason.toJson()) }
+    }
 
     suspend fun send(feedback: Feedback) {
         withContext(Dispatchers.IO) { request("POST", "api/timeline/${feedback.itemId}/feedback", feedback.toJson()) }

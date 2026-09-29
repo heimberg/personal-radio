@@ -9,6 +9,7 @@ import { YamlEditor } from './components/YamlEditor.tsx';
 import { defaultStationConfig } from './domain/station.ts';
 import type { FailureSummary, StationConfig, TimelineItemView } from './domain/station.ts';
 import type { FeedbackAction } from './domain/recommendation.ts';
+import type { FeedbackReason } from './domain/listener-notes.ts';
 import { api, playableInBrowser, post, readJson, trackFor } from './station-client.ts';
 import './style.css';
 
@@ -34,12 +35,23 @@ type View = 'program' | 'settings' | 'yaml';
 const spotifyReturn = new URLSearchParams(window.location.search).get('spotify');
 if (spotifyReturn) window.history.replaceState(null, '', window.location.pathname);
 
+/** Sent ratings, so a reason given right after 👎 waits until the rating is stored. */
+const sentRatings = new Map<string, Promise<unknown>>();
+
 function sendFeedback(timelineId: string, action: FeedbackAction, listenedRatio: number) {
   // The server marks the item played and learns from the signal; playback never waits for it.
-  void fetch(api(`api/timeline/${timelineId}/feedback`), {
+  const sent = fetch(api(`api/timeline/${timelineId}/feedback`), {
     method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, listenedRatio: Math.max(0, Math.min(1, listenedRatio)) }),
   }).catch(() => { /* The item stays open on the server. */ });
+  if (action === 'dislike') sentRatings.set(timelineId, sent);
+}
+
+async function sendReason(timelineId: string, reason: FeedbackReason) {
+  await sentRatings.get(timelineId);
+  await fetch(api(`api/timeline/${timelineId}/reason`), {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+  }).catch(() => { /* A lost reason costs nothing but the note. */ });
 }
 
 function App() {
@@ -55,6 +67,7 @@ function App() {
       : result ? 'Spotify-Hörprofil konnte nicht verbunden werden. Prüfe die Redirect-URI im Spotify-Dashboard und versuche es erneut.' : '';
   });
   const [ratings, setRatings] = useState<Record<string, FeedbackAction>>({});
+  const [reasons, setReasons] = useState<Record<string, FeedbackReason>>({});
   const listening = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -111,6 +124,13 @@ function App() {
     setRatings(current => ({ ...current, [track.timelineId!]: action }));
   }
 
+  function giveReason(reason: FeedbackReason) {
+    const track = player.tracks[player.state.index];
+    if (!track?.timelineId) return;
+    void sendReason(track.timelineId, reason);
+    setReasons(current => ({ ...current, [track.timelineId!]: reason }));
+  }
+
   const ready = items.filter(playableInBrowser).length;
   const currentId = player.tracks[player.state.index]?.timelineId;
   // YAML is for bulk edits; it opens from the settings instead of taking a place in the navigation.
@@ -125,7 +145,7 @@ function App() {
     <button className="button primary" onClick={() => void setUp()}>Programm einrichten</button></section>;
   else content = <>
     {view === 'program' && <>
-      {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} />}
+      {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} onReason={giveReason} reason={currentId ? reasons[currentId] ?? null : null} />}
       <Timeline config={config} items={items} failures={failures} refresh={refresh} />
     </>}
     {view === 'settings' && <>

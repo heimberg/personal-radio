@@ -5,6 +5,20 @@ import kotlinx.serialization.json.put
 
 enum class FeedbackAction(val wire: String) { LIKE("like"), DISLIKE("dislike"), SKIP("skip"), COMPLETE("complete") }
 
+/** Why a spoken item was rated down; repeated reasons steer the station's writer, editor and jury. */
+enum class FeedbackReason(val wire: String, val label: String) {
+    TOO_LONG("too_long", "Zu lang"), BORING("boring", "Langweilig"), TONE("tone", "Falscher Ton"),
+    KNOWN("known", "Kenn ich schon"), WRONG("wrong", "Fehlerhaft");
+
+    /** Body for `POST /api/timeline/{id}/reason`. */
+    fun toJson(): String = buildJsonObject { put("reason", wire) }.toString()
+
+    companion object {
+        /** Songs between items get no reason: the reasons are about spoken content. */
+        fun asksFor(showId: String?): Boolean = showId != "_musik"
+    }
+}
+
 data class Feedback(val itemId: String, val action: FeedbackAction, val listenedRatio: Double) {
     /** Body for `POST /api/timeline/{id}/feedback`. */
     fun toJson(): String = buildJsonObject {

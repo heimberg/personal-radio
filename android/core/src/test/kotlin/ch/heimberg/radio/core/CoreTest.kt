@@ -2,6 +2,7 @@ package ch.heimberg.radio.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
@@ -74,6 +75,9 @@ class FeedbackTest {
         assertEquals(Feedback("a", FeedbackAction.SKIP, 0.25), FeedbackPolicy.onLeave("a", false, 30_000, 120_000))
         assertEquals(0.0, FeedbackPolicy.onLeave("a", false, 5, 0).listenedRatio)
         assertEquals("""{"action":"like","listenedRatio":1.0}""", FeedbackPolicy.rating("a", true).toJson())
+        assertEquals("""{"reason":"too_long"}""", FeedbackReason.TOO_LONG.toJson())
+        assertTrue(FeedbackReason.asksFor("entdecken"))
+        assertFalse(FeedbackReason.asksFor("_musik"))
     }
 }
 
