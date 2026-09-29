@@ -276,8 +276,6 @@ function listeningFor(env: Environment): SpotifyListening | null {
   return env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? new SpotifyListening(env.DB, { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET }) : null;
 }
 
-const STATE_COOKIE = 'pr_spotify_state';
-
 /** Connecting the owner's Spotify listening profile (authorization code flow; the secret stays in the Worker). */
 async function listeningRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith('/api/spotify/')) return null;
@@ -286,21 +284,21 @@ async function listeningRoutes(request: Request, env: Environment, owner: string
   const redirectUri = `${url.origin}/api/spotify/callback`;
   if (url.pathname === '/api/spotify/profile' && request.method === 'GET') return json(await listening.status(owner), 200);
   if (url.pathname === '/api/spotify/connect' && request.method === 'GET') {
-    const state = crypto.randomUUID();
-    return new Response(null, { status: 302, headers: {
-      Location: listening.authorizeUrl(redirectUri, state), 'Cache-Control': 'no-store',
-      'Set-Cookie': `${STATE_COOKIE}=${state}; Path=/api/spotify; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
-    } });
+    // The state is kept on the server for the authenticated owner: the app opens Spotify's login in the
+    // system browser, which does not share the app's cookies, so a state cookie would never come back.
+    const state = await listening.beginConnect(owner, new Date());
+    return new Response(null, { status: 302, headers: { Location: listening.authorizeUrl(redirectUri, state), 'Cache-Control': 'no-store' } });
   }
   if (url.pathname === '/api/spotify/callback' && request.method === 'GET') {
-    const cookie = request.headers.get('Cookie')?.split(/;\s*/).find(part => part.startsWith(`${STATE_COOKIE}=`))?.slice(STATE_COOKIE.length + 1);
-    const done = (result: string) => new Response(null, { status: 302, headers: {
-      Location: `${url.origin}/?spotify=${result}`, 'Cache-Control': 'no-store', 'Set-Cookie': `${STATE_COOKIE}=; Path=/api/spotify; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    const done = (result: string, status?: number) => new Response(null, { status: 302, headers: {
+      Location: `${url.origin}/?spotify=${result}${status ? `&status=${status}` : ''}`, 'Cache-Control': 'no-store',
     } });
     const code = url.searchParams.get('code'), state = url.searchParams.get('state');
-    if (!code || !state || !cookie || state !== cookie) return done('abgelehnt');
+    const known = state ? await listening.takeState(owner, state, new Date()) : false;
+    if (url.searchParams.get('error')) return done('verweigert');
+    if (!code || !known) return done('abgelaufen');
     try { await listening.connect(owner, code, redirectUri, new Date()); return done('verbunden'); }
-    catch { return done('fehler'); }
+    catch (error) { return done('fehler', error instanceof ProviderError ? error.status : undefined); }
   }
   if (url.pathname === '/api/spotify/disconnect' && request.method === 'POST') {
     if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);

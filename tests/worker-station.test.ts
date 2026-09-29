@@ -254,7 +254,8 @@ test('the Android app authenticates with an Access service token and acts as the
     await timeline('');
     assert.equal(seen(), 1);
 
-    // Spotify listening profile: connect sets a state cookie; a callback without the matching state is refused.
+    // Spotify listening profile: the state is kept on the server (the login may finish in the system browser);
+    // an unknown or reused state is refused, a refusal at Spotify is named.
     const spotifyEnv = { ...env, SPOTIFY_CLIENT_ID: 'sid', SPOTIFY_CLIENT_SECRET: 'ssecret' };
     const spotify = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, { ...init, headers: { 'Cf-Access-Jwt-Assertion': app, ...(init.headers ?? {}) } }), spotifyEnv as never);
     const connect = await spotify('/api/spotify/connect');
@@ -263,9 +264,26 @@ test('the Android app authenticates with an Access service token and acts as the
     assert.equal(location.origin, 'https://accounts.spotify.com');
     assert.equal(location.searchParams.get('redirect_uri'), `${ORIGIN}/api/spotify/callback`);
     const state = location.searchParams.get('state')!;
-    assert.match(connect.headers.get('Set-Cookie')!, new RegExp(`^pr_spotify_state=${state}; Path=/api/spotify; .*HttpOnly; Secure`));
-    const forged = await spotify(`/api/spotify/callback?code=c&state=${state}`, { headers: { Cookie: 'pr_spotify_state=other' } });
-    assert.equal(forged.headers.get('Location'), `${ORIGIN}/?spotify=abgelehnt`);
+    assert.equal(connect.headers.get('Set-Cookie'), null);
+    const forged = await spotify('/api/spotify/callback?code=c&state=erfunden');
+    assert.equal(forged.headers.get('Location'), `${ORIGIN}/?spotify=abgelaufen`);
+    const denied = await spotify(`/api/spotify/callback?error=access_denied&state=${state}`);
+    assert.equal(denied.headers.get('Location'), `${ORIGIN}/?spotify=verweigert`);
+    // The state is single-use: after the refusal it no longer connects.
+    assert.equal((await spotify(`/api/spotify/callback?code=c&state=${state}`)).headers.get('Location'), `${ORIGIN}/?spotify=abgelaufen`);
+    // A fresh login that Spotify's token endpoint rejects names the status; one that succeeds connects.
+    const second = new URL((await spotify('/api/spotify/connect')).headers.get('Location')!).searchParams.get('state')!;
+    const third = new URL((await spotify('/api/spotify/connect')).headers.get('Location')!).searchParams.get('state')!;
+    assert.equal((await spotify(`/api/spotify/callback?code=c&state=${second}`)).headers.get('Location'), `${ORIGIN}/?spotify=abgelaufen`); // replaced by the newer one
+    const beforeFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => String(input) === 'https://accounts.spotify.com/api/token' ? new Response('{}', { status: 400 }) : beforeFetch(input, init);
+    assert.equal((await spotify(`/api/spotify/callback?code=c&state=${third}`)).headers.get('Location'), `${ORIGIN}/?spotify=fehler&status=400`);
+    const fourth = new URL((await spotify('/api/spotify/connect')).headers.get('Location')!).searchParams.get('state')!;
+    globalThis.fetch = async (input, init) => String(input) === 'https://accounts.spotify.com/api/token' ? Response.json({ access_token: 'a', refresh_token: 'r' }) : beforeFetch(input, init);
+    assert.equal((await spotify(`/api/spotify/callback?code=c&state=${fourth}`)).headers.get('Location'), `${ORIGIN}/?spotify=verbunden`);
+    globalThis.fetch = beforeFetch;
+    assert.equal(((await (await spotify('/api/spotify/profile')).json()) as { connected: boolean }).connected, true);
+    (env.DB as any).raw.prepare('DELETE FROM spotify_listening').run();
     assert.deepEqual(await (await spotify('/api/spotify/profile')).json(), { connected: false, artists: [] });
     assert.equal((await spotify('/api/spotify/disconnect', { method: 'POST' })).status, 403); // no Origin
     assert.equal((await station(app, {})).status, 200);

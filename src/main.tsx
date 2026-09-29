@@ -33,6 +33,14 @@ type View = 'program' | 'settings' | 'yaml';
 
 // Back from connecting the Spotify listening profile: show the result once and clean the address.
 const spotifyReturn = new URLSearchParams(window.location.search).get('spotify');
+const spotifyStatus = new URLSearchParams(window.location.search).get('status');
+
+function spotifyNotice(result: string, status: string | null): string {
+  if (result === 'verbunden') return 'Spotify-Hörprofil verbunden. Die Songauswahl kennt jetzt deine Top-Künstler, Musikblöcke deine privaten Playlists.';
+  if (result === 'verweigert') return 'Die Verbindung wurde bei Spotify nicht erlaubt. Du kannst es jederzeit nochmals versuchen.';
+  if (result === 'abgelaufen') return 'Die Spotify-Anmeldung ist abgelaufen (nach 10 Minuten) oder wurde schon verwendet. Tippe nochmals auf «Mit Spotify verbinden».';
+  return `Spotify hat die Anmeldung nicht bestätigt${status ? ` (Status ${status})` : ''}. Prüfe im Spotify-Dashboard, dass Client-ID und Secret zum Worker passen und die Redirect-URI genau ${window.location.origin}/api/spotify/callback lautet.`;
+}
 if (spotifyReturn) window.history.replaceState(null, '', window.location.pathname);
 
 /** Sent ratings, so a reason given right after 👎 waits until the rating is stored. */
@@ -62,9 +70,7 @@ function App() {
   const [items, setItems] = useState<TimelineItemView[]>([]);
   const [failures, setFailures] = useState<FailureSummary>({ count: 0 });
   const [notice, setNotice] = useState(() => {
-    const result = spotifyReturn;
-    return result === 'verbunden' ? 'Spotify-Hörprofil verbunden. Die Songauswahl kennt jetzt deine Top-Künstler.'
-      : result ? 'Spotify-Hörprofil konnte nicht verbunden werden. Prüfe die Redirect-URI im Spotify-Dashboard und versuche es erneut.' : '';
+    return spotifyReturn ? spotifyNotice(spotifyReturn, spotifyStatus) : '';
   });
   const [ratings, setRatings] = useState<Record<string, FeedbackAction>>({});
   const [reasons, setReasons] = useState<Record<string, FeedbackReason>>({});
