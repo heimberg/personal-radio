@@ -394,6 +394,8 @@ class PlaybackService : MediaLibraryService() {
             is SpeechStep -> connection!!.resolve(step.audioUrl)
             is TrackStep -> {
                 metadata.setDurationMs(step.durationMs)
+                // The album cover shows in the app, the notification and on the lock screen.
+                step.artworkUrl?.let { metadata.setArtworkUri(android.net.Uri.parse(it)) }
                 step.spotifyUri
             }
         }

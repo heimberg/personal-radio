@@ -36,6 +36,8 @@ data class TimelineItem(
     /** Heard before, or left the program unheard: listening again from the archive. */
     val isHeard: Boolean get() = state == "played" || state == "skipped"
     val isOpen: Boolean get() = state == "planned" || state == "voicing" || state == "ready"
+    /** The item's cover: the album of its first song that has one; spoken items have none. */
+    val coverUrl: String? get() = parts.firstOrNull { it.isTrack && it.imageUrl != null }?.imageUrl
 }
 
 @Serializable
@@ -46,6 +48,8 @@ data class TimelinePart(
     val title: String? = null,
     val artist: String? = null,
     val durationMs: Long = 0,
+    /** The track's album cover (Spotify's image CDN). */
+    val imageUrl: String? = null,
 ) {
     val isTrack: Boolean get() = kind == "track"
 }

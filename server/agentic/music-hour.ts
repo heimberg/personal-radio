@@ -19,7 +19,7 @@ export interface TeamTools { model: JsonModel; researcher: Researcher; catalog: 
 
 export interface SongPlan { title: string; artist: string; album?: string; year?: number; role: string; question: string }
 export interface DirectorPlan { title: string; angle: string; songs: SongPlan[]; specialists: Array<{ topic: string; question: string }> }
-export interface ResolvedSong extends SongPlan { uri: string; durationMs: number }
+export interface ResolvedSong extends SongPlan { uri: string; durationMs: number; imageUrl?: string }
 export interface LyricNote { themes: string; mood: string; confidence: 'hoch' | 'mittel' | 'niedrig' }
 export interface FactIssue { part: string; sentence: string; problem: string }
 

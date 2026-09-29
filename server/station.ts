@@ -376,7 +376,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
 
 /** Stored in script_json: the hour's speech and tracks in playing order. */
 interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
-interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; reason?: string; group?: string; picked?: 'ai' | 'playlist' | 'release' }
+interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; imageUrl?: string; reason?: string; group?: string; picked?: 'ai' | 'playlist' | 'release' }
 /** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
 interface HourPackage {
   kind: 'music_hour' | 'artist_hour' | 'song' | 'music_block'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart>;
@@ -447,7 +447,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
     }
     const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner), agents, listenerNotes: await notesFor(deps, owner, now) };
-    let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }>;
+    let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number; imageUrl?: string }>;
     let hour: HourScript;
     let team: { songs: number; specialists: number; corrections: number } | undefined;
     if (show.production === 'agents') {
@@ -459,7 +459,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
         request: { focus, subject, count: show.tracks ?? 10, talkSeconds: show.talkSeconds ?? 60, instructions: show.instructions, researchPrompt: show.researchPrompt, direction } });
       if (!result.ok) { await steps.clear(); return fail(result.error); }
       sources = result.sources; queries = result.queries; hour = result.script;
-      resolved = result.songs.map(song => ({ pick: { title: song.title, artist: song.artist, reason: song.role, ...(song.album ? { album: song.album } : {}), ...(song.year ? { year: song.year } : {}) }, uri: song.uri, durationMs: song.durationMs }));
+      resolved = result.songs.map(song => ({ pick: { title: song.title, artist: song.artist, reason: song.role, ...(song.album ? { album: song.album } : {}), ...(song.year ? { year: song.year } : {}) }, uri: song.uri, durationMs: song.durationMs, ...(song.imageUrl ? { imageUrl: song.imageUrl } : {}) }));
       team = { songs: result.songs.length, specialists: result.specialists, corrections: result.corrections };
       await steps.clear();
     } else {
@@ -497,7 +497,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
     resolved.forEach((item, index) => {
       const moderation = hour.tracks.find(track => track.index === index);
       if (moderation) parts.push(...speech(moderation));
-      parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, reason: item.pick.reason });
+      parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}), reason: item.pick.reason });
     });
     parts.push(...speech(hour.outro));
     pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts };
@@ -577,7 +577,7 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
       liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, surprise: surpriseLevel(config),
       direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
-    let chosen: { pick: SongPick; uri: string; durationMs: number } | null = null;
+    let chosen: { pick: SongPick; uri: string; durationMs: number; imageUrl?: string } | null = null;
     for (const pick of picks) {
       const track = await deps.catalog.find(pick);
       if (track) { chosen = { pick, ...track }; break; }
@@ -586,7 +586,7 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
     const title = `${chosen.pick.artist} – ${chosen.pick.title}`;
     const intro: SpeechPart[] = config.music.announce && chosen.pick.announcement ? [{ kind: 'speech', text: chosen.pick.announcement, sourceIds: [] }] : [];
     pkg = { kind: 'song', title, subject: title, text: chosen.pick.announcement, sourceIds: [],
-      parts: [...intro, { kind: 'track', uri: chosen.uri, title: chosen.pick.title, artist: chosen.pick.artist, durationMs: chosen.durationMs }] };
+      parts: [...intro, { kind: 'track', uri: chosen.uri, title: chosen.pick.title, artist: chosen.pick.artist, durationMs: chosen.durationMs, ...(chosen.imageUrl ? { imageUrl: chosen.imageUrl } : {}) }] };
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), estimated_minutes: Math.max(1, Math.round(chosen.durationMs / 60_000)) }, deps.now());
   } else {
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
@@ -776,7 +776,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   const speak = (position: number) => { const body = speechAt.get(position); if (body) parts.push(...splitSpeech(body).map(chunk => ({ kind: 'speech' as const, text: chunk, sourceIds: [] }))); };
   tracks.forEach((track, index) => {
     speak(index);
-    parts.push({ kind: 'track', uri: track.uri, title: track.title, artist: track.artist, durationMs: track.durationMs, group: groups[track.group].name, picked: track.picked });
+    parts.push({ kind: 'track', uri: track.uri, title: track.title, artist: track.artist, durationMs: track.durationMs, ...(track.imageUrl ? { imageUrl: track.imageUrl } : {}), group: groups[track.group].name, picked: track.picked });
   });
   speak(tracks.length);
   const text = parts.flatMap(part => part.kind === 'speech' ? [part.text] : []).join(' ');
@@ -1013,7 +1013,7 @@ function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineIte
   return {
     ...(pkg.kind === 'song' || pkg.kind === 'music_block' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
     parts: pkg.parts.map((part, index) => part.kind === 'track'
-      ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs }
+      ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs, ...(part.imageUrl ? { imageUrl: part.imageUrl } : {}) }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),
   };
 }

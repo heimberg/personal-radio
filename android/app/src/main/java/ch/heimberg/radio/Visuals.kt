@@ -32,6 +32,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ch.heimberg.radio.core.Kind
+import ch.heimberg.radio.core.Look
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -113,6 +117,33 @@ fun Modifier.kindTile(kind: Kind?, shape: Shape = RoundedCornerShape(20.dp), glo
     return this
         .background(Brush.linearGradient(listOf(lerp(Nocturne.surface, color, glow), Nocturne.surface, Nocturne.surface), start = Offset(Float.POSITIVE_INFINITY, 0f), end = Offset(0f, Float.POSITIVE_INFINITY)), shape)
         .border(1.dp, color.copy(alpha = 0.45f), shape)
+}
+
+/**
+ * The cover of an item: its album image when it has songs, otherwise a tile in the kind's colour with
+ * soft rings and the icon, so every item has a face. The tile shows while an image loads or if it fails.
+ */
+@Composable
+fun Cover(look: Look?, imageUrl: String?, extent: Dp, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(extent * 0.22f)
+    val color = Nocturne.kind(look?.kind)
+    Box(
+        modifier
+            .size(extent)
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(lerp(Nocturne.bgGlow, color, 0.7f), lerp(Nocturne.bg, color, 0.22f))))
+            .border(1.dp, color.copy(alpha = 0.5f), shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val corner = Offset(size.width * 0.85f, size.height * 0.15f)
+            for (ring in 1..3) drawCircle(Color.White.copy(alpha = 0.07f), radius = size.width * 0.28f * ring, center = corner, style = Stroke(1.dp.toPx()))
+        }
+        Text(look?.icon ?: "📻", fontSize = (extent.value * 0.4f).sp)
+        if (imageUrl != null) {
+            AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        }
+    }
 }
 
 /** An emoji icon on a round badge in the kind's colour. */

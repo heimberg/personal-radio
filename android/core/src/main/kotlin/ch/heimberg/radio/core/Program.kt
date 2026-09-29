@@ -30,6 +30,8 @@ data class TrackStep(
     override val subtitle: String,
     val durationMs: Long,
     override val last: Boolean,
+    /** The album cover, shown in the app, the notification and on the lock screen. */
+    val artworkUrl: String? = null,
 ) : Step
 
 object Program {
@@ -46,7 +48,7 @@ object Program {
             val mediaId = "${item.id}#$index"
             if (part.isTrack) {
                 part.spotifyUri?.let { uri ->
-                    TrackStep(item.id, mediaId, uri, part.title ?: uri, part.artist ?: item.artist ?: "", part.durationMs, index == last)
+                    TrackStep(item.id, mediaId, uri, part.title ?: uri, part.artist ?: item.artist ?: "", part.durationMs, index == last, part.imageUrl)
                 }
             } else {
                 part.audioUrl?.let { url -> SpeechStep(item.id, mediaId, url, item.displayTitle, item.showName, index == last) }

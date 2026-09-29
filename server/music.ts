@@ -47,7 +47,17 @@ export interface SongRequest {
   /** How many songs to propose; default 3. */
   count?: number;
 }
-export interface CatalogTrack { uri: string; durationMs: number }
+/** A found track; [imageUrl] is its album cover from Spotify's image CDN (for the app, never for an AI). */
+export interface CatalogTrack { uri: string; durationMs: number; imageUrl?: string }
+
+/** An album cover about 300 px wide, only from Spotify's image CDN; anything else is ignored. */
+export function albumImage(images: unknown): string | undefined {
+  if (!Array.isArray(images)) return undefined;
+  const valid = images.filter((image): image is { url: string; width?: unknown } =>
+    !!image && typeof image.url === 'string' && /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9]{1,80}$/.test(image.url));
+  const distance = (image: { width?: unknown }) => Math.abs((Number(image.width) || 300) - 300);
+  return valid.reduce<{ url: string; width?: unknown } | undefined>((best, image) => !best || distance(image) < distance(best) ? image : best, undefined)?.url;
+}
 export interface MusicCatalog { find(pick: Pick<TrackPick, 'title' | 'artist'>): Promise<CatalogTrack | null> }
 /** A track of one of the owner's playlists. Shown to the owner and played; never sent to an AI provider. */
 export interface PlaylistTrack extends CatalogTrack { title: string; artist: string }
@@ -297,11 +307,12 @@ export class SpotifyCatalog implements MusicCatalog {
         const retry = Number(response.headers.get('Retry-After'));
         throw new ProviderError('Spotify search', response.status, Number.isFinite(retry) && retry > 0 ? { retryAfterMs: retry * 1000 } : {});
       }
-      const body = await response.json() as { tracks?: { items?: Array<{ uri?: string; name?: string; duration_ms?: number; artists?: Array<{ name?: string }> }> } };
+      const body = await response.json() as { tracks?: { items?: Array<{ uri?: string; name?: string; duration_ms?: number; artists?: Array<{ name?: string }>; album?: { images?: unknown } }> } };
       for (const item of body.tracks?.items ?? []) {
         if (typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
         if (matchesPick({ name: item.name, artists: (item.artists ?? []).map(artist => artist.name ?? '') }, pick)) {
-          return { uri: item.uri, durationMs: Number(item.duration_ms) || 0 };
+          const imageUrl = albumImage(item.album?.images);
+          return { uri: item.uri, durationMs: Number(item.duration_ms) || 0, ...(imageUrl ? { imageUrl } : {}) };
         }
       }
       return null;
@@ -328,13 +339,13 @@ export class SpotifyCatalog implements MusicCatalog {
    */
   async newReleases(artists: string[], since: Date, maxArtists = 15): Promise<PlaylistTrack[]> {
     const same = (a: string, b: string) => a.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim() === b.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim();
-    const releases: Array<{ id: string; date: string; artist: string }> = [];
+    const releases: Array<{ id: string; date: string; artist: string; imageUrl?: string }> = [];
     for (const name of [...new Set(artists)].slice(0, maxArtists)) {
       const found = await this.get<{ artists?: { items?: Array<{ id?: string; name?: string }> } }>(
         `https://api.spotify.com/v1/search?${new URLSearchParams({ q: name, type: 'artist', limit: '5', market: this.market })}`, 'Spotify search');
       const artist = (found.artists?.items ?? []).find(item => typeof item.id === 'string' && /^[A-Za-z0-9]{22}$/.test(item.id) && typeof item.name === 'string' && same(item.name, name));
       if (!artist) continue;
-      const albums = await this.get<{ items?: Array<{ id?: string; release_date?: string; release_date_precision?: string }> }>(
+      const albums = await this.get<{ items?: Array<{ id?: string; release_date?: string; release_date_precision?: string; images?: unknown }> }>(
         `https://api.spotify.com/v1/artists/${artist.id}/albums?${new URLSearchParams({ include_groups: 'album,single', market: this.market, limit: '10' })}`, 'Spotify albums');
       let perArtist = 0;
       for (const album of albums.items ?? []) {
@@ -342,7 +353,8 @@ export class SpotifyCatalog implements MusicCatalog {
         const date = album.release_date_precision === 'day' ? album.release_date : album.release_date_precision === 'month' ? `${album.release_date}-01` : '';
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Date.parse(`${date}T00:00:00Z`) < since.getTime()) continue;
         if (releases.some(item => item.id === album.id)) continue;
-        releases.push({ id: album.id, date, artist: artist.name! });
+        const imageUrl = albumImage(album.images);
+        releases.push({ id: album.id, date, artist: artist.name!, ...(imageUrl ? { imageUrl } : {}) });
         if (++perArtist >= 2) break;
       }
     }
@@ -354,7 +366,7 @@ export class SpotifyCatalog implements MusicCatalog {
       const item = body.items?.[0];
       if (!item || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
       const artist = (item.artists ?? []).map(value => value.name ?? '').filter(Boolean).join(', ') || release.artist;
-      tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0 });
+      tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0, ...(release.imageUrl ? { imageUrl: release.imageUrl } : {}) });
     }
     return tracks;
   }
@@ -376,10 +388,11 @@ export class SpotifyCatalog implements MusicCatalog {
         if (!response.ok) throw new ProviderError('Spotify playlist', response.status);
         const body = await response.json() as { next?: unknown; items?: Array<{ track?: unknown; item?: unknown }> };
         for (const entry of body.items ?? []) {
-          const item = (entry.item ?? entry.track) as { uri?: unknown; name?: unknown; duration_ms?: unknown; is_local?: unknown; artists?: Array<{ name?: unknown }> } | null;
+          const item = (entry.item ?? entry.track) as { uri?: unknown; name?: unknown; duration_ms?: unknown; is_local?: unknown; artists?: Array<{ name?: unknown }>; album?: { images?: unknown } } | null;
           if (!item || item.is_local === true || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
           const artist = (item.artists ?? []).map(value => typeof value.name === 'string' ? value.name : '').filter(Boolean).join(', ');
-          tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0 });
+          const imageUrl = albumImage(item.album?.images);
+          tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0, ...(imageUrl ? { imageUrl } : {}) });
         }
         url = typeof body.next === 'string' && body.next.startsWith('https://api.spotify.com/') ? body.next : null;
       }

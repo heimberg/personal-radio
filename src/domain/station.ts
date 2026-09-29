@@ -136,7 +136,7 @@ export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skippe
 export const OPEN_STATES: readonly TimelineState[] = ['planned', 'voicing', 'ready'];
 export type TimelinePartView =
   | { kind: 'speech'; audioUrl?: string }
-  | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number };
+  | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number; imageUrl?: string };
 export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
   /** 🎲 a surprise the planner mixed in; it can be swapped for another one. */

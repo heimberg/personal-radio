@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GeminiMusicWriter, SpotifyCatalog, matchesPick, normalizeMusic, parseHourScript } from '../server/music.ts';
+import { GeminiMusicWriter, SpotifyCatalog, albumImage, matchesPick, normalizeMusic, parseHourScript } from '../server/music.ts';
 import { splitSpeech } from '../server/station.ts';
 
 const sources = [{ id: 'w1', url: 'https://example.org/p', title: 'example.org', excerpt: 'Dummy erschien 1994.', publishedAt: '2026-09-27', retrievedAt: '2026-09-27' }];
@@ -32,10 +32,12 @@ test('Spotify search uses an app token, resolves only matching tracks and refres
     assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer t2');
     return Response.json({ tracks: { items: [
       { uri: 'spotify:track:cover', name: 'Glory Box', duration_ms: 1, artists: [{ name: 'Tribute Band' }] },
-      { uri: 'spotify:track:orig', name: 'Glory Box - Remastered', duration_ms: 305000, artists: [{ name: 'Portishead' }] },
+      { uri: 'spotify:track:orig', name: 'Glory Box - Remastered', duration_ms: 305000, artists: [{ name: 'Portishead' }],
+        album: { images: [{ url: 'https://i.scdn.co/image/big', width: 640 }, { url: 'https://i.scdn.co/image/mid', width: 300 }, { url: 'https://i.scdn.co/image/small', width: 64 }] } },
     ] } });
   });
-  assert.deepEqual(await catalog.find({ title: 'Glory Box', artist: 'Portishead' }), { uri: 'spotify:track:orig', durationMs: 305000 });
+  // The album cover about 300 px wide comes along for the app.
+  assert.deepEqual(await catalog.find({ title: 'Glory Box', artist: 'Portishead' }), { uri: 'spotify:track:orig', durationMs: 305000, imageUrl: 'https://i.scdn.co/image/mid' });
   assert.equal(tokens, 2);
   assert.match(new URL(calls.at(-1)!).searchParams.get('q')!, /^track:Glory Box artist:Portishead$/);
   const limited = new SpotifyCatalog({ clientId: 'id', clientSecret: 'secret' }, async input => String(input).includes('token')
@@ -187,4 +189,12 @@ test('block moderation: one text per moment, only the AI\'s own picks are named,
   assert.deepEqual(input.momente[1], { index: 1, anlässe: ['group_transition', 'before_track'], danach: { artist: 'Neu!', title: 'Hallogallo' }, von: 'Kaffee', nach: 'Entdeckungen' });
   assert.equal(input['nächste Sendung'], 'Kurzbeitrag');
   assert.match(body.systemInstruction.parts[0].text, /über andere Songs weisst du nichts[\s\S]*Du sprichst als Mira/);
+});
+
+test('album covers come only from Spotify\'s image CDN', () => {
+  assert.equal(albumImage([{ url: 'https://i.scdn.co/image/abc', width: 640 }]), 'https://i.scdn.co/image/abc');
+  assert.equal(albumImage([{ url: 'https://evil.example/image/abc', width: 300 }]), undefined);
+  assert.equal(albumImage([{ url: 'http://i.scdn.co/image/abc' }]), undefined);
+  assert.equal(albumImage('nope'), undefined);
+  assert.equal(albumImage([]), undefined);
 });
