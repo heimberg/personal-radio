@@ -22,8 +22,10 @@ import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
+import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.FeedbackReason
+import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.ProgramClock
 import ch.heimberg.radio.core.TimelineItem
@@ -406,6 +408,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 state.spotifyNeeded = spotifyClientId != null && !RadioSettings(this).spotifyLinked
                 state.connectionError = null
                 state.failures = timeline.failures
+                if (!moodSending) state.mood = timeline.mood?.id
                 // All open items: a new order always covers the whole program.
                 state.open = timeline.items.filter { it.isOpen && it.id !in removing }
                 state.loaded = true
@@ -442,6 +445,62 @@ class MainActivity : AppCompatActivity(), RadioActions {
         }
     }
 
+    // ── «Heute» and the day plan ──────────────────────────────────────────────────────────────
+
+    /** Set while a mood is on its way, so a refresh in between does not flip the chip back. */
+    private var moodSending = false
+
+    override fun setMood(id: String?) {
+        val before = state.mood
+        state.mood = id
+        moodSending = true
+        window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        lifecycleScope.launch {
+            val result = runCatching { api.setMood(id) }
+            moodSending = false
+            if (result.isFailure) state.mood = before
+            state.say(result.fold(
+                { Moods.of(id)?.let { "${it.icon} ${it.label} – gilt ab den nächsten Beiträgen bis Mitternacht." } ?: "Wieder der normale Tagesplan." },
+                { it.message ?: getString(R.string.connection_failed) },
+            ))
+            if (result.isSuccess) changed()
+        }
+    }
+
+    override fun openDayPlan() {
+        state.dayPlanOpen = true
+        // Unsaved changes stay until they are saved; otherwise the plan is read fresh.
+        if (state.dayPlanDirty && state.dayPlan != null) return
+        state.dayPlan = null
+        lifecycleScope.launch {
+            runCatching { api.dayPlan() }
+                .onSuccess { plan -> if (plan == null) state.say("Das Radio ist noch nicht eingerichtet – das geht im Studio.") else state.dayPlan = plan }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    override fun editDayPlan(plan: DayPlan) {
+        if (plan == state.dayPlan) return
+        state.dayPlan = plan
+        state.dayPlanDirty = true
+    }
+
+    override fun saveDayPlan() {
+        val plan = state.dayPlan ?: return
+        state.dayPlanSaving = true
+        lifecycleScope.launch {
+            val result = runCatching { api.saveDayPlan(plan) }
+            state.dayPlanSaving = false
+            if (result.isSuccess) state.dayPlanDirty = false
+            state.say(result.fold({ "Tagesplan gespeichert. Er gilt ab den nächsten geplanten Beiträgen." }, { it.message ?: getString(R.string.connection_failed) }))
+            if (result.isSuccess) changed()
+        }
+    }
+
+    override fun closeDayPlan() {
+        state.dayPlanOpen = false
+    }
+
     // ── Setup ─────────────────────────────────────────────────────────────────────────────────
 
     /**
@@ -453,7 +512,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
         if (!spotify.installed) return state.say(getString(R.string.spotify_missing))
         state.say(getString(R.string.spotify_connecting))
         state.spotifyBusy = true
-        spotify.connect(clientId, showAuthView = true) { error ->
+        val done = { error: String? ->
             state.spotifyBusy = false
             state.say(error ?: getString(R.string.spotify_connected))
             if (error == null) {
@@ -461,6 +520,10 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 state.spotifyNeeded = false
                 lifecycleScope.launch { refreshTimeline() }
             }
+        }
+        // An earlier permission still counts: connect quietly first, and only ask Spotify when that fails.
+        spotify.connect(clientId, showAuthView = false) { quiet ->
+            if (quiet == null) done(null) else spotify.connect(clientId, showAuthView = true) { error -> done(error) }
         }
     }
 

@@ -106,6 +106,7 @@ private fun ProgramHead(state: RadioState, actions: RadioActions) {
             Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { AssistChip(onClick = actions::openDayPlan, label = { Text("🗓  Tagesplan") }) }
             item { AssistChip(onClick = actions::shuffle, label = { Text("🔀  Mischen") }, enabled = state.open.size > 1) }
             item { AssistChip(onClick = actions::addSong, label = { Text("♫  Song anhängen") }) }
             item { AssistChip(onClick = actions::plan, label = { Text("⚡  Jetzt planen") }) }

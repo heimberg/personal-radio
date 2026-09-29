@@ -57,7 +57,11 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     // Back goes through the studio's pages, then to «Hören»; from there it leaves the app.
     BackHandler(enabled = state.tab != Tab.LISTEN) {
         val web = if (state.tab == Tab.STUDIO) studio() else null
-        if (web != null && web.canGoBack()) web.goBack() else state.tab = Tab.LISTEN
+        when {
+            state.tab == Tab.PROGRAM && state.dayPlanOpen -> actions.closeDayPlan()
+            web != null && web.canGoBack() -> web.goBack()
+            else -> state.tab = Tab.LISTEN
+        }
     }
     Scaffold(
         containerColor = Nocturne.bg,
@@ -84,12 +88,13 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     ) { padding ->
         when (state.tab) {
             Tab.LISTEN -> ListenScreen(state, actions, padding)
-            Tab.PROGRAM -> ProgramScreen(state, actions, padding)
+            Tab.PROGRAM -> if (state.dayPlanOpen) DayPlanScreen(state, actions, padding) else ProgramScreen(state, actions, padding)
             Tab.ARCHIVE -> ArchiveScreen(state, actions, padding)
             Tab.STUDIO -> StudioScreen(studio(), version, actions, padding)
         }
     }
     Dialogs(state, actions)
+    DayPlanDialogs(state, actions)
 }
 
 /** What plays, on every tab but «Hören»; a tap opens the player. */

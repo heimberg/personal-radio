@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.TimelineItem
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -61,6 +64,7 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
             .padding(bottom = 24.dp),
     ) {
         Header(state)
+        MoodChips(state, actions)
         Banners(state, actions)
         PlayerCard(state, actions)
         state.sections.next?.let { NextCard(it, state, actions) }
@@ -76,8 +80,28 @@ private fun Header(state: RadioState) {
         Spacer(Modifier.width(10.dp))
         Text("personal radio", style = MaterialTheme.typography.titleMedium)
         Text(".", style = MaterialTheme.typography.titleMedium, color = Nocturne.accent)
-        Spacer(Modifier.weight(1f))
-        Text(state.sleepLabel ?: state.status, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.width(16.dp))
+        Text(
+            state.sleepLabel ?: state.status, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** «Heute»: one tap leans the rest of the day; a second tap on the same chip returns to the plan. */
+@Composable
+private fun MoodChips(state: RadioState, actions: RadioActions) {
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        item { Text("HEUTE", style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(start = 4.dp, end = 2.dp)) }
+        items(Moods.ALL, key = { it.id }) { mood ->
+            val selected = state.mood == mood.id
+            FilterChip(
+                selected = selected,
+                onClick = { actions.setMood(if (selected) null else mood.id) },
+                label = { Text("${mood.icon}  ${mood.label}") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Nocturne.accentDeep, selectedLabelColor = Nocturne.text),
+            )
+        }
     }
 }
 

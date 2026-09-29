@@ -67,6 +67,8 @@ data class Timeline(
     val spotify: SpotifySetup? = null,
     val failures: FailureSummary = FailureSummary(),
     val sounds: StationSounds = StationSounds(),
+    /** Today's mood, while it lasts (until midnight in the station's time zone). */
+    val mood: StationMood? = null,
 )
 
 /** The station's sound: ident jingle between music and speech, time signal and spoken hour; null = off. */
