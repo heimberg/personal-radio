@@ -152,7 +152,8 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
   const worker = await fakeWorker(page, station());
   await page.goto('/');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Änderungen' })).toContainText('Alles gespeichert');
+  // Without changes the save bar stays out of the way.
+  await expect(page.locator('.savebar')).toBeHidden();
   // The overview says what is set in each area.
   await expect(page.getByRole('button', { name: /^Sendungen: \d+ aktiv von \d+$/ })).toBeVisible();
 
