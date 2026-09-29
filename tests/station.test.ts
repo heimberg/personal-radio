@@ -107,7 +107,7 @@ test('tick plans, production stores audio in the bucket and marks sources as cov
   assert.equal(result.planned, 10); // 20-minute default horizon with 2-minute shows
   assert.equal(result.due.length, 10);
   assert.equal(await produceItem(h.deps, OWNER, result.due[0]), 'ready');
-  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host, avoidTopics: [], agents: resolveAgents(undefined) });
+  assert.deepEqual(h.calls.direction, { instructions: '', targetMinutes: 2, stationName: 'Personal Radio', persona: config().host, avoidTopics: [], agents: resolveAgents(undefined), listenerNotes: [] });
   const ready = await h.store.getItem(OWNER, result.due[0]);
   assert.equal(ready?.state, 'ready'); assert.equal(ready?.audio_key, `segments/${result.due[0]}.mp3`);
   assert.deepEqual([...h.bucket.keys()], [`segments/${result.due[0]}.mp3`]);

@@ -8,6 +8,7 @@ import { ListeningProfile } from './ListeningProfile.tsx';
 import { LocationPicker } from './LocationPicker.tsx';
 import { DayPlan } from './DayPlan.tsx';
 import { AgentDesk } from './AgentDesk.tsx';
+import { ListenerNotes, QualityTrend, UsageOverview, useInsights } from './Insights.tsx';
 
 interface Props { config: StationConfig; onSave(next: StationConfig): Promise<boolean> }
 interface Voice { id: string; name: string }
@@ -164,6 +165,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
   const [problem, setProblem] = useState('');
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const { insights, reload: reloadInsights } = useInsights();
   // Show cards are collapsed to one line; new ones open right away.
   const [expanded, setExpanded] = useState<string[]>([]);
   const toggle = (id: string) => setExpanded(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
@@ -388,7 +390,18 @@ export function StationEditor({ config: stored, onSave }: Props) {
     </Section>
 
     <Section {...nav} id="redaktion" summary={agentSummary(draft)} title="Redaktion" description="Die KI-Agenten hinter deinem Radio: was sie tun, ihre Anweisungen und wie frei sie schreiben. Quellenregeln und Antwortformat bleiben fest, damit nichts Unbelegtes gesendet wird.">
+      {insights && <>
+        <h3 className="subhead">Qualität der letzten 30 Tage</h3>
+        <QualityTrend insights={insights} />
+        <h3 className="subhead">Was du bemängelt hast</h3>
+        <ListenerNotes insights={insights} onCleared={reloadInsights} />
+      </>}
+      <h3 className="subhead">Agenten</h3>
       <AgentDesk value={draft.agents} onChange={agents => change(next => { if (agents) next.agents = agents; else delete next.agents; })} />
+    </Section>
+
+    <Section {...nav} id="verbrauch" summary={insights?.usage.days[0] ? `Heute ${insights.usage.days[0].generations} von ${insights.usage.limits.generations} Produktionen` : 'Aufrufe, Tokens und Limiten'} title="Verbrauch" description="Was dein Radio pro Tag bei den KI-Diensten braucht: Produktionen und Sprachzeichen (mit den Tageslimiten), Aufrufe und Tokens pro Modell.">
+      {insights ? <UsageOverview insights={insights} /> : <p className="muted">Der Verbrauch ist gerade nicht abrufbar.</p>}
     </Section>
 
     <div className={`savebar ${dirty ? 'visible' : ''}`} role="region" aria-label="Änderungen">

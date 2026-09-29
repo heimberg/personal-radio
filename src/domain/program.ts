@@ -41,6 +41,8 @@ export interface EditorialDirection {
   avoidTopics?: string[];
   /** The station's agents with the owner's changes; missing means the shipped defaults. */
   agents?: ResolvedAgents;
+  /** What the owner repeatedly criticised in recent items (from 👎 reasons), for writer, editor and jury. */
+  listenerNotes?: string[];
 }
 export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;

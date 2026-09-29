@@ -39,6 +39,9 @@
     <string name="status_paused">Pausiert</string>
     <string name="liked">Gemerkt: mehr davon.</string>
     <string name="disliked">Gemerkt: weniger davon.</string>
+    <string name="reason_title">Warum weniger?</string>
+    <string name="reason_skip">Egal</string>
+    <string name="reason_saved">Danke – die Redaktion achtet darauf.</string>
     <string name="planned">Programm wird geplant und produziert.</string>
     <string name="setup_title">Mit deinem Radio verbinden</string>
     <string name="setup_intro">Adresse deines privaten Workers und das Cloudflare-Access-Service-Token der App. Die Angaben bleiben in dieser App.</string>

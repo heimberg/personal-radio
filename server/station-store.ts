@@ -3,6 +3,8 @@ import { MUSIC_SHOW_ID, parseStationConfig } from '../src/domain/station.ts';
 import type { StationConfig, TimelineState } from '../src/domain/station.ts';
 import { parseFeedback } from '../src/domain/recommendation.ts';
 import type { FeedbackEvent } from '../src/domain/recommendation.ts';
+import { isFeedbackReason } from '../src/domain/listener-notes.ts';
+import type { FeedbackReason, ReasonCount } from '../src/domain/listener-notes.ts';
 
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
@@ -227,6 +229,48 @@ export class StationStore {
       try { interests = JSON.parse(row.interests_json); } catch { /* Ignore a corrupt row. */ }
       return { itemId: row.item_id, interests, action: row.action, listenedRatio: row.listened_ratio, createdAt: row.created_at };
     }));
+  }
+
+  /** Adds the reason to the owner's latest down-rating of the item; false when there is none. */
+  async setReason(owner: string, itemId: string, reason: FeedbackReason): Promise<boolean> {
+    const result = await this.db.prepare(`UPDATE feedback_events SET reason = ? WHERE id = (SELECT MAX(id) FROM feedback_events WHERE owner_id = ? AND item_id = ? AND action = 'dislike') RETURNING id`)
+      .bind(reason, owner, itemId).first<{ id: number }>();
+    return !!result;
+  }
+
+  async reasonCounts(owner: string, since: Date): Promise<ReasonCount[]> {
+    const rows = (await this.db.prepare(`SELECT reason, COUNT(*) AS count FROM feedback_events WHERE owner_id = ? AND reason IS NOT NULL AND created_at >= ? GROUP BY reason`)
+      .bind(owner, since.toISOString()).all<{ reason: string; count: number }>()).results;
+    return rows.filter(row => isFeedbackReason(row.reason)).map(row => ({ reason: row.reason as FeedbackReason, count: Number(row.count) }));
+  }
+
+  /** The owner starts over: collected reasons no longer steer the prompts. */
+  async clearReasons(owner: string) {
+    await this.db.prepare('UPDATE feedback_events SET reason = NULL WHERE owner_id = ? AND reason IS NOT NULL').bind(owner).run();
+  }
+
+  async logQuality(owner: string, entry: { itemId: string; showId: string; overall: number; at: Date }) {
+    await this.db.prepare('INSERT OR REPLACE INTO quality_log (owner_id, item_id, show_id, overall, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(owner, entry.itemId, entry.showId, entry.overall, entry.at.toISOString()).run();
+  }
+
+  async qualityLog(owner: string, since: Date): Promise<Array<{ showId: string; overall: number; createdAt: string }>> {
+    return (await this.db.prepare('SELECT show_id, overall, created_at FROM quality_log WHERE owner_id = ? AND created_at >= ? ORDER BY created_at')
+      .bind(owner, since.toISOString()).all<{ show_id: string; overall: number; created_at: string }>()).results
+      .map(row => ({ showId: row.show_id, overall: Number(row.overall), createdAt: row.created_at }));
+  }
+
+  async logAgentChange(owner: string, at: Date, agents: string[]) {
+    await this.db.prepare('INSERT INTO agent_changes (owner_id, changed_at, agents) VALUES (?, ?, ?)').bind(owner, at.toISOString(), JSON.stringify(agents)).run();
+  }
+
+  async agentChanges(owner: string, since: Date): Promise<Array<{ at: string; agents: string[] }>> {
+    return (await this.db.prepare('SELECT changed_at, agents FROM agent_changes WHERE owner_id = ? AND changed_at >= ? ORDER BY changed_at')
+      .bind(owner, since.toISOString()).all<{ changed_at: string; agents: string }>()).results.map(row => {
+        let agents: string[] = [];
+        try { agents = JSON.parse(row.agents); } catch { /* Corrupt row: the mark stays, without names. */ }
+        return { at: row.changed_at, agents };
+      });
   }
 
   async coveredUrls(owner: string, urls: string[]): Promise<Set<string>> {

@@ -32,6 +32,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.FeedbackPolicy
+import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -349,7 +350,25 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = runCatching { api.send(FeedbackPolicy.rating(id, liked)) }
             statusView.text = result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" })
+            val showId = upcomingItems.firstOrNull { it.id == id }?.showId
+            if (!liked && result.isSuccess && FeedbackReason.asksFor(showId)) askReason(id)
         }
+    }
+
+    /** One optional tap after 👎: repeated reasons teach the station's writer, editor and jury. */
+    private fun askReason(itemId: String) {
+        if (isFinishing) return
+        val reasons = FeedbackReason.entries
+        AlertDialog.Builder(this)
+            .setTitle(R.string.reason_title)
+            .setItems(reasons.map { it.label }.toTypedArray()) { _, which ->
+                lifecycleScope.launch {
+                    val result = runCatching { api.sendReason(itemId, reasons[which]) }
+                    statusView.text = result.fold({ getString(R.string.reason_saved) }, { it.message ?: "" })
+                }
+            }
+            .setNegativeButton(R.string.reason_skip, null)
+            .show()
     }
 
     /** Asks the playback service to play [item] now; the program continues afterwards. */

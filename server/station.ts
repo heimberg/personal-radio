@@ -11,6 +11,7 @@ import type { ScriptEditor, StationContext } from './editing.ts';
 import { BLOCKS, BLOCK_PREFIX, blockOf, blockShow } from '../src/domain/blocks.ts';
 import { agentOf, resolveAgents } from '../src/domain/agents.ts';
 import type { AgentConfig } from '../src/domain/agents.ts';
+import { NOTE_WINDOW_DAYS, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
 import { PipelineError } from './segment-pipeline.ts';
@@ -205,6 +206,11 @@ async function headlines(deps: StationDeps, owner: string, config: StationConfig
   return { text: sources.map(source => `– ${source.title}`).join('\n'), sources };
 }
 
+/** The owner's repeated reasons for 👎 in the last weeks, as notes for the prompts. */
+async function notesFor(deps: StationDeps, owner: string, now: Date): Promise<string[]> {
+  return listenerNotes(await deps.store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)));
+}
+
 /** Topic memory: titles of the most recent produced segments. */
 async function recentTopics(deps: StationDeps, owner: string): Promise<string[]> {
   const titles: string[] = [];
@@ -287,11 +293,12 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       // Tool results are evidence too; a show can live on them alone (a weather report).
       sources = [...toolSources, ...sources];
       if (!sources.length) return fail('NO_SOURCES');
-      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents };
+      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents, listenerNotes: await notesFor(deps, owner, now) };
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
       if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, await stationContext(deps, owner, config, row, now));
       await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
+      if (script.quality) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: script.quality.overall, at: now });
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: queries.length ? JSON.stringify({ queries }) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
@@ -401,7 +408,7 @@ async function produceMusicHour(deps: StationDeps, owner: string, config: Statio
       ({ sources, queries } = await deps.researcher.research({ brief, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
       if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
     }
-    const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner), agents };
+    const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner), agents, listenerNotes: await notesFor(deps, owner, now) };
     let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number }>;
     let hour: HourScript;
     let team: { songs: number; specialists: number; corrections: number } | undefined;
@@ -828,6 +835,9 @@ export async function shuffleTimeline(deps: StationDeps, owner: string): Promise
   return added;
 }
 
+export const showNameOf = (showId: string, config: StationConfig | null) =>
+  showId === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === showId)?.name ?? blockOf(showId)?.name ?? showId;
+
 export function toView(row: TimelineRow, config: StationConfig | null): TimelineItemView {
   let script: Partial<Script> = {}, sources: Source[] = [];
   try { script = JSON.parse(row.script_json ?? '{}'); } catch { /* Keep the item visible without details. */ }
@@ -837,7 +847,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { ({ queries = [], team } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team'] }); } catch { /* Research details are optional. */ }
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
-    showName: row.show_id === MUSIC_SHOW_ID ? 'Musik' : config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,
+    showName: showNameOf(row.show_id, config),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
@@ -893,6 +903,53 @@ function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<TimelineIte
   };
 }
 
+/** The music desk proposes the next songs with the unsaved settings; nothing is searched or planned. */
+async function trialSongs(deps: StationDeps, owner: string, config: StationConfig, agents: ReturnType<typeof resolveAgents>): Promise<TrialOutcome> {
+  const history = await songHistory(deps, owner);
+  const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
+  await deps.reserveGeneration(owner);
+  const picks = await deps.musicWriter!.pickSongs({
+    taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
+    liked: history.liked, disliked: history.disliked, announce: true, listens, count: 5,
+    direction: { stationName: config.name, persona: config.host, agents },
+  });
+  const recent = history.recent.slice(-5);
+  return { ok: true, itemTitle: 'die nächsten Songs',
+    before: { text: recent.length ? recent.map(song => `– ${song}`).join('\n') : 'Noch keine Songs gespielt.' },
+    after: { text: picks.map(pick => `– ${pick.artist} – ${pick.title}${pick.announcement ? `\n  «${pick.announcement}»` : ''}`).join('\n') } };
+}
+
+/** The last music hour, moderated anew with the unsaved settings, from the same songs and sources. */
+async function trialHour(deps: StationDeps, owner: string, config: StationConfig, agents: ReturnType<typeof resolveAgents>): Promise<TrialOutcome> {
+  let found: { pkg: HourPackage; sources: Source[]; show: ShowConfig } | undefined;
+  for (const row of (await deps.store.recentItems(owner, 60)).reverse()) {
+    if (!row.script_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(row.state)) continue;
+    try {
+      const pkg = JSON.parse(row.script_json) as HourPackage;
+      if (pkg.kind !== 'music_hour' && pkg.kind !== 'artist_hour') continue;
+      const show = config.shows.find(item => item.id === row.show_id) ?? (blockOf(row.show_id) ? blockShow(blockOf(row.show_id)!, config) : undefined);
+      found = { pkg, sources: JSON.parse(row.sources_json ?? '[]') as Source[], show: show ?? { talkSeconds: 60, instructions: '' } as ShowConfig };
+      break;
+    } catch { /* Skip corrupt rows. */ }
+  }
+  if (!found) return { ok: false, error: 'NO_ITEM' };
+  const { pkg, sources, show } = found;
+  const tracks = pkg.parts.filter((part): part is TrackPart => part.kind === 'track');
+  if (!tracks.length) return { ok: false, error: 'NO_ITEM' };
+  await deps.reserveGeneration(owner);
+  const hour = await deps.musicWriter!.writeHour({ focus: packageFocus(pkg), subject: packageSubject(pkg), sources, talkSeconds: show.talkSeconds ?? 60,
+    picks: tracks.map(track => ({ title: track.title, artist: track.artist, reason: track.reason ?? '' })),
+    direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents, listenerNotes: await notesFor(deps, owner, deps.now()) } });
+  const before: string[] = [];
+  for (const part of pkg.parts) {
+    if (part.kind === 'track') before.push(`♪ ${part.artist} – ${part.title}`);
+    else if (before.length && !before[before.length - 1].startsWith('♪')) before[before.length - 1] += ` ${part.text}`;
+    else before.push(part.text);
+  }
+  const after = [hour.intro.text, ...tracks.flatMap((track, index) => [hour.tracks.find(item => item.index === index)?.text ?? '', `♪ ${track.artist} – ${track.title}`]), hour.outro.text].filter(Boolean);
+  return { ok: true, itemTitle: pkg.title, before: { text: before.join('\n\n') }, after: { text: after.join('\n\n') } };
+}
+
 export type TrialOutcome =
   | { ok: true; itemTitle: string; before: { text: string; quality?: QualityScore }; after: { text: string; quality?: QualityScore } }
   | { ok: false; error: 'NO_ITEM' | 'NOT_CONFIGURED' | 'FAILED'; detail?: string };
@@ -904,10 +961,17 @@ const scriptText = (script: Script) => script.turns ? script.turns.map(turn => `
  * nothing is stored. The writer drafts anew from the same sources, the editor rewrites (and the jury
  * scores) the final text, the jury only scores it.
  */
-export async function trialAgent(deps: StationDeps, owner: string, agent: 'writer' | 'editor' | 'jury', draft: AgentConfig | undefined): Promise<TrialOutcome> {
+export type TrialAgent = 'writer' | 'editor' | 'jury' | 'music' | 'hour';
+
+export async function trialAgent(deps: StationDeps, owner: string, agent: TrialAgent, draft: AgentConfig | undefined): Promise<TrialOutcome> {
   const config = await deps.store.getConfig(owner);
   if (!config) return { ok: false, error: 'NO_ITEM' };
   const agents = resolveAgents(draft);
+  if (agent === 'music' || agent === 'hour') {
+    if (!deps.musicWriter) return { ok: false, error: 'NOT_CONFIGURED' };
+    try { return agent === 'music' ? await trialSongs(deps, owner, config, agents) : await trialHour(deps, owner, config, agents); }
+    catch (error) { return { ok: false, error: 'FAILED', detail: (error instanceof Error ? error.message : 'unbekannt').slice(0, 200) }; }
+  }
   let found: { row: TimelineRow; script: Script; sources: Source[]; show: ShowConfig } | undefined;
   for (const row of (await deps.store.recentItems(owner, 40)).reverse()) {
     if (!row.script_json || !row.sources_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(row.state)) continue;
@@ -920,7 +984,7 @@ export async function trialAgent(deps: StationDeps, owner: string, agent: 'write
   }
   if (!found) return { ok: false, error: 'NO_ITEM' };
   const { row, script, sources, show } = found;
-  const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, agents };
+  const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, agents, listenerNotes: await notesFor(deps, owner, deps.now()) };
   const before = { text: scriptText(script), ...(script.quality ? { quality: script.quality } : {}) };
   try {
     if (agent === 'writer') {

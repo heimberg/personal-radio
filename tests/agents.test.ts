@@ -12,6 +12,8 @@ import { StationStore } from '../server/station-store.ts';
 import { trialAgent } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
+import { listenerNotes } from '../src/domain/listener-notes.ts';
+import { AGENT_PRESETS, activePreset, applyPreset } from '../src/domain/agent-presets.ts';
 
 const NOW = new Date('2026-09-28T05:30:00Z');
 const sources: Source[] = [{ id: 's1', url: 'https://example.org/a', title: 'Quelle', excerpt: 'Ein Fakt.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }];
@@ -121,4 +123,76 @@ test('a trial run uses the unsaved settings on the last spoken item and stores n
   const written = await trialAgent(deps, 'o', 'writer', { writer: { instructions: 'Knapp.' } });
   assert.ok(written.ok && written.after.text === 'Frisch: Knapp.');
   assert.deepEqual(JSON.parse((await store.getItem('o', 'a'))!.script_json!), stored);
+});
+
+test('repeated 👎 reasons become notes for writer, editor and jury; one-offs do not', async () => {
+  const store = new StationStore(sqliteD1());
+  const dislike = async (itemId: string) => store.addFeedback('o', { itemId, interests: [], action: 'dislike', listenedRatio: 1, createdAt: NOW.toISOString() });
+  for (const id of ['a', 'b', 'c']) await dislike(id);
+  assert.equal(await store.setReason('o', 'x', 'boring'), false);
+  assert.ok(await store.setReason('o', 'a', 'too_long'));
+  assert.ok(await store.setReason('o', 'b', 'too_long'));
+  assert.ok(await store.setReason('o', 'c', 'boring'));
+  const counts = await store.reasonCounts('o', new Date(NOW.getTime() - 86_400_000));
+  const notes = listenerNotes(counts);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /zu lang/);
+
+  let body: any;
+  const writer = new GeminiBriefGenerator({ key: 'g' }, async (_url, init) => { body = JSON.parse(String(init?.body)); return geminiText(JSON.stringify({ title: 'T', text: 'Ein Fakt.', sourceIds: ['s1'] })); });
+  await writer.generate(defaultProfile, sources, { listenerNotes: notes });
+  assert.match(body.systemInstruction.parts[0].text, /Rückmeldungen des Hörers, die du berücksichtigen sollst: Beiträge waren dem Hörer zuletzt oft zu lang/);
+  const asked: string[] = [];
+  const gemini = new GeminiScriptEditor(async system => { asked.push(system); return {}; });
+  const draft: Script = { title: 'T', text: 'Ein Fakt.', sourceIds: ['s1'] };
+  await gemini.polish(draft, sources, { listenerNotes: notes }, context);
+  await gemini.judge(draft, sources, { listenerNotes: notes });
+  assert.match(asked[0], /Rückmeldungen des Hörers/);
+  assert.match(asked[1], /Werte besonders streng, was der Hörer zuletzt bemängelt hat: Beiträge waren/);
+  await store.clearReasons('o');
+  assert.deepEqual(await store.reasonCounts('o', new Date(0)), []);
+});
+
+test('style presets set several agents at once and are recognised afterwards', () => {
+  const news = AGENT_PRESETS.find(preset => preset.id === 'nachrichten')!;
+  const applied = applyPreset({ music: { temperature: 0.5 } }, news);
+  assert.equal(applied.music?.temperature, 0.5);
+  assert.equal(activePreset(applied)?.id, 'nachrichten');
+  // Every preset survives the server's validation unchanged, so it is still recognised after saving.
+  for (const preset of AGENT_PRESETS) assert.deepEqual(parseAgentConfig(preset.agents, fail), preset.agents);
+  assert.equal(activePreset({ ...applied, writer: { instructions: 'Anders.' } }), undefined);
+});
+
+test('the music desk and the music hour can be tried with unsaved settings', async () => {
+  const base = defaultStationConfig({ timezone: 'Europe/Zurich' });
+  const store = new StationStore(sqliteD1());
+  await store.saveConfig('o', base, NOW);
+  let seen: any;
+  const deps: StationDeps = {
+    store, podcastAvailable: false, now: () => NOW, newId: () => 'x',
+    fetchFeed: async () => [], reserveFeed: async () => {}, reserveGeneration: async () => {},
+    audio: { put: async () => {}, delete: async () => {} },
+    pipeline: { draft: async () => { throw new Error('no'); }, review: async () => ({ approved: true, reasons: [] }), voice: async () => { throw new Error('no'); } },
+    musicWriter: {
+      pickSubject: async () => ({ subject: 'x', reason: '' }), pickTracks: async () => [], writeBlock: async () => [],
+      pickSongs: async input => { seen = input; return [{ title: 'Song', artist: 'Band', announcement: `Hier: ${input.direction.agents?.music.instructions}` }]; },
+      writeHour: async input => ({ title: 'Neu', intro: { text: `Hallo ${input.direction.agents?.hour.instructions}`, sourceIds: [] }, tracks: input.picks.map((_, index) => ({ index, text: `Zu Song ${index + 1}`, sourceIds: [] })), outro: { text: 'Tschüss', sourceIds: [] } }),
+    },
+  };
+  const songs = await trialAgent(deps, 'o', 'music', { music: { instructions: 'Nur Jazz.' } });
+  assert.ok(songs.ok);
+  assert.equal(seen.announce, true);
+  assert.equal(songs.after.text, '– Band – Song\n  «Hier: Nur Jazz.»');
+  assert.equal(songs.before.text, 'Noch keine Songs gespielt.');
+
+  assert.deepEqual(await trialAgent(deps, 'o', 'hour', undefined), { ok: false, error: 'NO_ITEM' });
+  await store.insertItem('o', { id: 'h', seq: 1, showId: 'kuenstler', plannedAt: NOW.toISOString(), estimatedMinutes: 60 }, NOW);
+  const pkg = { kind: 'artist_hour', artist: 'Portishead', title: 'Portishead-Stunde', text: '', sourceIds: [], parts: [
+    { kind: 'speech', text: 'Willkommen.', sourceIds: [] }, { kind: 'track', uri: 'spotify:track:1', title: 'Roads', artist: 'Portishead', durationMs: 1 }, { kind: 'speech', text: 'Das war Roads.', sourceIds: [] }] };
+  await store.update('o', 'h', { state: 'played', script_json: JSON.stringify(pkg), sources_json: '[]' }, NOW);
+  const hour = await trialAgent(deps, 'o', 'hour', { hour: { instructions: 'Mit Witz.' } });
+  assert.ok(hour.ok);
+  assert.equal(hour.itemTitle, 'Portishead-Stunde');
+  assert.equal(hour.before.text, 'Willkommen.\n\n♪ Portishead – Roads\n\nDas war Roads.');
+  assert.equal(hour.after.text, 'Hallo Mit Witz.\n\nZu Song 1\n\n♪ Portishead – Roads\n\nTschüss');
 });

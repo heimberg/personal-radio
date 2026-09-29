@@ -105,6 +105,25 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'like', listenedRatio: 1 }) })).status, 200);
     assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_events').get()?.n, 2);
     env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('like');
+    // A reason after 👎 steers the prompts from the second time on; insights show it with marks and usage.
+    const reason = (body: unknown) => call(`/api/timeline/${items[0].id}/reason`, { method: 'POST', body: JSON.stringify(body) });
+    assert.equal((await reason({ reason: 'too_long' })).status, 409);
+    assert.equal((await call(`/api/timeline/${items[0].id}/feedback`, { method: 'POST', body: JSON.stringify({ action: 'dislike', listenedRatio: 1 }) })).status, 200);
+    assert.equal((await reason({ reason: 'egal' })).status, 400);
+    assert.equal((await reason({ reason: 'too_long' })).status, 200);
+    let insights = await (await call('/api/insights')).json() as any;
+    assert.deepEqual(insights.reasons, [{ reason: 'too_long', count: 1, label: 'Zu lang', active: false }]);
+    assert.deepEqual(insights.notes, []);
+    assert.ok(insights.usage.days[0].models.some((model: any) => model.provider === 'ask' && model.model === 'test' && model.calls >= 2));
+    assert.equal(insights.usage.limits.generations, 24);
+    assert.equal((await call('/api/insights/reasons', { method: 'DELETE' })).status, 200);
+    insights = await (await call('/api/insights')).json() as any;
+    assert.deepEqual(insights.reasons, []);
+    env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('dislike');
+    // Changing an agent is logged for the quality trend.
+    const stored = ((await (await call('/api/station')).json()) as { config: any }).config;
+    assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify({ ...stored, agents: { jury: { threshold: 4 } } }) })).status, 200);
+    assert.deepEqual(((await (await call('/api/insights')).json()) as any).changes.map((change: any) => change.agents), [['Qualitäts-Jury']]);
     // In-app updates: nothing published yet, then the build CI stored.
     assert.equal((await call('/api/app/latest')).status, 404);
     await env.AUDIO.put('app/latest.json', new TextEncoder().encode('{"versionCode":110,"versionName":"0.2.110","sha256":"ab","size":3}'));

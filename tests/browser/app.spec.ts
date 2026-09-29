@@ -128,10 +128,17 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   await page.getByRole('button', { name: '▶ Programm hören' }).click();
   await expect(page.getByRole('heading', { name: 'Sonde gelandet' })).toBeVisible();
   await expect(page.getByText('Läuft', { exact: true })).toBeVisible();
+  const reasons: unknown[] = [];
+  await page.route('**/api/timeline/t1/reason', route => { reasons.push(JSON.parse(route.request().postData() ?? '{}')); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+  await page.getByRole('button', { name: 'Weniger davon' }).click();
+  await page.getByRole('group', { name: 'Warum weniger?' }).getByRole('button', { name: 'Zu lang' }).click();
+  await expect(page.getByText('Danke, gemerkt.')).toBeVisible();
+  await expect.poll(() => reasons).toEqual([{ reason: 'too_long' }]);
   await page.getByRole('button', { name: 'Mehr davon' }).click();
   await expect(page.getByRole('button', { name: 'Mehr davon' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Warum weniger?' })).toHaveCount(0);
   await page.evaluate(() => { const audio = (window as unknown as { testAudio: HTMLAudioElement }).testAudio; audio.currentTime = audio.duration - 0.1; });
-  await expect.poll(() => worker.feedback).toEqual([{ action: 'like', listenedRatio: 1 }, { action: 'complete', listenedRatio: 1 }]);
+  await expect.poll(() => worker.feedback).toEqual([{ action: 'dislike', listenedRatio: 1 }, { action: 'like', listenedRatio: 1 }, { action: 'complete', listenedRatio: 1 }]);
   expect(external).toEqual([]);
 });
 
@@ -266,10 +273,35 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, itemTitle: 'Gletscher', before: { text: 'Alt.', quality: { hook: 3, clarity: 3, facts: 3, novelty: 3, length: 3, overall: 3, notes: '' } },
       after: { text: 'Neu mit Pfiff.', quality: { hook: 4, clarity: 4, facts: 4, novelty: 4, length: 4, overall: 4, notes: 'gut' } } }) });
   });
+  let cleared = false;
+  await page.route('**/api/insights', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+    reasons: cleared ? [] : [{ reason: 'too_long', label: 'Zu lang', count: 3, active: true }, { reason: 'tone', label: 'Falscher Ton', count: 1, active: false }],
+    notes: cleared ? [] : ['Beiträge waren dem Hörer zuletzt oft zu lang: straffen.'],
+    quality: [{ showId: 'entdecken', showName: 'Entdeckungen', overall: 3.2, createdAt: '2026-09-20T08:00:00Z' }, { showId: 'entdecken', showName: 'Entdeckungen', overall: 4.2, createdAt: '2026-09-25T08:00:00Z' }],
+    changes: [{ at: '2026-09-22T08:00:00Z', agents: ['Schlussredaktion'] }],
+    usage: { days: [{ day: '2026-09-29', generations: 5, ttsCharacters: 4200, models: [{ provider: 'gemini', model: 'gemini-test', calls: 17, inputTokens: 12000, outputTokens: 3000 }] }], limits: { generations: 24, ttsCharacters: 12000 } },
+    timezone: 'Europe/Zurich',
+  }) }));
+  await page.route('**/api/insights/reasons', route => { cleared = true; return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   await page.goto('/');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Verbrauch: Heute 5 von 24 Produktionen' })).toBeVisible();
+  await openArea(page, 'Verbrauch');
+  await expect(page.getByText('KI-Aufrufe')).toBeVisible();
+  await expect(page.locator('.usage-tiles')).toContainText(/15.000/);
+  await page.getByRole('button', { name: '← Alle Einstellungen' }).click();
   await expect(page.getByRole('button', { name: 'Redaktion: Standard' })).toBeVisible();
   await openArea(page, 'Redaktion');
+  await expect(page.getByRole('img', { name: /Qualitätsverlauf: 20\.9\. 3\.2, 25\.9\. 4\.2/ })).toBeVisible();
+  await expect(page.getByText('★ 3.7')).toBeVisible();
+  await expect(page.getByText(/achten zurzeit darauf: Beiträge waren/)).toBeVisible();
+  await page.getByRole('button', { name: 'Gründe zurücksetzen' }).click();
+  await expect(page.getByText(/Noch keine Gründe/)).toBeVisible();
+  // A style preset sets several agents at once; «Standard» resets them.
+  await page.getByRole('button', { name: /^Nachrichtenstil/ }).click();
+  await expect(page.getByRole('button', { name: /^Nachrichtenstil/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Redaktion: 3 angepasst' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Standard/ }).click();
   const editor = page.getByRole('article', { name: 'Agent Schlussredaktion' });
   await editor.getByRole('button', { name: 'Schlussredaktion bearbeiten' }).click();
   await expect(editor.getByLabel('Anweisungen')).toHaveValue(/^Schreibe fürs Hören/);

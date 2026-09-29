@@ -1,8 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import type { RadioPlayer } from '../audio/player.ts';
 import type { FeedbackAction } from '../domain/recommendation.ts';
+import { FEEDBACK_REASONS, REASON_IDS } from '../domain/listener-notes.ts';
+import type { FeedbackReason } from '../domain/listener-notes.ts';
 
-interface Props { player: RadioPlayer; readyCount: number; onListen(): void; onRate(action: FeedbackAction): void; rated: FeedbackAction | null }
+interface Props {
+  player: RadioPlayer; readyCount: number; onListen(): void; onRate(action: FeedbackAction): void; rated: FeedbackAction | null;
+  onReason(reason: FeedbackReason): void; reason: FeedbackReason | null;
+}
 
 const STATUS: Record<string, string> = {
   idle: 'Bereit', loading: 'Wird gestartet', playing: 'Läuft', paused: 'Pausiert', buffering: 'Wird geladen', ended: 'Warte auf den nächsten Beitrag', error: 'Unterbrochen',
@@ -10,7 +15,7 @@ const STATUS: Record<string, string> = {
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
 /** Listening in the browser: the spoken program. Music hours play in the Android app, where Spotify is. */
-export function NowPlaying({ player, readyCount, onListen, onRate, rated }: Props) {
+export function NowPlaying({ player, readyCount, onListen, onRate, rated, onReason, reason }: Props) {
   const state = useSyncExternalStore(player.subscribe, player.snapshot);
   const track = player.tracks[state.index];
   const started = player.tracks.length > 0;
@@ -33,6 +38,10 @@ export function NowPlaying({ player, readyCount, onListen, onRate, rated }: Prop
     {track?.timelineId && <div className="now-rate" role="group" aria-label="Beitrag bewerten">
       <button aria-label="Mehr davon" aria-pressed={rated === 'like'} onClick={() => onRate('like')}>👍 Mehr davon</button>
       <button aria-label="Weniger davon" aria-pressed={rated === 'dislike'} onClick={() => onRate('dislike')}>👎 Weniger</button>
+    </div>}
+    {track?.timelineId && rated === 'dislike' && <div className="now-reasons" role="group" aria-label="Warum weniger?">
+      <span>{reason ? 'Danke, gemerkt.' : 'Warum? (optional)'}</span>
+      {REASON_IDS.map(id => <button key={id} type="button" aria-pressed={reason === id} onClick={() => onReason(id)}>{FEEDBACK_REASONS[id].label}</button>)}
     </div>}
     {state.error && <p role="alert" className="now-error">{state.error}</p>}
   </section>;

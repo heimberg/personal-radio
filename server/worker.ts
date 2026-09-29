@@ -12,14 +12,16 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
-import type { AudioBucket, StationDeps } from './station.ts';
+import type { AudioBucket, StationDeps, TrialAgent } from './station.ts';
 import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
-import { parseAgentConfig } from '../src/domain/agents.ts';
+import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
+import { meteredFetch, usageSummary } from './usage.ts';
+import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, isFeedbackReason, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
 
 interface StoredAudio { body: ReadableStream; size: number; httpEtag: string; range?: { offset?: number; length?: number; suffix?: number } }
@@ -152,21 +154,35 @@ interface Providers { ask?: TextGenerator; geminiBrief?: TextGenerator; geminiDi
 const providerCache = new WeakMap<object, Providers>();
 
 /** ASK is optional: Gemini writes by default; ASK, when configured, is the independent second model that verifies. */
+/** Provider requests go through one counting fetch per database, for the daily usage overview. */
+const meters = new WeakMap<object, typeof fetch>();
+function metered(env: Environment): typeof fetch {
+  let meter = meters.get(env.DB as object);
+  if (!meter) {
+    let askHost: string | undefined;
+    try { askHost = env.ASK_BASE_URL ? new URL(env.ASK_BASE_URL).hostname : undefined; } catch { /* Invalid ASK URL: the provider refuses it anyway. */ }
+    meter = meteredFetch(env.DB, { askHost });
+    meters.set(env.DB as object, meter);
+  }
+  return meter;
+}
+
 function providersFor(env: Environment): Providers {
   let providers = providerCache.get(env.DB as object);
   if (!providers) {
+    const counted = metered(env);
     const askConfig = { baseUrl: env.ASK_BASE_URL, key: env.ASK_API_KEY, model: env.ASK_MODEL };
     const askReady = Boolean(env.ASK_BASE_URL && env.ASK_API_KEY && env.ASK_MODEL);
     const gemini = env.GEMINI_API_KEY ? { key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL } : undefined;
     const unavailable: EditorialVerifier = { verify: async () => { throw new ProviderError('No verifier configured'); } };
     providers = {
-      ...(askReady ? { ask: new AskTextGenerator(askConfig) } : {}),
+      ...(askReady ? { ask: new AskTextGenerator(askConfig, counted) } : {}),
       ...(gemini ? {
-        geminiBrief: new GeminiBriefGenerator(gemini), geminiDialog: new GeminiPodcastGenerator(gemini),
-        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }),
+        geminiBrief: new GeminiBriefGenerator(gemini, counted), geminiDialog: new GeminiPodcastGenerator(gemini, counted),
+        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }, counted),
       } : {}),
-      verifier: askReady && gemini ? new FallbackVerifier(new AskEditorialVerifier(askConfig), new GeminiEditorialVerifier(gemini))
-        : askReady ? new AskEditorialVerifier(askConfig) : gemini ? new GeminiEditorialVerifier(gemini) : unavailable,
+      verifier: askReady && gemini ? new FallbackVerifier(new AskEditorialVerifier(askConfig, counted), new GeminiEditorialVerifier(gemini, counted))
+        : askReady ? new AskEditorialVerifier(askConfig, counted) : gemini ? new GeminiEditorialVerifier(gemini, counted) : unavailable,
     };
     providerCache.set(env.DB as object, providers);
   }
@@ -189,13 +205,13 @@ function pipelineFor(env: Environment): SegmentPipeline {
           if (!response.ok) throw new Error('German reference audio unavailable');
           return new Uint8Array(await response.arrayBuffer());
         },
-      }), env.GEMINI_API_KEY ? new GeminiSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }) : undefined),
+      }, metered(env)), env.GEMINI_API_KEY ? new GeminiSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }, metered(env)) : undefined),
       providers.verifier,
       new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
       4,
       env.GEMINI_API_KEY ? {
         text: providers.geminiDialog!,
-        speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }),
+        speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }, metered(env)),
       } : undefined,
     );
     pipelines.set(env.DB as object, pipeline);
@@ -208,7 +224,7 @@ function musicFor(env: Environment) {
   let music = musicCache.get(env.DB as object);
   if (!music) {
     music = {
-      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }) } : {}),
+      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }, metered(env)) } : {}),
       ...(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
         ? { catalog: new SpotifyCatalog({ clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET }) } : {}),
     };
@@ -322,7 +338,10 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (body.error) return body.error;
     try {
       const config = parseStationConfig(body.value);
-      await store.saveConfig(owner, config, new Date());
+      const before = await store.getConfig(owner), now = new Date();
+      const changed = AGENTS.filter(agent => JSON.stringify(before?.agents?.[agent.id] ?? null) !== JSON.stringify(config.agents?.[agent.id] ?? null)).map(agent => agent.name);
+      await store.saveConfig(owner, config, now);
+      if (before && changed.length) await store.logAgentChange(owner, now, changed);
       return json({ config }, 200);
     } catch (error) {
       if (error instanceof ConfigError) return json({ error: 'invalid_config', detail: error.message }, 400);
@@ -374,20 +393,41 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
+  if (url.pathname === '/api/insights') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const now = new Date(), since = new Date(now.getTime() - 30 * 86_400_000);
+    const [counts, quality, changes, usage, config] = await Promise.all([
+      store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
+      usageSummary(env.DB, owner, now, 14, { generations: Math.max(1, Number(env.DAILY_GENERATIONS) || 24), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) }),
+      store.getConfig(owner),
+    ]);
+    return json({
+      reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
+      notes: listenerNotes(counts),
+      quality: quality.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
+      changes, usage, timezone: config?.timezone ?? 'UTC',
+    }, 200);
+  }
+  if (url.pathname === '/api/insights/reasons') {
+    if (request.method !== 'DELETE') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    await store.clearReasons(owner);
+    return json({ ok: true }, 200);
+  }
   if (url.pathname === '/api/agents/trial') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
     const body = await readJson(request, 65_536);
     if (body.error) return body.error;
     const { agent, agents } = (body.value ?? {}) as { agent?: unknown; agents?: unknown };
-    if (agent !== 'writer' && agent !== 'editor' && agent !== 'jury') return json({ error: 'invalid_agent' }, 400);
+    if (!AGENTS.some(item => item.trial && item.id === agent)) return json({ error: 'invalid_agent' }, 400);
     let draft;
     try { draft = parseAgentConfig(agents, (path, expected) => { throw new ConfigError(`${path}: ${expected}`); }); }
     catch (error) {
       if (error instanceof ConfigError) return json({ error: 'invalid_config', detail: error.message }, 400);
       throw error;
     }
-    const result = await trialAgent(stationDeps(env), owner, agent, draft);
+    const result = await trialAgent(stationDeps(env), owner, agent as TrialAgent, draft);
     return json(result, result.ok ? 200 : result.error === 'NO_ITEM' ? 404 : result.error === 'NOT_CONFIGURED' ? 409 : 502);
   }
   if (url.pathname === '/api/library') {
@@ -454,13 +494,22 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|remove|delete|script)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|remove|delete|script)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
   if (match[2] === 'script') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json(transcriptView(row, await store.getConfig(owner)), 200);
+  }
+  if (match[2] === 'reason') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 256);
+    if (body.error) return body.error;
+    const reason = (body.value as { reason?: unknown } | null)?.reason;
+    if (!isFeedbackReason(reason)) return json({ error: 'invalid_reason' }, 400);
+    return await store.setReason(owner, row.id, reason) ? json({ ok: true }, 200) : json({ error: 'no_dislike' }, 409);
   }
   if (match[2] === 'delete') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);

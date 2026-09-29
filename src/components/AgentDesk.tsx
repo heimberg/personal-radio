@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AGENTS } from '../domain/agents.ts';
+import { AGENT_PRESETS, activePreset, applyPreset } from '../domain/agent-presets.ts';
 import type { AgentConfig, AgentDefinition, AgentId, AgentSettings } from '../domain/agents.ts';
 import type { QualityScore } from '../domain/program.ts';
 import { api } from '../station-client.ts';
@@ -10,6 +11,10 @@ type Trial =
   | { state: 'done'; itemTitle: string; before: { text: string; quality?: QualityScore }; after: { text: string; quality?: QualityScore } }
   | { state: 'failed'; message: string };
 
+const TRIAL_LABELS: Partial<Record<AgentId, { button: string; before: string; after: string; empty: string }>> = {
+  music: { button: 'Probelauf: nächste Songs', before: 'Zuletzt gespielt', after: 'Vorschläge mit diesen Einstellungen', empty: 'Die Musikredaktion konnte keine Songs vorschlagen.' },
+  hour: { button: 'Probelauf an der letzten Musikstunde', before: 'Bisher', after: 'Mit diesen Einstellungen', empty: 'Noch keine fertige Musikstunde im Programm, an der sich das testen lässt.' },
+};
 const GROUPS: Array<AgentDefinition['group']> = ['Beiträge', 'Musik', 'Redaktionsteam der Musikstunde'];
 const TRIAL_ERRORS: Record<string, string> = {
   NO_ITEM: 'Noch kein fertiger Wortbeitrag im Programm, an dem sich das testen lässt.',
@@ -52,12 +57,22 @@ export function AgentDesk({ value, onChange }: Props) {
       const body = await response.json().catch(() => ({})) as { ok?: boolean; error?: string; detail?: string; itemTitle?: string; before?: { text: string; quality?: QualityScore }; after?: { text: string; quality?: QualityScore } };
       result = body.ok && body.before && body.after
         ? { state: 'done', itemTitle: body.itemTitle ?? '', before: body.before, after: body.after }
-        : { state: 'failed', message: `${TRIAL_ERRORS[body.error ?? ''] ?? 'Der Probelauf ist fehlgeschlagen.'}${body.detail ? ` (${body.detail})` : ''}` };
+        : { state: 'failed', message: `${(body.error === 'NO_ITEM' ? TRIAL_LABELS[agent.id]?.empty : undefined) ?? TRIAL_ERRORS[body.error ?? ''] ?? 'Der Probelauf ist fehlgeschlagen.'}${body.detail ? ` (${body.detail})` : ''}` };
     } catch { result = { state: 'failed', message: 'Keine Verbindung zum Server.' }; }
     setTrials(current => ({ ...current, [agent.id]: result }));
   }
 
-  return <div className="agents">{GROUPS.map(group => <div key={group} className="agent-group">
+  const preset = activePreset(value);
+  return <div className="agents">
+    <div className="agent-group">
+      <h3>Stil-Vorlagen</h3>
+      <p className="muted small">Ein Tipp setzt Anweisungen und Schreibweise mehrerer Agenten auf einmal. Danach kannst du alles anpassen; gespeichert wird erst mit «Speichern».</p>
+      <div className="preset-row">{AGENT_PRESETS.map(item => <button key={item.id} type="button" className="preset" aria-pressed={preset?.id === item.id}
+        onClick={() => onChange(applyPreset(value, item))}><strong>{item.name}</strong><small>{item.description}</small></button>)}
+        <button type="button" className="preset" aria-pressed={!value} onClick={() => onChange(undefined)}><strong>Standard</strong><small>Alle Agenten wie ausgeliefert.</small></button>
+      </div>
+    </div>
+    {GROUPS.map(group => <div key={group} className="agent-group">
     <h3>{group}</h3>
     {AGENTS.filter(agent => agent.group === group).map(agent => {
       const own = value?.[agent.id] ?? {};
@@ -90,14 +105,14 @@ export function AgentDesk({ value, onChange }: Props) {
           <div className="inline">
             <button type="button" className="button small ghost" disabled={!changed} onClick={() => { const next = { ...value }; delete next[agent.id]; onChange(Object.keys(next).length ? next : undefined); }}>Standard wiederherstellen</button>
             {agent.trial && <button type="button" className="button small" disabled={run?.state === 'running' || (agent.optional && !enabled)} onClick={() => void trial(agent)}>
-              {run?.state === 'running' ? 'Probelauf läuft …' : 'Probelauf am letzten Beitrag'}</button>}
+              {run?.state === 'running' ? 'Probelauf läuft …' : TRIAL_LABELS[agent.id]?.button ?? 'Probelauf am letzten Beitrag'}</button>}
           </div>
           {run?.state === 'failed' && <p className="notice error" role="status">{run.message}</p>}
           {run?.state === 'done' && <div className="trial" role="status">
-            <p className="muted small">Am Beitrag «{run.itemTitle}» · nichts wurde gespeichert</p>
+            <p className="muted small">{agent.id === 'music' ? 'Nichts wurde geplant oder gespeichert' : `Am Beitrag «${run.itemTitle}» · nichts wurde gespeichert`}</p>
             <div className="trial-grid">
-              <div><h4>Bisher</h4><p className="trial-text">{run.before.text}</p><Marks quality={run.before.quality} /></div>
-              <div><h4>{agent.id === 'jury' ? 'Neue Bewertung' : 'Mit diesen Einstellungen'}</h4>{agent.id !== 'jury' && <p className="trial-text">{run.after.text}</p>}<Marks quality={run.after.quality} /></div>
+              <div><h4>{TRIAL_LABELS[agent.id]?.before ?? 'Bisher'}</h4><p className="trial-text">{run.before.text}</p><Marks quality={run.before.quality} /></div>
+              <div><h4>{agent.id === 'jury' ? 'Neue Bewertung' : TRIAL_LABELS[agent.id]?.after ?? 'Mit diesen Einstellungen'}</h4>{agent.id !== 'jury' && <p className="trial-text">{run.after.text}</p>}<Marks quality={run.after.quality} /></div>
             </div>
           </div>}
         </>}
