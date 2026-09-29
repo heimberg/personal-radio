@@ -298,24 +298,24 @@ Public repository, private application. Cloudflare Access protects the Worker AP
 
 ## Current state and gaps
 
-Built: Worker with Access, D1 quotas, feed retrieval and ranking, Gemini/ASK writing and verification, voice providers, Spotify App Remote playback, feedback learning, server-side timeline and immediate production. The Android app is the listening product with quick actions; the web cockpit (embedded in the app) holds settings and planning. The Worker provides the authenticated API, the cockpit and generated audio.
+Built and in daily use: the Worker with Access, D1, R2, Queue and cron; research, writing, final edit, jury and fact check; the building blocks, day plan, surprises and follow-ups; music hours, music blocks and songs through Spotify; configurable agents with trials, quality trend and usage; the Android app with Media3 playback, Spotify handoff, station sound and in-app updates; the web cockpit for settings and planning.
 
 Remaining gaps:
 
-- The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool.
-- Topics are still a fixed list of three next to free interests; shows now carry the real editorial direction.
-- Keep configuration, timeline, sources and production controls accessible only through the Android app; users do not need a separate browser or login flow.
-- Frontend error messages for `/api/segments` are derived from substring matches on provider error details; return stable error codes.
+- The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool, and its frontend error messages are derived from provider error text rather than stable codes.
+- Topics are still a fixed list of three next to free interests; shows carry the real editorial direction.
+- The app prefetches the next four segments; a longer offline buffer (30–60 minutes) is planned.
 
 ## Milestones
 
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; queue production with R2 audio; cron horizon with listener gate; authenticated timeline API.
-2. **Android app** (built; acceptance test on a device pending): Kotlin app with Media3 service, timeline sync, prefetch, feedback, service-token auth, settings and production controls; 60-minute screen-off test.
-3. **Spotify in the app:** App Remote, the artist hour as the first music format, music blocks with moderation triggers, AI picks (AI → Spotify) and playlist groups, handoff test.
-4. **Full customization:** per-show tools with template values (date, time, place and weather done; headlines, MCP next), ElevenLabs as TTS option, music rules, Google Drive archive for liked segments and artist hours.
-5. **Learning and memory:** feedback weights in the planner, deduplication, series.
-6. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
-7. **Agentic production:** use the agent registry and a durable Workflow adapter for a shadow music-hour run; add per-song researcher and lyric analyst first, then the director, fact checker and continuity editor. Keep the queue path until the shadow run proves quality and recovery, then migrate one format at a time and expose stage progress in the app. See [agentic workflow spike](agentic-workflow-spike.md).
+2. **Android app** (done): Media3 service, timeline sync, prefetch, feedback, service-token auth, embedded cockpit, in-app updates.
+3. **Spotify in the app** (done): App Remote, music hours, music blocks with moderation triggers, AI picks and playlist groups, listening profile.
+4. **Customization** (done): tools (date, weather, headlines), building blocks, day plan, configurable agents, station sound, surprises. Open: ElevenLabs as TTS option, MCP tools.
+5. **Learning and memory** (in progress): feedback weights, 👎 reasons as listener notes, quality trend. Open: per-kind learning for surprises, series.
+6. **Next:** radio alarm clock, longer offline buffer, Google Drive archive for liked items.
+7. **Later:** continuous stream mode without Spotify (Icecast/HLS) for car and speakers. It needs a long-running process with audio tooling (for example a container), not a Worker.
+8. **Agentic production** (beta): the music-hour editorial team runs on the agent registry with durable steps; see [agentic workflow spike](agentic-workflow-spike.md).
 
 ## References
 
