@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import type React from 'react';
 import type { ReactNode } from 'react';
+import { KINDS } from '../domain/kinds.ts';
 import type { Topic } from '../domain/program.ts';
 import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId, stationSounds } from '../domain/station.ts';
 import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ShowConfig, ShowFormat, ShowTool, StationConfig } from '../domain/station.ts';
@@ -137,14 +139,23 @@ interface SectionProps { id: string; title: string; description: string; summary
  * Settings are an overview first: one row per area with what is set. A tap opens only that area, which
  * keeps the page short on a phone.
  */
+/** Each area has an icon and a colour, so the overview is easy to scan. */
+const SECTION_LOOK: Record<string, [string, string]> = {
+  sender: ['📻', 'var(--brand)'], interessen: ['💡', KINDS.discover.color], musik: ['🎵', KINDS.music.color], sendungen: ['🗂️', KINDS.news.color],
+  sendeuhr: ['🗓️', KINDS.weather.color], feeds: ['📰', KINDS.news.color], redaktion: ['✍️', KINDS.surprise.color], verbrauch: ['📊', 'var(--muted)'],
+};
+
 function Section({ id, title, description, summary, open, onOpen, children }: SectionProps) {
-  if (open === null) return <button type="button" className="card section-row" onClick={() => onOpen(id)} aria-label={`${title}: ${summary}`}>
+  const [icon, tone] = SECTION_LOOK[id] ?? ['⚙️', 'var(--brand)'];
+  const style = { '--kind': tone } as React.CSSProperties;
+  if (open === null) return <button type="button" className="card section-row" style={style} onClick={() => onOpen(id)} aria-label={`${title}: ${summary}`}>
+    <span className="section-icon" aria-hidden="true">{icon}</span>
     <span><strong>{title}</strong><small>{summary}</small></span><span aria-hidden="true">›</span>
   </button>;
   if (open !== id) return null;
-  return <section className="card editor-section" aria-label={title}>
+  return <section className="card editor-section" style={style} aria-label={title}>
     <button type="button" className="back-link" onClick={() => onOpen(null)}>← Alle Einstellungen</button>
-    <h2>{title}</h2><p className="muted">{description}</p>{children}
+    <h2><span className="section-icon small" aria-hidden="true">{icon}</span>{title}</h2><p className="muted">{description}</p>{children}
   </section>;
 }
 

@@ -10,6 +10,7 @@ import { defaultStationConfig } from './domain/station.ts';
 import type { FailureSummary, StationConfig, TimelineItemView } from './domain/station.ts';
 import type { FeedbackAction } from './domain/recommendation.ts';
 import type { FeedbackReason } from './domain/listener-notes.ts';
+import { lookOfShow } from './domain/kinds.ts';
 import { api, playableInBrowser, post, readJson, trackFor } from './station-client.ts';
 import './style.css';
 
@@ -167,7 +168,8 @@ function App() {
   else content = <>
     {view === 'program' && <>
       {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} onReason={giveReason} reason={currentId ? reasons[currentId] ?? null : null}
-        onMore={() => void more()} deepened={currentId ? !!deepened[currentId] : false} />}
+        onMore={() => void more()} deepened={currentId ? !!deepened[currentId] : false}
+        look={currentId ? (() => { const item = items.find(entry => entry.id === currentId); return item ? lookOfShow(item.showId, config) : undefined; })() : undefined} />}
       <Timeline config={config} items={items} failures={failures} refresh={refresh} />
     </>}
     {view === 'settings' && <>
@@ -182,7 +184,7 @@ function App() {
 
   return <div className={`shell ${embeddedInApp ? 'embedded' : ''}`}>
     <header className="top">
-      <span className="brand"><span className="brand-mark" aria-hidden="true">◒</span>{config?.name ?? 'personal radio'}<span className="dot">.</span></span>
+      <span className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>{config?.name ?? 'personal radio'}<span className="dot">.</span></span>
       {config && <span className="host">mit {config.host.name}</span>}
     </header>
     {config && !embeddedInApp && <nav className="tabs" aria-label="Bereiche">{views.map(([id, label]) =>

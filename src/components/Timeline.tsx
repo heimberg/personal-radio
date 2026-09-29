@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type React from 'react';
+import { KINDS, lookOfShow } from '../domain/kinds.ts';
 import { BlockPalette } from './BlockPalette.tsx';
 import { MUSIC_SHOW_ID } from '../domain/station.ts';
 import type { FailureSummary, StationConfig, TimelineItemView } from '../domain/station.ts';
@@ -91,7 +93,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
       </div>
     </div>
 
-    <BlockPalette busy={busy} onAdded={async message => { setMessage(message); await refresh(); }} onFailed={setMessage} />
+    <BlockPalette busy={busy} config={config} onAdded={async message => { setMessage(message); await refresh(); }} onFailed={setMessage} />
 
     {failures.count > 0 && <div className="alert" role="status">
       <span>⚠ {failures.count} fehlgeschlagen{failures.latestError ? ` · zuletzt ${failures.latestAt ? `${clockTime(failures.latestAt)}: ` : ''}${errorLabel(failures.latestError)}` : ''}</span>
@@ -100,14 +102,15 @@ export function Timeline({ config, items, failures, refresh }: Props) {
 
     {items.length === 0 ? <p className="empty">Noch nichts geplant. «Jetzt planen» startet die Produktion.</p> :
       <ol className="timeline" aria-label="Programmablauf">{shown.map(item => {
-        const movable = openIds.includes(item.id), index = order.indexOf(item.id);
-        return <li key={item.id} data-state={item.state} draggable={movable && !busy}
-          className={dragged === item.id ? 'dragging' : undefined}
+        const movable = openIds.includes(item.id), index = order.indexOf(item.id), look = lookOfShow(item.showId, config);
+        return <li key={item.id} data-state={item.state} data-kind={look.kind} draggable={movable && !busy}
+          className={dragged === item.id ? 'dragging' : undefined} style={{ '--kind': KINDS[look.kind].color } as React.CSSProperties}
           onDragStart={() => setDragged(item.id)} onDragEnd={() => setDragged(null)}
           onDragOver={event => { if (movable && dragged) event.preventDefault(); }} onDrop={() => dropOn(item.id)}>
-        <span className="timeline-time">{clockTime(item.plannedAt)}</span>
+        <span className="timeline-time">{clockTime(item.plannedAt)}<span className="timeline-dot" aria-hidden="true">{look.icon}</span></span>
         <div className={`timeline-body ${item.showId === MUSIC_SHOW_ID ? 'song' : ''}`}>
-          <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.surprise ? <span className="surprise" title="Überraschung">🎲 </span> : null}{item.title ?? item.showName}</strong>
+          <span className="timeline-kind">{KINDS[look.kind].label}</span>
+          <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.title ?? item.showName}</strong>
           <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}{item.quality ? ` · ★ ${item.quality.toLocaleString('de-CH')}` : ''}</span>
           {item.error && item.state !== 'ready' && <span className="timeline-error">
             {item.updatedAt ? `${clockTime(item.updatedAt)} · ` : ''}{errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</span>}

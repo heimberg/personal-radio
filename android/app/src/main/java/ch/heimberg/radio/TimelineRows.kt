@@ -8,6 +8,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import ch.heimberg.radio.core.Labels
+import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.TimelineItem
 
 /**
@@ -22,8 +23,18 @@ object TimelineRows {
         val context = row.context
         val accent = ContextCompat.getColor(context, R.color.accent_300)
         row.findViewById<TextView>(R.id.time).text = time
+        val look = Looks.of(item)
+        row.findViewById<View>(R.id.kind_bar).setBackgroundColor(KindStyle.color(look.kind, context))
+        row.findViewById<TextView>(R.id.kind_icon).apply {
+            text = look.icon
+            background = KindStyle.badge(context, look.kind, cornerDp = 15f)
+        }
+        row.findViewById<TextView>(R.id.kind_label).apply {
+            text = look.kind.label
+            setTextColor(KindStyle.label(context, look.kind))
+        }
         row.findViewById<TextView>(R.id.title).apply {
-            text = if (item.surprise) "🎲 ${item.displayTitle}" else item.displayTitle
+            text = item.displayTitle
             setTextColor(if (playing) accent else ContextCompat.getColor(context, R.color.text))
         }
         val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + context.getString(R.string.spotify_tracks, it) } ?: ""

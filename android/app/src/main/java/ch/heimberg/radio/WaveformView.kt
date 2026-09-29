@@ -34,6 +34,15 @@ class WaveformView @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     private val density = resources.displayMetrics.density
     private val heard = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ContextCompat.getColor(context, R.color.accent) }
+
+    /** The colour of the heard part: the playing item's kind. */
+    var tint: Int = ContextCompat.getColor(context, R.color.accent)
+        set(value) {
+            if (field == value) return
+            field = value
+            heard.color = value
+            invalidate()
+        }
     private val ahead = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ContextCompat.getColor(context, R.color.neutral_700) }
 
     override fun onDraw(canvas: Canvas) {
