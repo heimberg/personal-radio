@@ -374,7 +374,10 @@ class PlaybackService : MediaLibraryService() {
         if (lastSpotifyAttempt != 0L && now - lastSpotifyAttempt < SPOTIFY_RETRY_MS) return
         lastSpotifyAttempt = now
         spotify.connect(clientId, showAuthView = false) { error ->
-            if (error == null) scope.launch { sync() }
+            if (error != null) return@connect
+            // Spotify already allows us: the app no longer offers «Spotify verbinden».
+            RadioSettings(this@PlaybackService).spotifyLinked = true
+            scope.launch { sync() }
         }
     }
 
