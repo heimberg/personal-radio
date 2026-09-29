@@ -19,6 +19,9 @@ android {
         targetSdk = 35
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.2.$versionCode"
+        // Spotify's login returns to personal-radio://spotify-callback (registered in the Spotify dashboard).
+        manifestPlaceholders["redirectSchemeName"] = "personal-radio"
+        manifestPlaceholders["redirectHostName"] = "spotify-callback"
     }
 
     signingConfigs {
@@ -76,5 +79,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // Spotify App Remote controls the installed Spotify app; see libs/README.md.
     implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    // Spotify's login, released together with App Remote 0.8.0: grants «app-remote-control» when App Remote asks for it.
+    implementation("com.spotify.android:auth:2.1.0")
     implementation("com.google.code.gson:gson:2.11.0")
 }

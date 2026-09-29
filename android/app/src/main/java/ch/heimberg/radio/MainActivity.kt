@@ -31,6 +31,9 @@ import ch.heimberg.radio.core.ProgramClock
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import com.google.common.util.concurrent.ListenableFuture
+import com.spotify.sdk.android.auth.AuthorizationClient
+import com.spotify.sdk.android.auth.AuthorizationRequest
+import com.spotify.sdk.android.auth.AuthorizationResponse
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -512,18 +515,42 @@ class MainActivity : AppCompatActivity(), RadioActions {
         if (!spotify.installed) return state.say(getString(R.string.spotify_missing))
         state.say(getString(R.string.spotify_connecting))
         state.spotifyBusy = true
-        val done = { error: String? ->
-            state.spotifyBusy = false
-            state.say(error ?: getString(R.string.spotify_connected))
-            if (error == null) {
-                RadioSettings(this).spotifyLinked = true
-                state.spotifyNeeded = false
-                lifecycleScope.launch { refreshTimeline() }
-            }
-        }
-        // An earlier permission still counts: connect quietly first, and only ask Spotify when that fails.
+        // An earlier permission still counts: connect quietly first. Without one, Spotify's own login
+        // grants «app-remote-control» (the auth flow App Remote asks for); then App Remote connects.
         spotify.connect(clientId, showAuthView = false) { quiet ->
-            if (quiet == null) done(null) else spotify.connect(clientId, showAuthView = true) { error -> done(error) }
+            if (quiet == null) return@connect spotifyDone(null)
+            val request = AuthorizationRequest.Builder(clientId, AuthorizationResponse.Type.TOKEN, SpotifyLink.REDIRECT_URI)
+                .setScopes(arrayOf("app-remote-control"))
+                .build()
+            spotifyLogin.launch(AuthorizationClient.createLoginActivityIntent(this, request))
+        }
+    }
+
+    /**
+     * Spotify's login answers here. The token only proves the permission and is dropped; App Remote
+     * then connects with it granted. Nothing of it leaves the phone.
+     */
+    private val spotifyLogin = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val clientId = spotifyClientId ?: return@registerForActivityResult spotifyDone(getString(R.string.spotify_not_configured))
+        val response = AuthorizationClient.getResponse(result.resultCode, result.data)
+        when (response.type) {
+            AuthorizationResponse.Type.TOKEN, AuthorizationResponse.Type.CODE ->
+                spotify.connect(clientId, showAuthView = true) { error -> spotifyDone(error) }
+            AuthorizationResponse.Type.ERROR -> spotifyDone(
+                "Spotify-Anmeldung fehlgeschlagen (${response.error}). Prüfe im Spotify-Dashboard die Redirect-URI ${SpotifyLink.REDIRECT_URI} " +
+                    "und das Android-Paket ch.heimberg.radio mit seinem SHA1.",
+            )
+            else -> spotifyDone("Spotify-Anmeldung abgebrochen.")
+        }
+    }
+
+    private fun spotifyDone(error: String?) {
+        state.spotifyBusy = false
+        state.say(error ?: getString(R.string.spotify_connected))
+        if (error == null) {
+            RadioSettings(this).spotifyLinked = true
+            state.spotifyNeeded = false
+            lifecycleScope.launch { refreshTimeline() }
         }
     }
 
