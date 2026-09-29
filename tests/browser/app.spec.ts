@@ -1,14 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-function silentWav(seconds: number) {
-  const rate = 8000, samples = rate * seconds, buffer = Buffer.alloc(44 + samples * 2);
-  buffer.write('RIFF', 0); buffer.writeUInt32LE(36 + samples * 2, 4); buffer.write('WAVE', 8); buffer.write('fmt ', 12);
-  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22); buffer.writeUInt32LE(rate, 24);
-  buffer.writeUInt32LE(rate * 2, 28); buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write('data', 36); buffer.writeUInt32LE(samples * 2, 40);
-  return buffer;
-}
-
 const station = () => ({
   version: 1, name: 'Radio Melchnau', host: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '', voiceId: 'de_kerstin_cc0' }, timezone: 'Europe/Zurich', horizonMinutes: 20,
   profile: { topics: ['Wissenschaft'], interests: ['Geologie'], interestWeights: {}, speechMinutes: 2, exploration: 20 },
@@ -30,7 +22,6 @@ async function fakeWorker(page: Page, initial: unknown) {
   await page.route('**/api/mistral-voices', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ voices: [{ id: 'de_kerstin_cc0', name: 'Kerstin · Deutsch (CC0)' }, { id: 'fr_marie_neutral', name: 'Marie · Neutral' }] }) }));
   await page.route('**/api/timeline', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: state.stored ? [
     { id: 't1', seq: 1, showId: 'entdecken', showName: 'Entdeckungen', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
-      title: 'Sonde gelandet', verification: 'strict', interestTags: ['Raumfahrt'], audioUrl: 'api/timeline/t1/audio',
       sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },
     { id: 'h1', seq: 2, showId: 'kuenstler', showName: 'Künstler-Stunde', plannedAt: '2026-09-27T08:02:00.000Z', state: 'ready', estimatedMinutes: 60,
       title: 'Portishead', focus: 'artist', subject: 'Portishead', team: { songs: 10, specialists: 1, corrections: 2 }, parts: [{ kind: 'speech', audioUrl: 'api/timeline/h1/audio?part=0' },
@@ -54,8 +45,6 @@ async function fakeWorker(page: Page, initial: unknown) {
     return route.fulfill({ contentType: 'application/json', body: '{"itemId":"x"}' });
   });
   await page.route('**/api/shows/*/produce', route => { state.calls.push(new URL(route.request().url()).pathname); return route.fulfill({ contentType: 'application/json', body: '{"itemId":"x"}' }); });
-  await page.route('**/api/timeline/t1/audio', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(2) }));
-  await page.route('**/api/timeline/t1/feedback', async route => { state.feedback.push(JSON.parse(route.request().postData() ?? '{}')); await route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   return state;
 }
 
@@ -71,87 +60,16 @@ test('first visit sets up the station and plans the program', async ({ page }) =
   const worker = await fakeWorker(page, null);
   await page.goto('/');
   await page.getByRole('button', { name: 'Programm einrichten' }).click();
-  await expect(page.getByRole('button', { name: '▶ Programm hören' })).toBeVisible();
+  await expect(page.getByText(/Dein Radio ist eingerichtet/)).toBeVisible();
   expect(worker.calls).toContain('plan');
   expect(worker.saved[0].shows.map((show: any) => show.id)).toEqual(['kurz', 'dialog', 'entdecken', 'kuenstler', 'genre', 'thema']);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
 
-test('program view: timeline, actions, browser playback with feedback; music hours are listed but left to the app', async ({ page }) => {
-  await page.addInitScript(() => {
-    const OriginalAudio = window.Audio;
-    window.Audio = class extends OriginalAudio {
-      constructor(src?: string) { super(src); (window as unknown as { testAudio: HTMLAudioElement }).testAudio = this; }
-    };
-  });
-  const external: string[] = [];
-  page.on('request', request => { if (/^https?:/.test(request.url()) && !request.url().startsWith('http://127.0.0.1:5173')) external.push(request.url()); });
-  const worker = await fakeWorker(page, station());
-  await page.goto('/');
-  await expect(page.getByText('Radio Melchnau')).toBeVisible();
-  const timeline = page.getByRole('list', { name: 'Programmablauf' });
-  await expect(timeline.getByRole('listitem')).toHaveCount(2);
-  await expect(timeline.getByText(/♫ Portishead: Glory Box/)).toBeVisible();
-  await expect(timeline.getByText('Redaktionsteam: 10 Songs einzeln recherchiert · 1 Fachrecherchen · 2 Korrekturen im Faktencheck')).toBeVisible();
-  await expect(timeline.getByRole('link', { name: 'Raumfahrt heute' })).toHaveAttribute('href', 'https://news.example.test/a');
-  await expect(timeline.getByRole('link', { name: 'sonde landung' })).toHaveAttribute('href', 'https://www.google.com/search?q=sonde%20landung');
-  await expect(page.getByText(/⚠ 1 fehlgeschlagen · zuletzt \d\d:\d\d: Keine neuen Quellen/)).toBeVisible();
-
-  // Building blocks: one tap, or one word first.
-  const blocks = page.getByRole('group', { name: 'Bausteine' });
-  await blocks.getByRole('button', { name: /^Wetter/ }).click();
-  await expect(page.getByText('«Wetter» kommt als Nächstes und wird produziert.')).toBeVisible();
-  await blocks.getByRole('button', { name: /^Künstler-Stunde/ }).click();
-  await blocks.getByLabel('Künstler oder Band').fill('Portishead');
-  await blocks.getByRole('button', { name: 'Hinzufügen' }).click();
-  await expect(page.getByText('«Künstler-Stunde» über «Portishead» kommt als Nächstes und wird produziert.')).toBeVisible();
-  await page.getByRole('button', { name: 'Aufräumen' }).click();
-  await expect(page.getByText('1 Einträge entfernt.')).toBeVisible();
-  await page.getByRole('button', { name: 'Erneut versuchen' }).click();
-  await expect(page.getByText('1 Fehlschläge abgeräumt, 0 wartende Beiträge neu gestartet, 1 neu geplant, 1 in Produktion.')).toBeVisible();
-  expect(worker.calls).toEqual(['add wetter {}', 'add kuenstler {"subject":"Portishead"}', 'cleanup', 'retry']);
-
-  // Arranging the program: move, remove, shuffle, add a song.
-  await page.getByRole('group', { name: 'Sonde gelandet verschieben' }).getByRole('button', { name: 'Nach unten' }).click();
-  await expect(page.getByText('Reihenfolge gespeichert.', { exact: false })).toBeVisible();
-  await page.getByRole('group', { name: 'Portishead verschieben' }).getByRole('button', { name: 'Entfernen' }).click();
-  await expect(page.getByText('«Portishead» entfernt.')).toBeVisible();
-  await page.getByRole('button', { name: '🔀 Mischen' }).click();
-  await expect(page.getByText('Programm gemischt, 1 Songs ergänzt.')).toBeVisible();
-  await page.getByRole('button', { name: '+ Song' }).click();
-  await expect(page.getByText('Ein Song wird ausgewählt und hinten angehängt.')).toBeVisible();
-  expect(worker.calls.slice(4)).toEqual(['arrange h1,t1', 'remove h1', 'shuffle', '/api/shows/_musik/produce']);
-
-  // Only the spoken segment plays in the browser.
-  await expect(page.getByText('1 Beitrag bereit')).toBeVisible();
-  await page.getByRole('button', { name: '▶ Programm hören' }).click();
-  await expect(page.getByRole('heading', { name: 'Sonde gelandet' })).toBeVisible();
-  await expect(page.getByText('Läuft', { exact: true })).toBeVisible();
-  const reasons: unknown[] = [];
-  await page.route('**/api/timeline/t1/reason', route => { reasons.push(JSON.parse(route.request().postData() ?? '{}')); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
-  await page.getByRole('button', { name: 'Weniger davon' }).click();
-  await page.getByRole('group', { name: 'Warum weniger?' }).getByRole('button', { name: 'Zu lang' }).click();
-  await expect(page.getByText('Danke, gemerkt.')).toBeVisible();
-  await expect.poll(() => reasons).toEqual([{ reason: 'too_long' }]);
-  await page.getByRole('button', { name: 'Mehr davon' }).click();
-  await expect(page.getByRole('button', { name: 'Mehr davon' })).toHaveAttribute('aria-pressed', 'true');
-  let deepened = 0;
-  await page.route('**/api/timeline/t1/more', route => { deepened++; return route.fulfill({ contentType: 'application/json', body: '{"itemId":"t9"}' }); });
-  await page.getByRole('button', { name: 'Mehr dazu' }).click();
-  await expect(page.getByText(/Vertiefung bestellt/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Mehr dazu' })).toBeDisabled();
-  expect(deepened).toBe(1);
-  await expect(page.getByRole('group', { name: 'Warum weniger?' })).toHaveCount(0);
-  await page.evaluate(() => { const audio = (window as unknown as { testAudio: HTMLAudioElement }).testAudio; audio.currentTime = audio.duration - 0.1; });
-  await expect.poll(() => worker.feedback).toEqual([{ action: 'dislike', listenedRatio: 1 }, { action: 'like', listenedRatio: 1 }, { action: 'complete', listenedRatio: 1 }]);
-  expect(external).toEqual([]);
-});
-
 test('settings: persona, interests, a new theme hour with its subject and the schedule are edited as forms', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   // Without changes the save bar stays out of the way.
   await expect(page.locator('.savebar')).toBeHidden();
   // The overview says what is set in each area.
@@ -242,7 +160,6 @@ test('settings: persona, interests, a new theme hour with its subject and the sc
 test('settings: a music block with a playlist group, an AI group, rotation and moderation triggers', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await openArea(page, 'Sendungen');
   await page.getByLabel('Format der neuen Sendung').selectOption('music_block');
   await page.getByRole('button', { name: 'Sendung hinzufügen' }).click();
@@ -291,7 +208,6 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
   }) }));
   await page.route('**/api/insights/reasons', route => { cleared = true; return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Verbrauch: Heute 5 von 24 Produktionen' })).toBeVisible();
   await openArea(page, 'Verbrauch');
   await expect(page.getByText('KI-Aufrufe')).toBeVisible();
@@ -339,7 +255,6 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
 test('Tagesplan: the surprise level is a slider and is saved with the station', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Tagesplan: .*🎲 25$/ })).toBeVisible();
   await openArea(page, 'Tagesplan');
   await expect(page.getByText('Überraschung: 25 – etwa eine pro Stunde')).toBeVisible();
@@ -353,7 +268,6 @@ test('Tagesplan: the surprise level is a slider and is saved with the station', 
 test('YAML view saves valid documents and explains broken ones', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByRole('button', { name: /Als Text \(YAML\) bearbeiten/ }).click();
   const editor = page.getByLabel('Konfiguration als YAML');
   await expect(editor).toHaveValue(/# host: Moderations-Persona/);
@@ -361,8 +275,7 @@ test('YAML view saves valid documents and explains broken ones', async ({ page }
   await editor.fill('shows: [unclosed');
   await page.getByRole('button', { name: 'YAML speichern' }).click();
   await expect(page.getByRole('alert')).toContainText('Kein gültiges YAML');
-  await page.getByRole('button', { name: 'Programm', exact: true }).click();
-  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByRole('button', { name: '← Zurück zu den Einstellungen' }).click();
   await page.getByRole('button', { name: /Als Text \(YAML\) bearbeiten/ }).click();
   await expect(editor).toHaveValue(/\nhost:\n  name: Mira\n/);
   await editor.fill((await editor.inputValue()).replace('  name: Mira\n', '  name: Lou\n'));
@@ -371,12 +284,12 @@ test('YAML view saves valid documents and explains broken ones', async ({ page }
   expect(worker.stored.host.name).toBe('Lou');
 });
 
-test('inside the Android app the page is the settings, without tabs or its own player', async ({ browser }) => {
+test('inside the Android app the page is the studio without a player', async ({ browser }) => {
   const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Linux; Android 15) PersonalRadioAndroid/1', viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await fakeWorker(page, station());
   await page.goto('/');
-  // Program and player are native in the app: the page opens on the settings, without tabs.
+  // Program and player are native in the app: the page is only the settings.
   await expect(page.getByRole('navigation', { name: 'Bereiche' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Audioplayer' })).toHaveCount(0);
   await openArea(page, 'Sendungen');

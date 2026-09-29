@@ -841,14 +841,17 @@ async function addSurprise(deps: StationDeps, owner: string, config: StationConf
   return id;
 }
 
-/** «Anderes»: a planned surprise gives way to a different one at the same place. */
-export async function swapSurprise(deps: StationDeps, owner: string, itemId: string): Promise<string | null> {
+/**
+ * «Anders»: an open item gives way to something different at the same place – a surprise for another
+ * surprise of a different kind, any other item for a surprise.
+ */
+export async function swapItem(deps: StationDeps, owner: string, itemId: string): Promise<string | null> {
   const config = await deps.store.getConfig(owner);
   const open = await deps.store.openItems(owner);
   const index = open.findIndex(item => item.id === itemId);
-  if (!config || index < 0 || !isSurprise(open[index].show_id)) return null;
+  if (!config || index < 0) return null;
   if (!await removeItem(deps, owner, itemId)) return null;
-  return addSurprise(deps, owner, config, index > 0 ? open[index - 1].id : undefined, open[index].show_id);
+  return addSurprise(deps, owner, config, index > 0 ? open[index - 1].id : undefined, isSurprise(open[index].show_id) ? open[index].show_id : undefined);
 }
 
 /**
