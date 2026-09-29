@@ -8,7 +8,7 @@ import { ProviderError } from './providers.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
-import { BLOCKS, BLOCK_PREFIX, blockOf, blockShow } from '../src/domain/blocks.ts';
+import { BLOCKS, BLOCK_PREFIX, SURPRISE_ID, WILDCARD, WILDCARD_TASTES, blockOf, blockShow, drawSurprise, isSurprise, surpriseChance, surpriseLevel } from '../src/domain/blocks.ts';
 import { agentOf, resolveAgents } from '../src/domain/agents.ts';
 import type { AgentConfig } from '../src/domain/agents.ts';
 import { NOTE_WINDOW_DAYS, listenerNotes } from '../src/domain/listener-notes.ts';
@@ -63,6 +63,8 @@ const LEASE_MINUTES = 10;
 const MAX_ATTEMPTS = 3;
 const MAX_NEW_ITEMS = 12;
 const STALE_HOURS = 12;
+/** Time-bound items leave the program when their planned air time is this far in the past. */
+const TIMELY_HOURS = 2;
 const ACTIVE_LISTENER_HOURS = 3;
 export const AUDIO_RETENTION_DAYS = 7;
 const PURGE_AFTER_HOURS = 24;
@@ -93,14 +95,15 @@ function needsSongsAfter(config: StationConfig, showId: string | undefined): boo
  * the most recent items, newest last, so the rule also holds across planning runs.
  */
 export function planTimeline(config: StationConfig, open: Array<Pick<TimelineRow, 'estimated_minutes'>>, last: Pick<TimelineRow, 'seq' | 'show_id'> | null,
-  now: Date, newId: () => string, tail: string[] = last ? [last.show_id] : []): PlannedItem[] {
+  now: Date, newId: () => string, tail: string[] = last ? [last.show_id] : [], random: () => number = () => 1): PlannedItem[] {
   let ahead = open.reduce((sum, item) => sum + item.estimated_minutes, 0);
   let seq = (last?.seq ?? 0) + 1;
-  let lastShow = [...tail].reverse().find(id => id !== MUSIC_SHOW_ID);
+  let lastShow = [...tail].reverse().find(id => id !== MUSIC_SHOW_ID && !isSurprise(id));
   // Songs still owed after the most recent spoken item.
   const trailingSongs = tail.length - 1 - tail.map(id => id !== MUSIC_SHOW_ID).lastIndexOf(true);
-  let songsOwed = needsSongsAfter(config, lastShow) ? Math.max(0, config.music.between - trailingSongs) : 0;
+  let songsOwed = needsSongsAfter(config, [...tail].reverse().find(id => id !== MUSIC_SHOW_ID)) ? Math.max(0, config.music.between - trailingSongs) : 0;
   const planned: PlannedItem[] = [];
+  let lastSurprise = [...tail].reverse().find(isSurprise);
   while (ahead < config.horizonMinutes && planned.length < MAX_NEW_ITEMS) {
     const at = minutes(now, ahead);
     const slot = activeSlot(config, at);
@@ -112,6 +115,15 @@ export function planTimeline(config: StationConfig, open: Array<Pick<TimelineRow
     }
     const rotation = slot.showIds.map(id => scheduledShow(config, id)).filter((show): show is ShowConfig => !!show);
     if (!rotation.length) break;
+    // 🎲 By the surprise level, a spoken turn becomes a surprise; the rotation continues after it.
+    if (random() < surpriseChance(config)) {
+      const surprise = drawSurprise(config, random, lastSurprise);
+      const id = `${BLOCK_PREFIX}${surprise.id}`;
+      planned.push({ id: newId(), seq: seq++, showId: id, plannedAt: at.toISOString(), estimatedMinutes: surprise.show.targetMinutes });
+      ahead += surprise.show.targetMinutes; lastSurprise = id;
+      if (needsSongsAfter(config, id)) songsOwed = config.music.between;
+      continue;
+    }
     const show = rotation[(rotation.findIndex(item => item.id === lastShow) + 1) % rotation.length];
     planned.push({ id: newId(), seq: seq++, showId: show.id, plannedAt: at.toISOString(), estimatedMinutes: show.targetMinutes });
     ahead += show.targetMinutes; lastShow = show.id;
@@ -129,6 +141,13 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const config = await deps.store.getConfig(owner);
   if (!config) return { planned: 0, due: [], expired: 0 };
   const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now);
+  // Time-bound items (weather, headlines, date, a music block's time of day) that missed their air time
+  // by hours no longer fit: finished ones move to the archive, and the planner makes fresh ones.
+  for (const row of await deps.store.openItems(owner)) {
+    if ((row.state !== 'ready' && row.state !== 'voicing') || Date.parse(row.planned_at) > now.getTime() - TIMELY_HOURS * 3_600_000 || !timeBound(row, config)) continue;
+    await deps.store.update(owner, row.id, { state: row.state === 'ready' ? 'archived' : 'expired', lease_until: null }, now);
+    expired.push({ ...row, state: row.state === 'ready' ? 'archived' : 'expired' });
+  }
   // Archived items keep their audio for the retention period, so they can still be heard.
   const stale = expired.filter(row => row.state === 'expired');
   for (const row of [...stale, ...await deps.store.audioToRelease(owner, minutes(now, -AUDIO_RETENTION_DAYS * 24 * 60))]) {
@@ -145,7 +164,7 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const listening = !!lastSeen && now.getTime() - lastSeen.getTime() <= ACTIVE_LISTENER_HOURS * 3_600_000;
   if (listening && await deps.store.recentFailures(owner, minutes(now, -60)) < 3) {
     const recent = await deps.store.recentItems(owner, 4);
-    planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id));
+    planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id), deps.random);
     for (const item of planned) await deps.store.insertItem(owner, item, now);
   }
   const due = (await deps.store.dueItems(owner, now)).map(row => row.id);
@@ -177,11 +196,11 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
 
 /** What comes before an item: for the bridge into it and the station ident after music. */
 async function stationContext(deps: StationDeps, owner: string, config: StationConfig, row: TimelineRow, now: Date): Promise<StationContext> {
-  const clock = clockValues(now, config.timezone);
+  const air = airTime(row, now), clock = clockValues(air, config.timezone);
   const previous = await deps.store.previousItem(owner, row.seq);
   const before = previous ? toView(previous, config) : undefined;
   const musical = !!previous && (previous.show_id === MUSIC_SHOW_ID || bringsOwnMusic((config.shows.find(show => show.id === previous.show_id) ?? blockOf(previous.show_id)?.show)?.format ?? 'brief'));
-  return { stationName: config.name, when: `${clock.wochentag}, ${clock.uhrzeit}`, afterMusic: musical,
+  return { stationName: config.name, when: `${clock.wochentag}, am ${daytime(air, config.timezone)}`, afterMusic: musical,
     ...(before && previous!.show_id !== MUSIC_SHOW_ID ? { previous: before.title ?? before.showName } : {}) };
 }
 
@@ -239,19 +258,22 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
   // A building block added from the app is produced with its template.
   const block = blockOf(row.show_id);
-  const configured = config.shows.find(item => item.id === row.show_id) ?? (block ? blockShow(block, config, requestedHourSubject(row)) : undefined);
+  const configured = config.shows.find(item => item.id === row.show_id) ?? (block ? blockShow(block, config, requestedHourSubject(row) ?? wildcardTaste(block.id, deps)) : undefined);
   if (!configured && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
   try {
     // Tools (switched on per show, or as placeholders like {wetter}) are filled in once per production;
     // weather and headlines also become sources, so the writer can cite them.
     let show = configured, toolSources: Source[] = [];
     if (configured) {
-      const values = clockValues(now, config.timezone, config.location);
+      // Items are produced ahead: date and time of day are those of the expected air time, and the
+      // speech never names a clock time (the live time signal in the app does that).
+      const air = airTime(row, now), values = clockValues(air, config.timezone, config.location);
+      values.uhrzeit = daytime(air, config.timezone);
       const tools = new Set(configured.tools ?? []);
       if (usesWeather(configured)) tools.add('weather');
       if (usesHeadlines(configured)) tools.add('headlines');
       const notes: string[] = [];
-      if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}, es ist ${values.uhrzeit} Uhr.`);
+      if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}; der Beitrag läuft voraussichtlich am ${values.uhrzeit}.`);
       // Only a new draft needs fresh information; a retry of the voice keeps the approved script.
       if (row.state === 'planned') {
         if (tools.has('weather')) {
@@ -549,7 +571,7 @@ async function produceSong(deps: StationDeps, owner: string, config: StationConf
     const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
-      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens,
+      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, surprise: surpriseLevel(config),
       direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let chosen: { pick: SongPick; uri: string; durationMs: number } | null = null;
@@ -573,6 +595,24 @@ const MAX_BLOCK_TRACKS = 30;
 const MAX_AI_BATCHES = 4;
 /** Speech takes part of a block's length; the music fills the rest. */
 const BLOCK_MUSIC_SHARE = 0.85;
+
+/** Items whose content belongs to their time: live tools, placeholders, or a music block's time-of-day moderation. */
+function timeBound(row: TimelineRow, config: StationConfig): boolean {
+  const show = config.shows.find(item => item.id === row.show_id) ?? blockOf(row.show_id)?.show;
+  if (!show) return false;
+  return !!show.tools?.length || usesWeather(show as ShowConfig) || usesHeadlines(show as ShowConfig) || /\{(datum|wochentag|uhrzeit)\}/i.test(`${show.instructions} ${show.researchPrompt}`) || show.format === 'music_block';
+}
+
+/** The music wildcard draws its taste when it is produced. */
+function wildcardTaste(blockId: string, deps: StationDeps): string | undefined {
+  return blockId === WILDCARD ? WILDCARD_TASTES[Math.floor((deps.random ?? Math.random)() * WILDCARD_TASTES.length)] : undefined;
+}
+
+/** When an item is expected on air: its planned time, or now when that has passed. */
+function airTime(row: TimelineRow, now: Date): Date {
+  const planned = Date.parse(row.planned_at);
+  return Number.isFinite(planned) && planned > now.getTime() ? new Date(planned) : now;
+}
 
 function daytime(date: Date, timezone: string): string {
   const hour = Math.floor(localClock(date, timezone).minutes / 60);
@@ -662,7 +702,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
     const picks = await deps.musicWriter!.pickSongs({
       taste: group.taste || config.music.taste, interests: [...config.profile.topics, ...config.profile.interests],
       avoid: [...history.names.slice(-60), ...[...queues.values()].flat().filter(track => track.picked === 'ai').map(track => `${track.artist} – ${track.title}`)], liked: reactions.liked, disliked: reactions.disliked,
-      listens, announce: false, count: Math.min(15, wanted + 2), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
+      listens, announce: false, count: Math.min(15, wanted + 2), surprise: surpriseLevel(config), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let found = 0;
     for (const pick of picks) {
@@ -722,7 +762,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   const groupNames = [...new Set(tracks.map(track => groups[track.group].name))];
   const texts = await deps.musicWriter.writeBlock({
     blockName: show.name, groups: groupNames, nextShow: nextShowName(config, show, new Date(row.planned_at)),
-    daytime: daytime(new Date(row.planned_at), config.timezone), talkSeconds: show.talkSeconds ?? 20,
+    daytime: daytime(airTime(row, deps.now()), config.timezone), talkSeconds: show.talkSeconds ?? 20,
     moments: positions.map(position => moments.get(position)!),
     direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
   });
@@ -767,6 +807,7 @@ export const SHOW_BLOCK = 'show:';
 export async function addBlock(deps: StationDeps, owner: string, blockId: string, subject?: string, after?: string): Promise<string | null> {
   const config = await deps.store.getConfig(owner);
   if (!config) return null;
+  if (blockId === SURPRISE_ID) return addSurprise(deps, owner, config, after);
   if (blockId === 'song') {
     const song = await scheduleShowNow(deps, owner, MUSIC_SHOW_ID);
     if (song) await placeAfter(deps, owner, song, after);
@@ -786,6 +827,27 @@ export async function addBlock(deps: StationDeps, owner: string, blockId: string
   if (word) await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: word }) }, now);
   await placeAfter(deps, owner, id, after);
   return id;
+}
+
+/** 🎲 Draws a surprise and puts it after [after] (or at the start); never the kind in [avoid]. */
+async function addSurprise(deps: StationDeps, owner: string, config: StationConfig, after?: string, avoid?: string): Promise<string> {
+  const random = deps.random ?? Math.random;
+  const block = drawSurprise(config, random, avoid);
+  const now = deps.now(), last = await deps.store.lastItem(owner);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: `${BLOCK_PREFIX}${block.id}`, plannedAt: now.toISOString(), estimatedMinutes: block.show.targetMinutes }, now);
+  await placeAfter(deps, owner, id, after);
+  return id;
+}
+
+/** «Anderes»: a planned surprise gives way to a different one at the same place. */
+export async function swapSurprise(deps: StationDeps, owner: string, itemId: string): Promise<string | null> {
+  const config = await deps.store.getConfig(owner);
+  const open = await deps.store.openItems(owner);
+  const index = open.findIndex(item => item.id === itemId);
+  if (!config || index < 0 || !isSurprise(open[index].show_id)) return null;
+  if (!await removeItem(deps, owner, itemId)) return null;
+  return addSurprise(deps, owner, config, index > 0 ? open[index - 1].id : undefined, open[index].show_id);
 }
 
 /**
@@ -893,6 +955,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
     showName: showNameOf(row.show_id, config),
+    ...(isSurprise(row.show_id) ? { surprise: true } : {}),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),

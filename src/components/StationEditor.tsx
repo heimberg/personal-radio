@@ -148,6 +148,10 @@ function Section({ id, title, description, summary, open, onOpen, children }: Se
   </section>;
 }
 
+function surpriseLabel(level: number): string {
+  return level === 0 ? 'aus' : level < 20 ? `${level} – selten` : level < 40 ? `${level} – etwa eine pro Stunde` : level < 70 ? `${level} – öfter` : `${level} – viel Zufall`;
+}
+
 function agentSummary(config: StationConfig): string {
   const own = Object.values(config.agents ?? {});
   const off = own.filter(settings => settings?.enabled === false).length, changed = own.length;
@@ -369,7 +373,10 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </div>
     </Section>
 
-    <Section {...nav} id="sendeuhr" summary={draft.schedule.length ? draft.schedule.map(slot => `${slot.from}–${slot.to}`).join(', ') : 'Noch leer'} title="Tagesplan" description="Wann was läuft: Zeitfenster mit Bausteinen, die sich abwechseln. Dazwischen kommen Songs, wenn Musik eingeschaltet ist.">
+    <Section {...nav} id="sendeuhr" summary={`${draft.schedule.length ? draft.schedule.map(slot => `${slot.from}–${slot.to}`).join(', ') : 'Noch leer'} · 🎲 ${draft.surprise ?? 25}`} title="Tagesplan" description="Wann was läuft: Zeitfenster mit Bausteinen, die sich abwechseln. Dazwischen kommen Songs, wenn Musik eingeschaltet ist.">
+      <Field label={`Überraschung: ${surpriseLabel(draft.surprise ?? 25)}`} hint="🎲 Wie oft das Programm etwas einstreut, das du nicht bestellt hast: Zufallsfund, Heute vor … Jahren, Frage des Tages, eine Musik-Wildcard. Im Programm tauschst oder entfernst du jede Überraschung.">
+        <input type="range" min={0} max={100} step={5} value={draft.surprise ?? 25} aria-label="Überraschung" onChange={event => change(next => { next.surprise = Number(event.target.value); })} />
+      </Field>
       <DayPlan schedule={draft.schedule} shows={draft.shows} onChange={schedule => change(next => { next.schedule = schedule; })} />
       <div className="grid spaced">
         <Field label="Zeitzone"><input list="timezones" value={draft.timezone} maxLength={64} onChange={event => change(next => { next.timezone = event.target.value; })} /></Field>

@@ -23,6 +23,8 @@ class ProgramAdapter(
     private val onPlay: (TimelineItem) -> Unit,
     /** Called once when a drag ends with a new order. */
     private val onArranged: (List<TimelineItem>) -> Unit,
+    /** A surprise's options: another one, or out of the program. */
+    private val onSurprise: (TimelineItem) -> Unit = {},
 ) : RecyclerView.Adapter<ProgramAdapter.Row>() {
     class Row(view: View) : RecyclerView.ViewHolder(view)
 
@@ -107,6 +109,10 @@ class ProgramAdapter(
         val playing = item.id == currentId
         val label = if (playing) holder.itemView.context.getString(R.string.now_playing_short) else starts[item.id]?.let(time::format) ?: ""
         TimelineRows.bind(holder.itemView, item, label, playing, if (item.isPlayable && !playing) onPlay else null)
+        holder.itemView.findViewById<View>(R.id.swap).apply {
+            visibility = if (item.surprise && !playing) View.VISIBLE else View.GONE
+            setOnClickListener { onSurprise(item) }
+        }
         holder.itemView.findViewById<View>(R.id.handle).apply {
             visibility = if (playing) View.INVISIBLE else View.VISIBLE
             setOnTouchListener { _, event ->

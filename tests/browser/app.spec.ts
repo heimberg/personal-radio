@@ -335,6 +335,20 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
   await expect(page.getByRole('button', { name: 'Redaktion: 2 angepasst, 1 aus' })).toBeVisible();
 });
 
+test('Tagesplan: the surprise level is a slider and is saved with the station', async ({ page }) => {
+  const worker = await fakeWorker(page, station());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Tagesplan: .*🎲 25$/ })).toBeVisible();
+  await openArea(page, 'Tagesplan');
+  await expect(page.getByText('Überraschung: 25 – etwa eine pro Stunde')).toBeVisible();
+  await page.getByRole('slider', { name: 'Überraschung' }).fill('60');
+  await expect(page.getByText('Überraschung: 60 – öfter')).toBeVisible();
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(page.getByText(/^Gespeichert\./)).toBeVisible();
+  expect(worker.saved.at(-1).surprise).toBe(60);
+});
+
 test('YAML view saves valid documents and explains broken ones', async ({ page }) => {
   const worker = await fakeWorker(page, station());
   await page.goto('/');

@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var timeView: TextView
     private lateinit var playPause: MaterialButton
     private lateinit var upcomingView: RecyclerView
-    private val program = ProgramAdapter(onPlay = { playItem(it) }, onArranged = { arrange(it) })
+    private val program = ProgramAdapter(onPlay = { playItem(it) }, onArranged = { arrange(it) }, onSurprise = { surpriseOptions(it) })
     private lateinit var upcomingCount: TextView
     private lateinit var upcomingEmpty: TextView
     private lateinit var notice: View
@@ -354,6 +354,21 @@ class MainActivity : AppCompatActivity() {
             val showId = upcomingItems.firstOrNull { it.id == id }?.showId
             if (!liked && result.isSuccess && FeedbackReason.asksFor(showId)) askReason(id)
         }
+    }
+
+    /** 🎲 A surprise in the program: swap it for another one, or take it out. */
+    private fun surpriseOptions(item: TimelineItem) {
+        AlertDialog.Builder(this)
+            .setTitle(item.displayTitle)
+            .setItems(arrayOf(getString(R.string.surprise_swap), getString(R.string.surprise_remove))) { _, which ->
+                lifecycleScope.launch {
+                    val result = runCatching { if (which == 0) api.swap(item.id) else api.remove(item.id) }
+                    statusView.text = if (result.isSuccess) getString(if (which == 0) R.string.surprise_swapped else R.string.surprise_removed) else result.exceptionOrNull()?.message ?: ""
+                    controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
+                    refreshTimeline()
+                }
+            }
+            .show()
     }
 
     /** «Mehr dazu»: the server researches a deeper follow-up and places it right after this item. */

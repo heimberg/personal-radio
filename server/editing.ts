@@ -9,7 +9,7 @@ import { agentOf } from '../src/domain/agents.ts';
 /** Where the item stands in the program, for bridges and the station ident. */
 export interface StationContext {
   stationName: string;
-  /** Weekday and time when it is produced, e.g. "Montag, 07:30". */
+  /** Weekday and time of day it is expected on air, e.g. "Montag, am Morgen" (never a clock time: items are produced ahead). */
   when: string;
   /** Title of the item before it, when there is one. */
   previous?: string;
@@ -27,7 +27,7 @@ export interface ScriptEditor {
 function contextPrompt(context: StationContext): string {
   const bridge = context.previous ? ` Davor lief «${context.previous}»: steig mit höchstens einem Satz ein, der natürlich daran anschliesst, wenn es passt – erzwinge keine Verbindung.` : ' Es ist der Anfang des Programms.';
   const ident = context.afterMusic || !context.previous ? ` Nenne im ersten oder zweiten Satz den Sender «${context.stationName}» (Stationskennung), einmal und beiläufig.` : ' Nenne den Sender nicht.';
-  return ` Zeitpunkt: ${context.when} (für Tageszeit-Bezüge; nenne keine genaue Uhrzeit).${bridge}${ident} Schliesse ohne Ankündigung, was als Nächstes kommt.`;
+  return ` Voraussichtliche Sendezeit: ${context.when}. Der Beitrag ist vorproduziert: nenne keine Uhrzeit, Tageszeit-Bezüge höchstens allgemein.${bridge}${ident} Schliesse ohne Ankündigung, was als Nächstes kommt.`;
 }
 
 /** Rewrites for the ear and scores; falls back to the draft whenever a step fails or breaks the contract. Either agent can be switched off. */

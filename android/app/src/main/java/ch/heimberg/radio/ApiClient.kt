@@ -102,6 +102,12 @@ class ApiClient(private val connection: Connection) {
     /** Deletes a production from the archive (or takes it out of the program). */
     suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }
 
+    /** A planned surprise gives way to a different one at the same place. */
+    suspend fun swap(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/swap") } }
+
+    /** Takes an open item out of the program. */
+    suspend fun remove(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/remove") } }
+
     /** Orders a deeper follow-up to a spoken item; it is placed right after it. */
     suspend fun deepen(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/more") } }
 

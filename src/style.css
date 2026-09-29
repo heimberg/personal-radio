@@ -273,3 +273,4 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: 0.9em;
 .now-reasons span { width: 100%; text-align: center; opacity: .8; }
 .now-reasons button { border: 1px solid #ffffff2a; background: transparent; color: var(--now-text); border-radius: 999px; padding: 4px 12px; font-size: .8rem; }
 .now-reasons button[aria-pressed=true] { background: #ffffff1f; border-color: var(--brand); }
+.timeline .surprise { font-size: .9em; }

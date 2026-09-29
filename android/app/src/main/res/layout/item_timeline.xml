@@ -56,6 +56,19 @@
         android:importantForAccessibility="no"
         app:tint="@color/neutral_500" />
 
+    <!-- Program list only, for surprises: swap for another one or take it out. -->
+    <ImageView
+        android:id="@+id/swap"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="@dimen/space_1"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/surprise_options"
+        android:padding="10dp"
+        android:src="@drawable/ic_dice"
+        android:visibility="gone"
+        app:tint="@color/accent_300" />
+
     <!-- Program list only: touch and drag to move the item. -->
     <ImageView
         android:id="@+id/handle"
