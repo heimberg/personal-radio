@@ -134,8 +134,7 @@ private fun MiniPlayer(state: RadioState, actions: RadioActions) {
             Modifier.fillMaxWidth().clickable { state.tab = Tab.LISTEN }.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (look != null) KindBadge(look.icon, look.kind, 36.dp)
-            else Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(Nocturne.accentDark))
+            Cover(look, state.coverUrl, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(state.title.ifBlank { "Personal Radio" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -214,7 +213,7 @@ private fun ItemActions(item: TimelineItem, state: RadioState, actions: RadioAct
     val look = Looks.of(item)
     val close = { state.actionsFor = null }
     Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        KindBadge(look.icon, look.kind, 40.dp)
+        Cover(look, item.coverUrl, 44.dp)
         Spacer(Modifier.width(12.dp))
         Column {
             Text(item.displayTitle, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)

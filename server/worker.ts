@@ -23,14 +23,19 @@ import type { MoodId, StationConfig } from '../src/domain/station.ts';
 import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
-import { hourKey, hourText, identJingle, timeSignal } from './sounds.ts';
+import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from './sounds.ts';
+import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
 
-let identAudio: Uint8Array | undefined, signalAudio: Uint8Array | undefined;
+const identAudio: Array<Uint8Array | undefined> = [];
+let signalAudio: Uint8Array | undefined, newsAudio: Uint8Array | undefined;
 import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, isFeedbackReason, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
 
 interface StoredAudio { body: ReadableStream; size: number; httpEtag: string; range?: { offset?: number; length?: number; suffix?: number } }
-interface AudioStore extends AudioBucket { get(key: string, options?: { range?: Headers }): Promise<StoredAudio | null> }
+interface AudioStore extends AudioBucket {
+  get(key: string, options?: { range?: Headers }): Promise<StoredAudio | null>;
+  list?(options: { prefix: string; limit?: number }): Promise<{ objects: Array<{ key: string }> }>;
+}
 interface ProductionQueue { send(message: ProductionMessage): Promise<void> }
 interface ProductionMessage { owner: string; itemId: string }
 interface QueueBatch { messages: Array<{ body: unknown; ack(): void }> }
@@ -49,6 +54,7 @@ interface Environment {
   DAILY_TTS_CHARACTERS?: string;
   DAILY_GENERATIONS?: string;
   DAILY_FEED_REQUESTS?: string;
+  DAILY_LINKERS?: string;
   ASK_BASE_URL: string;
   ASK_API_KEY: string;
   ASK_MODEL: string;
@@ -108,6 +114,67 @@ class D1FeedCounter implements DailyCounter {
       WHERE daily_feed_requests.requests < ? RETURNING requests`)
       .bind(ownerId, day, limit).first<{ requests: number }>();
     if (!result) throw new PipelineError('BUDGET_EXCEEDED');
+  }
+}
+
+class D1LinkerCounter implements DailyCounter {
+  private db: D1Database;
+  constructor(db: D1Database) { this.db = db; }
+  async reserve(ownerId: string, limit: number) {
+    const day = new Date().toISOString().slice(0, 10);
+    const result = await this.db.prepare(`INSERT INTO daily_linker_requests (owner_id, utc_day, requests)
+      VALUES (?, ?, 1) ON CONFLICT(owner_id, utc_day) DO UPDATE
+      SET requests = daily_linker_requests.requests + 1
+      WHERE daily_linker_requests.requests < ? RETURNING requests`)
+      .bind(ownerId, day, limit).first<{ requests: number }>();
+    if (!result) throw new PipelineError('BUDGET_EXCEEDED');
+  }
+}
+
+/** Live transitions are made for one moment; after two days they are removed from the bucket. */
+async function pruneLinkers(audio: AudioStore, now: Date) {
+  if (!audio.list) return;
+  const keep = new Date(now.getTime() - 2 * 86_400_000).toISOString().slice(0, 10);
+  const { objects } = await audio.list({ prefix: 'linkers/', limit: 200 });
+  for (const object of objects) if (object.key.slice('linkers/'.length, 'linkers/'.length + 10) < keep) await audio.delete(object.key);
+}
+
+let silence: Uint8Array | undefined;
+const LINKER_ID = /^[a-zA-Z0-9_-]{1,80}$/;
+
+/**
+ * `GET /api/linker?after=&next=`: the host's live transition into [next], written and voiced when the app
+ * asks (shortly before it airs) and kept for replays. Anything that fails plays a moment of silence
+ * instead, so the program never stalls on a transition.
+ */
+async function linker(env: Environment, store: StationStore, owner: string, url: URL): Promise<Response> {
+  const audio = (bytes: Uint8Array, type: string) =>
+    new Response(bytes as BodyInit, { headers: { 'Content-Type': type, 'Content-Length': String(bytes.byteLength), 'Cache-Control': 'private, max-age=86400' } });
+  const quiet = () => audio(silence ??= silentWav(), 'audio/wav');
+  const after = url.searchParams.get('after'), next = url.searchParams.get('next') ?? '';
+  if (!LINKER_ID.test(next) || after !== null && !LINKER_ID.test(after)) return json({ error: 'invalid_request' }, 400);
+  try {
+    const config = await store.getConfig(owner), writer = musicFor(env).writer;
+    if (!config || !stationSounds(config).linker || !writer) return quiet();
+    const [nextRow, before] = await Promise.all([store.getItem(owner, next), after ? store.getItem(owner, after) : Promise.resolve(null)]);
+    if (!nextRow) return quiet();
+    const now = new Date(), voice = `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}|${stationSounds(config).bed}`;
+    const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice);
+    for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
+      const stored = await env.AUDIO.get(key + suffix);
+      if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
+    }
+    await new D1LinkerCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_LINKERS) || 40));
+    const facts = linkerFacts(config, before, nextRow, showNameOf(nextRow.show_id, config), now);
+    const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music), facts, 'Gemini linker', 0.8));
+    if (!text) return quiet();
+    const voiced = await pipelineFor(env).voice(owner, { title: 'Übergang', text, sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle,
+      { reserve: false, bed: stationSounds(config).bed });
+    await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+    return audio(voiced.audio, voiced.contentType);
+  } catch (error) {
+    console.error('linker failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown');
+    return quiet();
   }
 }
 
@@ -383,14 +450,27 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (url.searchParams.get('peek') !== '1') await store.touch(owner, new Date());
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
-    const sounds = config ? stationSounds(config) : { ident: false, hourChange: false };
+    const sounds = config ? stationSounds(config) : { ident: false, hourChange: false, linker: false };
+    const idents = Array.from({ length: IDENT_VARIANTS }, (_, variant) => `api/sounds/ident/${variant}.wav`);
     const mood = config && activeMood(config, new Date()) ? { mood: config.mood } : {};
     return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood,
-      sounds: { ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav' } : {}), ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}) } }, 200);
+      sounds: {
+        ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
+        ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),
+        ...(sounds.linker && env.GEMINI_API_KEY ? { linkerUrl: 'api/linker' } : {}),
+      } }, 200);
   }
-  if (url.pathname === '/api/sounds/ident.wav' || url.pathname === '/api/sounds/pips.wav') {
+  if (url.pathname === '/api/linker') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
-    const audio = url.pathname.endsWith('ident.wav') ? (identAudio ??= identJingle()) : (signalAudio ??= timeSignal());
+    return linker(env, store, owner, url);
+  }
+  const identMatch = url.pathname.match(/^\/api\/sounds\/ident(?:\/(\d))?\.wav$/);
+  if (identMatch || url.pathname === '/api/sounds/pips.wav' || url.pathname === '/api/sounds/news.wav') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const variant = Number(identMatch?.[1] ?? 0);
+    if (identMatch && variant >= IDENT_VARIANTS) return json({ error: 'not_found' }, 404);
+    const audio = identMatch ? (identAudio[variant] ??= identJingle(variant))
+      : url.pathname.endsWith('news.wav') ? (newsAudio ??= newsOpener()) : (signalAudio ??= timeSignal());
     return new Response(audio as BodyInit, { headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(audio.byteLength), 'Cache-Control': 'private, max-age=604800' } });
   }
   const hourMatch = url.pathname.match(/^\/api\/sounds\/hour\/(\d{1,2})$/);
@@ -738,6 +818,7 @@ export default {
   async scheduled(_controller: unknown, env: Environment, ctx: ExecutionContext) {
     const owner = env.ALLOWED_EMAIL?.toLowerCase();
     if (!owner) return;
+    ctx.waitUntil(pruneLinkers(env.AUDIO, new Date()).catch(() => { /* Cleanup is retried on the next run. */ }));
     ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
   },
 

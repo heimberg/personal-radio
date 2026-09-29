@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hourKey, hourText, identJingle, timeSignal } from '../server/sounds.ts';
+import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from '../server/sounds.ts';
 import { SpotifyCatalog } from '../server/music.ts';
 
 const header = (bytes: Uint8Array) => new TextDecoder().decode(bytes.slice(0, 4)) + new TextDecoder().decode(bytes.slice(8, 12));
 
 test('the ident and the time signal are valid mono WAV files of a few seconds, never clipping', () => {
-  for (const [audio, seconds] of [[identJingle(), 2.2], [timeSignal(), 3.8]] as const) {
+  for (const [audio, seconds] of [...Array.from({ length: IDENT_VARIANTS }, (_, n) => [identJingle(n), 2.2] as const), [newsOpener(), 2.6] as const, [timeSignal(), 3.8] as const]) {
     assert.equal(header(audio), 'RIFFWAVE');
     const view = new DataView(audio.buffer);
     assert.equal(view.getUint16(22, true), 1);
@@ -15,6 +15,7 @@ test('the ident and the time signal are valid mono WAV files of a few seconds, n
     for (let offset = 44; offset < audio.length; offset += 2) peak = Math.max(peak, Math.abs(view.getInt16(offset, true)));
     assert.ok(peak > 10_000 && peak < 32_767);
   }
+  assert.equal(new Set(Array.from({ length: IDENT_VARIANTS }, (_, n) => identJingle(n).join(','))).size, IDENT_VARIANTS);
   assert.equal(hourText(1, 'Radio Melchnau'), 'Es ist ein Uhr. Du hörst Radio Melchnau.');
   assert.equal(hourText(15, ' '), 'Es ist 15 Uhr.');
   assert.notEqual(hourKey(8, 'kerstin', 'Radio A'), hourKey(8, 'kerstin', 'Radio B'));

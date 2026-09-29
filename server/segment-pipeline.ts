@@ -2,7 +2,7 @@
 import { parseProfile, parseScript } from '../src/domain/program.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
 import type { VerificationPolicy } from '../src/domain/station.ts';
-import { normalizeSpeech } from './audio.ts';
+import { normalizeSpeech, withBed } from './audio.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 /** [hints]: the owner's extra instructions for the fact check; they may sharpen it, never loosen it. */
@@ -11,6 +11,8 @@ export interface VoicedAudio { audio: Uint8Array; contentType: 'audio/mpeg' | 'a
 export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number; mode: 'brief' | 'podcast' }
 export interface PodcastProviders { text: TextGenerator; speech: SpeechSynthesizer }
 export interface CharacterBudgetStore { reserve(ownerId: string, characters: number): Promise<void> }
+/** [reserve] false: the caller caps the cost itself (live transitions); [bed]: a soft music bed under short speech. */
+export interface VoiceOptions { reserve?: boolean; bed?: boolean }
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
@@ -134,15 +136,16 @@ export class SegmentPipeline {
   }
 
   /** Step 3: reserve the character budget, then synthesize. */
-  async voice(ownerId: string, script: Script, mode: 'brief' | 'podcast', voiceId?: string, style?: string): Promise<VoicedAudio> {
+  async voice(ownerId: string, script: Script, mode: 'brief' | 'podcast', voiceId?: string, style?: string, options: VoiceOptions = {}): Promise<VoicedAudio> {
     if (mode === 'podcast' && !this.podcast) throw new PipelineError('INVALID_INPUT');
     const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const characters = [...script.text].length;
-    await this.budget.reserve(ownerId, characters);
+    if (options.reserve !== false) await this.budget.reserve(ownerId, characters);
     const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
     // Mistral returns MP3; Gemini voices return WAV, which is brought to one speech level with trimmed edges.
     const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
-    return { audio: wav ? normalizeSpeech(audio) : audio, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
+    const level = wav ? normalizeSpeech(audio) : audio;
+    return { audio: wav && options.bed && mode === 'brief' ? withBed(level) : level, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
   }
 }

@@ -109,7 +109,10 @@ class PlaybackService : MediaLibraryService() {
         api = connection?.let { ApiClient(it) }
         spotify = SpotifyLink(this)
 
+        // Live transitions are written and voiced while the player waits for them: allow half a minute.
         val http = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
             .setDefaultRequestProperties(connection?.headers() ?: emptyMap())
             .setAllowCrossProtocolRedirects(false)
         dataSourceFactory = CacheDataSource.Factory()
@@ -185,7 +188,7 @@ class PlaybackService : MediaLibraryService() {
         while (firstUpcoming < player.mediaItemCount && Program.itemIdOf(player.getMediaItemAt(firstUpcoming).mediaId) == currentItem) firstUpcoming++
         val present = (firstUpcoming until player.mediaItemCount).map { Program.itemIdOf(player.getMediaItemAt(it).mediaId) }.distinct()
         if (queue.matches(present, wanted)) return
-        val newSteps = StationSound.withIdents(wanted, sounds.identUrl, before = currentItem?.let(known::get))
+        val newSteps = StationSound.withSounds(wanted, sounds, before = currentItem?.let(known::get))
         newSteps.forEach { steps[it.mediaId] = it }
         val ranOut = player.playbackState == Player.STATE_ENDED
         if (firstUpcoming < player.mediaItemCount) player.removeMediaItems(firstUpcoming, player.mediaItemCount)
@@ -199,7 +202,8 @@ class PlaybackService : MediaLibraryService() {
         } else if (player.playbackState == Player.STATE_IDLE) {
             player.prepare()
         }
-        prefetch(newSteps.filterIsInstance<SpeechStep>())
+        // Live transitions are not fetched ahead: the player loads each shortly before it airs, so it is made then.
+        prefetch(newSteps.filterIsInstance<SpeechStep>().filterNot { it.mediaId.endsWith(StationSound.LINK) })
     }
 
     /**
@@ -394,6 +398,8 @@ class PlaybackService : MediaLibraryService() {
             is SpeechStep -> connection!!.resolve(step.audioUrl)
             is TrackStep -> {
                 metadata.setDurationMs(step.durationMs)
+                // The album cover shows in the app, the notification and on the lock screen.
+                step.artworkUrl?.let { metadata.setArtworkUri(android.net.Uri.parse(it)) }
                 step.spotifyUri
             }
         }

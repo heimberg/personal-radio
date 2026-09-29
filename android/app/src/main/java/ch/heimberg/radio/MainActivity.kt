@@ -169,6 +169,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
         val metadata = player.mediaMetadata
         state.title = metadata.title?.toString() ?: ""
         state.show = metadata.artist?.toString() ?: ""
+        state.artworkUrl = metadata.artworkUri?.toString()
         state.playWhenReady = player.playWhenReady
         state.hasMedia = player.mediaItemCount > 0
         // Live while audio plays or is about to: the dot lights, the orb and the waveform move.

@@ -69,6 +69,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    // Album covers from Spotify's image CDN (no token is sent with them).
+    implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

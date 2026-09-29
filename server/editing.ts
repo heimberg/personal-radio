@@ -15,6 +15,8 @@ export interface StationContext {
   previous?: string;
   /** Music played right before: a good moment for the station ident. */
   afterMusic: boolean;
+  /** The host links the items live just before they air: the script starts straight with its subject. */
+  live?: boolean;
 }
 
 export interface ScriptEditor {
@@ -25,6 +27,7 @@ export interface ScriptEditor {
 // The style book, the jury's criteria and its bar (default 3.5) live in src/domain/agents.ts, editable by the owner.
 
 function contextPrompt(context: StationContext): string {
+  if (context.live) return ` Voraussichtliche Sendezeit: ${context.when}. Der Beitrag ist vorproduziert: nenne keine Uhrzeit, Tageszeit-Bezüge höchstens allgemein. Die Moderation leitet ihn live an; steig deshalb direkt ins Thema ein, ohne Begrüssung, ohne Rückbezug auf das Vorherige und ohne den Sender zu nennen. Schliesse ohne Ankündigung, was als Nächstes kommt.`;
   const bridge = context.previous ? ` Davor lief «${context.previous}»: steig mit höchstens einem Satz ein, der natürlich daran anschliesst, wenn es passt – erzwinge keine Verbindung.` : ' Es ist der Anfang des Programms.';
   const ident = context.afterMusic || !context.previous ? ` Nenne im ersten oder zweiten Satz den Sender «${context.stationName}» (Stationskennung), einmal und beiläufig.` : ' Nenne den Sender nicht.';
   return ` Voraussichtliche Sendezeit: ${context.when}. Der Beitrag ist vorproduziert: nenne keine Uhrzeit, Tageszeit-Bezüge höchstens allgemein.${bridge}${ident} Schliesse ohne Ankündigung, was als Nächstes kommt.`;

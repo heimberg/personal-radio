@@ -140,7 +140,7 @@ private fun NowRow(item: TimelineItem, state: RadioState) {
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            KindBadge(look.icon, look.kind, 40.dp)
+            Cover(look, state.coverUrl.takeIf { item.id == state.currentItemId } ?: item.coverUrl, 48.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -194,7 +194,7 @@ fun ItemRow(item: TimelineItem, start: Instant?, onTap: () -> Unit, onLongPress:
         Box(Modifier.width(3.dp).height(40.dp).background(Nocturne.kind(look.kind), RoundedCornerShape(2.dp)))
         Spacer(Modifier.width(10.dp))
         Text(timeLabel ?: start?.let(clock::format) ?: "", style = MaterialTheme.typography.labelMedium, color = Nocturne.text, modifier = Modifier.width(42.dp))
-        KindBadge(look.icon, look.kind, 34.dp)
+        Cover(look, item.coverUrl, 40.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(look.kind.label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.kindLabel(look.kind))

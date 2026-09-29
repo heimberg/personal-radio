@@ -52,6 +52,8 @@ class RadioState {
     var durationMs by mutableLongStateOf(0L)
     var currentItemId by mutableStateOf<String?>(null)
     var sleepLabel by mutableStateOf<String?>(null)
+    /** The playing song's album cover, from the player's metadata. */
+    var artworkUrl by mutableStateOf<String?>(null)
 
     // The program, from the Worker.
     var open by mutableStateOf<List<TimelineItem>>(emptyList())
@@ -96,6 +98,8 @@ class RadioState {
     val sections: ProgramSections get() = ProgramSections.of(open, currentItemId)
     val current: TimelineItem? get() = open.firstOrNull { it.id == currentItemId }
     val look: Look? get() = current?.let(Looks::of)
+    /** The cover of what plays: the song's album, else the item's first album, else none (the kind's tile). */
+    val coverUrl: String? get() = artworkUrl ?: current?.coverUrl
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val readyCount: Int get() = open.count { it.isPlayable }
 

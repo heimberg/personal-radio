@@ -186,7 +186,7 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
             Spacer(Modifier.weight(1f))
             Text(if (state.live) "LIVE" else "", style = MaterialTheme.typography.labelSmall, color = tint)
         }
-        Orb(state.live, tint, Modifier.padding(vertical = 8.dp).size(132.dp))
+        Cover(look, state.coverUrl, 148.dp, Modifier.padding(vertical = 10.dp))
         Text(
             state.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center,
             maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -296,7 +296,7 @@ private fun NextCard(item: TimelineItem, state: RadioState, actions: RadioAction
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        KindBadge(look.icon, look.kind, 44.dp)
+        Cover(look, item.coverUrl, 52.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(

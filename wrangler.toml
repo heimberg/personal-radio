@@ -41,7 +41,7 @@ crons = ["*/10 * * * *"]
 # Nothing is set here: values in a [vars] block would overwrite the dashboard on every deploy,
 # while keep_vars = true keeps everything that is not defined in this file.
 # Optional variables and their defaults in the code:
-#   DAILY_GENERATIONS 24 · DAILY_FEED_REQUESTS 60 · DAILY_TTS_CHARACTERS 12000
+#   DAILY_GENERATIONS 24 · DAILY_FEED_REQUESTS 60 · DAILY_TTS_CHARACTERS 12000 · DAILY_LINKERS 40
 #   GEMINI_TEXT_MODEL gemini-3.8-flash · GEMINI_RESEARCH_MODEL = GEMINI_TEXT_MODEL · GEMINI_TTS_MODEL gemini-3.8-flash-tts
 #   GEMINI_VOICE_A Kore · GEMINI_VOICE_B Puck · MISTRAL_TTS_MODEL voxtral-mini-tts-2603 · MISTRAL_VOICE_ID (none)
 #   ASK_BASE_URL, ASK_MODEL, ASK_API_KEY: all three set enables ASK; otherwise Gemini writes and verifies.
