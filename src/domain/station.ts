@@ -117,6 +117,8 @@ export interface StationConfig {
   agents?: AgentConfig;
   /** Station sound in the app: an ident jingle between music and speech, the time signal at the full hour. Missing: both on. */
   sounds?: StationSounds;
+  /** How often the planner mixes in surprises (0–100); missing means 25, about one an hour. */
+  surprise?: number;
 }
 
 export interface StationSounds { ident: boolean; hourChange: boolean }
@@ -130,6 +132,8 @@ export type TimelinePartView =
   | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number };
 export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
+  /** 🎲 a surprise the planner mixed in; it can be swapped for another one. */
+  surprise?: boolean;
   /** Overall mark (1–5) of the quality jury, for spoken items that went through the final edit. */
   quality?: number;
   id: string;
@@ -363,6 +367,11 @@ export function parseStationConfig(raw: unknown): StationConfig {
   }
 
   const agents = parseAgentConfig(c.agents, fail);
+  let surprise: number | undefined;
+  if (c.surprise !== undefined && c.surprise !== null) {
+    surprise = Number(c.surprise);
+    if (typeof c.surprise !== 'number' || !Number.isInteger(surprise) || surprise < 0 || surprise > 100) fail('surprise', 'ganze Zahl von 0 bis 100');
+  }
   let sounds: StationSounds | undefined;
   if (c.sounds !== undefined && c.sounds !== null) {
     const s = record(c.sounds, 'sounds');
@@ -370,7 +379,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     if (typeof s.hourChange !== 'boolean') fail('sounds.hourChange', 'true oder false');
     sounds = { ident: s.ident as boolean, hourChange: s.hourChange as boolean };
   }
-  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}) };
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}) };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */

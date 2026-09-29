@@ -23,6 +23,8 @@ data class TimelineItem(
     /** Artist hour: spoken parts and Spotify tracks in playing order. */
     val parts: List<TimelinePart> = emptyList(),
     val artist: String? = null,
+    /** 🎲 A surprise the planner mixed in; it can be swapped for another one. */
+    val surprise: Boolean = false,
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }

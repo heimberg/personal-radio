@@ -23,7 +23,7 @@ object TimelineRows {
         val accent = ContextCompat.getColor(context, R.color.accent_300)
         row.findViewById<TextView>(R.id.time).text = time
         row.findViewById<TextView>(R.id.title).apply {
-            text = item.displayTitle
+            text = if (item.surprise) "🎲 ${item.displayTitle}" else item.displayTitle
             setTextColor(if (playing) accent else ContextCompat.getColor(context, R.color.text))
         }
         val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · " + context.getString(R.string.spotify_tracks, it) } ?: ""

@@ -50,6 +50,8 @@ export function Timeline({ config, items, failures, refresh }: Props) {
   };
   const remove = (item: TimelineItemView) => run(async () => { await post(`api/timeline/${item.id}/remove`); return `«${item.title ?? item.showName}» entfernt.`; },
     'Entfernen fehlgeschlagen.');
+  const swap = (item: TimelineItemView) => run(async () => { await post(`api/timeline/${item.id}/swap`); return 'Andere Überraschung eingeplant.'; },
+    'Tauschen fehlgeschlagen.');
   const shuffle = () => run(async () => {
     const result = await post<{ added?: number }>('api/timeline/shuffle');
     return `Programm gemischt${result.added ? `, ${result.added} Songs ergänzt` : ''}.`;
@@ -105,7 +107,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
           onDragOver={event => { if (movable && dragged) event.preventDefault(); }} onDrop={() => dropOn(item.id)}>
         <span className="timeline-time">{clockTime(item.plannedAt)}</span>
         <div className={`timeline-body ${item.showId === MUSIC_SHOW_ID ? 'song' : ''}`}>
-          <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.title ?? item.showName}</strong>
+          <strong>{item.showId === MUSIC_SHOW_ID ? '♫ ' : ''}{item.surprise ? <span className="surprise" title="Überraschung">🎲 </span> : null}{item.title ?? item.showName}</strong>
           <span className="meta"><span className={`state state-${item.state}`}>{STATE_LABELS[item.state]}</span>{item.showName}{item.verification ? ` · ${VERIFICATION_LABELS[item.verification]}` : ''}{item.quality ? ` · ★ ${item.quality.toLocaleString('de-CH')}` : ''}</span>
           {item.error && item.state !== 'ready' && <span className="timeline-error">
             {item.updatedAt ? `${clockTime(item.updatedAt)} · ` : ''}{errorLabel(item.error)}{item.state === 'planned' || item.state === 'voicing' ? ' – wird später erneut versucht.' : ''}</span>}
@@ -120,6 +122,7 @@ export function Timeline({ config, items, failures, refresh }: Props) {
         {movable && <div className="item-tools" role="group" aria-label={`${item.title ?? item.showName} verschieben`}>
           <button aria-label="Nach oben" disabled={busy || index === 0} onClick={() => move(item.id, -1)}>↑</button>
           <button aria-label="Nach unten" disabled={busy || index === order.length - 1} onClick={() => move(item.id, 1)}>↓</button>
+          {item.surprise && <button aria-label="Andere Überraschung" title="Andere Überraschung" disabled={busy} onClick={() => void swap(item)}>🎲</button>}
           <button aria-label="Entfernen" disabled={busy} onClick={() => void remove(item)}>×</button>
         </div>}
       </li>; })}</ol>}

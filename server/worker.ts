@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, swapSurprise, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -242,7 +242,7 @@ function stationDeps(env: Environment): StationDeps {
     fetchFeed: url => fetchFeed(url),
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
     reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
-    podcastAvailable: Boolean(env.GEMINI_API_KEY), now: () => new Date(),
+    podcastAvailable: Boolean(env.GEMINI_API_KEY), now: () => new Date(), random: Math.random,
     generator: (provider, format) => {
       const providers = providersFor(env);
       if (provider === 'ask') return format === 'brief' ? providers.ask : undefined;
@@ -527,13 +527,21 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|remove|delete|script)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|swap|remove|delete|script)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
   if (match[2] === 'script') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json(transcriptView(row, await store.getConfig(owner)), 200);
+  }
+  if (match[2] === 'swap') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const itemId = await swapSurprise(stationDeps(env), owner, row.id);
+    if (!itemId) return json({ error: 'not_swappable' }, 409);
+    await env.PRODUCTION.send({ owner, itemId });
+    return json({ itemId }, 200);
   }
   if (match[2] === 'more') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);

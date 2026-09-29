@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultStationConfig, parseStationConfig } from '../src/domain/station.ts';
 import type { EditorialDirection, Script, Source } from '../src/domain/program.ts';
-import { BLOCKS, blockViews } from '../src/domain/blocks.ts';
+import { BLOCKS, blockViews, drawSurprise } from '../src/domain/blocks.ts';
 import { StationStore } from '../server/station-store.ts';
-import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, tick, toView } from '../server/station.ts';
+import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, swapSurprise, tick, toView } from '../server/station.ts';
 import { briefSystemPrompt } from '../server/providers.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
@@ -165,4 +165,37 @@ test('pre-produced items: time of day of the expected air time, no clock time, a
   assert.equal((await h.store.getItem('o', weather))!.state, 'archived');
   assert.equal((await h.store.getItem('o', discovery))!.state, 'ready');
   assert.match(briefSystemPrompt(undefined), /vorproduziert und läuft später: nenne keine Uhrzeit/);
+});
+
+test('🎲 surprises: the planner mixes them in by the level, «Überraschung» draws one, «Anderes» swaps it in place', async () => {
+  const base = station();
+  // Level 0: never. Level 100 with a low draw: the turn becomes a surprise, and songs still follow it.
+  const draws = (...values: number[]) => { let index = 0; return () => values[index++ % values.length]; };
+  const plan = (surprise: number, random: () => number) => planTimeline({ ...base, surprise, music: { ...base.music, between: 1 } }, [], null, NOW, (() => { let n = 0; return () => `p${++n}`; })(), [], random);
+  assert.ok(plan(0, draws(0)).every(item => !item.showId.startsWith('_block:') || !BLOCKS.find(block => `_block:${block.id}` === item.showId)?.surprise));
+  const planned = plan(100, draws(0.1, 0.0));
+  assert.ok(BLOCKS.find(block => `_block:${block.id}` === planned[0].showId)?.surprise);
+  assert.equal(planned[1].showId, '_musik');
+  // The draw: regional only with a location, a whole hour only from level 50, never the kind just played.
+  const noPlace = parseStationConfig({ ...defaultStationConfig({ timezone: 'Europe/Zurich' }), surprise: 25 });
+  for (let i = 0; i < 40; i++) {
+    const block = drawSurprise(noPlace, () => i / 40, '_block:zufallsfund');
+    assert.ok(block.id !== 'um-die-ecke' && block.id !== 'ueberraschungsstunde' && block.id !== 'zufallsfund');
+  }
+  assert.throws(() => parseStationConfig({ ...base, surprise: 101 }), /surprise/);
+
+  const h = harness(parseStationConfig({ ...base, surprise: 25 })); await h.setup();
+  h.deps.random = () => 0;
+  const first = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
+  const surprise = (await addBlock(h.deps, 'o', 'ueberraschung', undefined, first))!;
+  const second = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
+  const row = (await h.store.getItem('o', surprise))!;
+  assert.equal(toView(row, null).surprise, true);
+  assert.equal(await swapSurprise(h.deps, 'o', first), null);
+  const swapped = (await swapSurprise(h.deps, 'o', surprise))!;
+  assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, swapped, second]);
+  assert.notEqual((await h.store.getItem('o', swapped))!.show_id, row.show_id);
+  assert.equal((await h.store.getItem('o', surprise))!.state, 'expired');
+  assert.ok(blockViews(base).some(view => view.id === 'ueberraschung'));
+  assert.ok(!blockViews(base).some(view => view.id === 'zufallsfund'));
 });
