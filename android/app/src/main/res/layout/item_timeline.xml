@@ -14,19 +14,46 @@
     android:paddingEnd="@dimen/space_1"
     android:paddingBottom="@dimen/space_3">
 
+    <!-- The colour of the item's kind, as a thin bar at the start. -->
+    <View
+        android:id="@+id/kind_bar"
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="@dimen/space_2" />
+
     <TextView
         android:id="@+id/time"
         style="@style/Widget.PersonalRadio.Text.Meta"
-        android:layout_width="34dp"
-        android:layout_height="wrap_content" />
+        android:layout_width="38dp"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text" />
+
+    <TextView
+        android:id="@+id/kind_icon"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginStart="@dimen/space_2"
+        android:gravity="center"
+        android:importantForAccessibility="no"
+        android:textSize="15sp" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/space_4"
+        android:layout_marginStart="@dimen/space_3"
         android:layout_marginEnd="@dimen/space_4"
         android:layout_weight="1"
         android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/kind_label"
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.08"
+            android:textAllCaps="true"
+            android:textSize="10sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/title"

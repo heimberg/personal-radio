@@ -6,9 +6,19 @@
     android:layout_marginEnd="@dimen/space_2"
     android:background="@drawable/card_background"
     android:foreground="?attr/selectableItemBackground"
-    android:minHeight="76dp"
+    android:minHeight="104dp"
     android:orientation="vertical"
     android:padding="@dimen/space_3">
+
+    <!-- The block's icon on a badge in the colour of its kind. -->
+    <TextView
+        android:id="@+id/icon"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginBottom="@dimen/space_2"
+        android:gravity="center"
+        android:importantForAccessibility="no"
+        android:textSize="18sp" />
 
     <TextView
         android:id="@+id/name"

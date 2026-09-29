@@ -288,3 +288,19 @@ class StationSoundTest {
         assertFalse(signal.due(9, 40))
     }
 }
+
+class LooksTest {
+    @Test
+    fun kindsFollowTheWebCockpit() {
+        fun item(showId: String, music: Boolean = false, surprise: Boolean = false) = TimelineItem("i", 1, showId, "S", "2026-09-29T08:00:00Z", "ready", 2.0, surprise = surprise,
+            parts = if (music) listOf(TimelinePart(kind = "track", spotifyUri = "spotify:track:1")) else emptyList())
+        assertEquals(Look(Kind.MUSIC, "🎶"), Looks.of(item("_musik", music = true)))
+        assertEquals(Look(Kind.WEATHER, "☀️"), Looks.of(item("_block:wetter")))
+        assertEquals(Kind.SURPRISE, Looks.of(item("_block:zufallsfund", surprise = true)).kind)
+        assertEquals(Kind.MUSIC, Looks.of(item("eigene-stunde", music = true)).kind)
+        assertEquals(Kind.DISCOVER, Looks.of(item("entdecken")).kind)
+        assertEquals(Kind.SURPRISE, Looks.ofBlock(BlockView("ueberraschung", "Überraschung", "")).kind)
+        assertEquals(Kind.MUSIC, Looks.ofBlock(BlockView("show:x", "X", "", music = true)).kind)
+        assertEquals(0xFFD06BD8.toInt(), Kind.MUSIC.argb.toInt())
+    }
+}

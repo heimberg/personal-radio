@@ -30,8 +30,18 @@ class OrbView @JvmOverloads constructor(context: Context, attrs: AttributeSet? =
     private val outerRing = color(R.color.accent_800)
     private val innerRing = color(R.color.accent_700)
     private val highlight = color(R.color.accent_300)
-    private val lit = color(R.color.accent)
-    private val litGlow = color(R.color.accent_600)
+    private var lit = color(R.color.accent)
+    private var litGlow = color(R.color.accent_600)
+
+    /** The colour of the playing item's kind; null for the station's own accent. */
+    var tint: Int? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            lit = value ?: color(R.color.accent)
+            litGlow = value?.let { androidx.core.graphics.ColorUtils.blendARGB(it, Color.BLACK, 0.3f) } ?: color(R.color.accent_600)
+            invalidate()
+        }
     private val deep = color(R.color.accent_800)
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE

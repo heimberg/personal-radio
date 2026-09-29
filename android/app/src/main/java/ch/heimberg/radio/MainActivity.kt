@@ -33,6 +33,8 @@ import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.FeedbackReason
+import ch.heimberg.radio.core.Look
+import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -52,6 +54,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var showView: TextView
     private lateinit var liveDot: View
     private lateinit var orb: OrbView
+    private lateinit var playerCard: View
+    private lateinit var kindView: TextView
     private lateinit var progress: WaveformView
     private lateinit var timeView: TextView
     private lateinit var playPause: MaterialButton
@@ -97,6 +101,8 @@ class MainActivity : AppCompatActivity() {
         showView = findViewById(R.id.show)
         liveDot = findViewById(R.id.live_dot)
         orb = findViewById(R.id.orb)
+        playerCard = findViewById(R.id.player_card)
+        kindView = findViewById(R.id.kind)
         progress = findViewById(R.id.progress)
         timeView = findViewById(R.id.time)
         playPause = findViewById(R.id.play_pause)
@@ -317,6 +323,7 @@ class MainActivity : AppCompatActivity() {
         if (playingItem != currentItemId) {
             currentItemId = playingItem
             renderUpcoming()
+            renderLook(upcomingItems.firstOrNull { it.id == playingItem }?.let(Looks::of))
         }
         renderProgress(player)
         statusView.text = getString(
@@ -328,6 +335,17 @@ class MainActivity : AppCompatActivity() {
                 else -> R.string.status_paused
             },
         )
+    }
+
+    /** The player card, orb and waveform take the colour of the playing item's kind. */
+    private fun renderLook(look: Look?) {
+        playerCard.background = KindStyle.tile(this, look?.kind, radiusDp = 20f)
+        val tint = KindStyle.color(look?.kind, this)
+        orb.tint = tint
+        progress.tint = tint
+        kindView.text = look?.let { "${it.icon}  ${it.kind.label}" } ?: ""
+        kindView.visibility = if (look == null) View.GONE else View.VISIBLE
+        kindView.background = look?.let { KindStyle.badge(this, it.kind, cornerDp = 999f) }
     }
 
     private fun togglePlayback() {
@@ -447,6 +465,12 @@ class MainActivity : AppCompatActivity() {
         row.removeAllViews()
         for (block in blocks) {
             row.addView(layoutInflater.inflate(R.layout.item_block, row, false).apply {
+                val look = Looks.ofBlock(block)
+                background = KindStyle.tile(context, look.kind)
+                findViewById<TextView>(R.id.icon).apply {
+                    text = look.icon
+                    background = KindStyle.badge(context, look.kind)
+                }
                 findViewById<TextView>(R.id.name).text = if (block.music) "${block.name} ♫" else block.name
                 findViewById<TextView>(R.id.description).text = block.description
                 contentDescription = "${block.name}: ${block.description}"
@@ -502,6 +526,7 @@ class MainActivity : AppCompatActivity() {
                 // All open items: a new order always covers the whole program.
                 upcomingItems = timeline.items.filter { it.isOpen }
                 renderUpcoming()
+                renderLook(upcomingItems.firstOrNull { it.id == currentItemId }?.let(Looks::of))
             }
             .onFailure {
                 // The access diagnosis says which layer refused (Access or the Worker) and why.
