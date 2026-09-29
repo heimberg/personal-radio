@@ -58,22 +58,38 @@ object Program {
 }
 
 /**
- * The station ident: a short jingle before a spoken item that follows music (a song, an hour or a
- * block). [before] is the item playing now, so the first new item is judged too. The jingle is a step
- * of the item it introduces (`<item id>#ident`), never its last one.
+ * The station's sound around each item, in the order a radio plays it:
+ * - after music, before a spoken item: a station jingle (one of several variants, fixed per item);
+ * - before every spoken item: the host's live transition, written and voiced by the Worker when the
+ *   player loads it (`linker?after=<previous>&next=<item>`), so it knows what really ran before;
+ * - before news: the news opener instead of the jingle, right after the transition.
+ * [before] is the item playing now, so the first new item is judged too. Every sound is a step of the
+ * item it introduces (`<item id>#ident`, `#link`, `#news`), never its last one.
  */
 object StationSound {
-    fun withIdents(items: List<TimelineItem>, identUrl: String?, before: TimelineItem?, stationName: String = ""): List<Step> {
+    fun withSounds(items: List<TimelineItem>, sounds: StationSounds, before: TimelineItem?, stationName: String = ""): List<Step> {
         var previous = before
         return items.flatMap { item ->
             val steps = Program.steps(item)
-            val ident = identUrl != null && previous?.hasMusic == true && !item.hasMusic && steps.isNotEmpty()
+            val after = previous
             previous = item
-            if (ident) listOf(SpeechStep(item.id, "${item.id}$IDENT", identUrl!!, stationName.ifBlank { item.showName }, item.showName, last = false)) + steps else steps
+            if (steps.isEmpty() || item.hasMusic) return@flatMap steps
+            val name = stationName.ifBlank { item.showName }
+            val news = Looks.of(item).kind == Kind.NEWS && sounds.newsUrl != null
+            val ident = sounds.identFor(item.id)?.takeIf { !news && after?.hasMusic == true }
+                ?.let { SpeechStep(item.id, "${item.id}$IDENT", it, name, item.showName, last = false) }
+            val link = sounds.linkerUrl?.let { url ->
+                val query = (after?.let { "after=${it.id}&" } ?: "") + "next=${item.id}"
+                SpeechStep(item.id, "${item.id}$LINK", "$url?$query", name, item.showName, last = false)
+            }
+            val opener = sounds.newsUrl?.takeIf { news }?.let { SpeechStep(item.id, "${item.id}$NEWS", it, name, item.showName, last = false) }
+            listOfNotNull(ident, link, opener) + steps
         }
     }
 
     const val IDENT = "#ident"
+    const val LINK = "#link"
+    const val NEWS = "#news"
 }
 
 /**

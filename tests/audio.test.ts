@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSpeech, speechLevel } from '../server/audio.ts';
+import { normalizeSpeech, speechLevel, withBed } from '../server/audio.ts';
 import { pcmToWav } from '../server/providers.ts';
 
 /** A quiet 440 Hz tone framed by a second of silence on both sides, as 16-bit mono PCM at 24 kHz. */
@@ -33,4 +33,21 @@ test('audio that is not 16-bit PCM WAV passes unchanged', () => {
   assert.equal(normalizeSpeech(mp3), mp3);
   const silent = pcmToWav(new Uint8Array(48_000), 24_000);
   assert.equal(normalizeSpeech(silent), silent);
+});
+
+test('a short moderation gets a soft bed that starts before the voice and fades out after it; long speech stays dry', () => {
+  const speech = normalizeSpeech(quietTone(0.3, 2));
+  const bedded = withBed(speech);
+  const seconds = (bytes: Uint8Array) => (bytes.length - 44) / 2 / 24_000;
+  assert.ok(Math.abs(seconds(bedded) - seconds(speech) - 2.2) < 0.01, `${seconds(bedded)} s with bed`);
+  // The voice keeps its level; the lead-in alone is quiet but audible, well below the speech.
+  const voice = pcmToWav(bedded.slice(44 + 2 * 24_000, 44 + 2 * 48_000)), dry = pcmToWav(speech.slice(44 + 2 * 9_600, 44 + 2 * 33_600));
+  assert.ok(Math.abs(speechLevel(voice)! - speechLevel(dry)!) < 0.5);
+  const lead = pcmToWav(bedded.slice(44 + 2 * 2_400, 44 + 2 * 12_000));
+  const leadLevel = speechLevel(lead)!;
+  assert.ok(leadLevel < -30 && leadLevel > -44, `bed at ${leadLevel} dBFS`);
+  const long = normalizeSpeech(quietTone(0.3, 80));
+  assert.equal(withBed(long), long);
+  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]);
+  assert.equal(withBed(mp3), mp3);
 });

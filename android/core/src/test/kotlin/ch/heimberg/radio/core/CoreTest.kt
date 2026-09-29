@@ -293,12 +293,32 @@ class StationSoundTest {
         audioUrl = if (music) null else "api/timeline/$id/audio",
         parts = if (music) listOf(TimelinePart(kind = "track", spotifyUri = "spotify:track:1", title = "T", artist = "A", durationMs = 1000)) else emptyList())
 
+    private fun news(id: String) = item(id, false).copy(showId = "_block:schlagzeilen")
+
     @Test
     fun identPrecedesSpeechAfterMusicOnly() {
-        val steps = StationSound.withIdents(listOf(item("a", false), item("b", true), item("c", false)), "api/sounds/ident.wav", before = item("x", true), stationName = "Radio")
+        val sounds = StationSounds(identUrl = "api/sounds/ident.wav")
+        val steps = StationSound.withSounds(listOf(item("a", false), item("b", true), item("c", false)), sounds, before = item("x", true), stationName = "Radio")
         assertEquals(listOf("a#ident", "a", "b#0", "c#ident", "c"), steps.map { it.mediaId })
         assertFalse(steps.first().last)
-        assertEquals(listOf("a", "b#0", "c"), StationSound.withIdents(listOf(item("a", false), item("b", true), item("c", false)), null, item("x", true)).map { it.mediaId })
+        assertEquals(listOf("a", "b#0", "c"), StationSound.withSounds(listOf(item("a", false), item("b", true), item("c", false)), StationSounds(), item("x", true)).map { it.mediaId })
+    }
+
+    @Test
+    fun liveTransitionBeforeEverySpokenItemAndOpenerBeforeNews() {
+        val sounds = StationSounds(identUrls = listOf("api/sounds/ident/0.wav", "api/sounds/ident/1.wav"), newsUrl = "api/sounds/news.wav", linkerUrl = "api/linker")
+        val steps = StationSound.withSounds(listOf(item("a", false), item("b", true), news("c"), item("d", false)), sounds, before = null)
+        assertEquals(listOf("a#link", "a", "b#0", "c#link", "c#news", "c", "d#link", "d"), steps.map { it.mediaId })
+        val urls = steps.filterIsInstance<SpeechStep>().associate { it.mediaId to it.audioUrl }
+        assertEquals("api/linker?next=a", urls["a#link"])
+        assertEquals("api/linker?after=b&next=c", urls["c#link"])
+        assertEquals("api/linker?after=c&next=d", urls["d#link"])
+        assertTrue(steps.filter { it.mediaId.contains('#') && !it.mediaId.contains("#0") }.none { it.last })
+        // After music the jingle comes first; each item keeps its variant.
+        val afterMusic = StationSound.withSounds(listOf(item("e", false)), sounds, before = item("x", true))
+        assertEquals(listOf("e#ident", "e#link", "e"), afterMusic.map { it.mediaId })
+        assertEquals(sounds.identFor("e"), (afterMusic.first() as SpeechStep).audioUrl)
+        assertEquals(sounds.identFor("e"), sounds.identFor("e"))
     }
 
     @Test

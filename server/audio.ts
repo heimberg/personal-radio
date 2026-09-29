@@ -101,3 +101,56 @@ export function speechLevel(bytes: Uint8Array): number | null {
   }
   return count ? db(Math.sqrt(squares / count)) : null;
 }
+
+/** The bed sits this far below the speech level; only short moderations get one. */
+const BED_DB = TARGET_DB - 15;
+const BED_MAX_SECONDS = 75;
+const BED_LEAD = 0.6, BED_TAIL = 1.6;
+/** A warm, open chord (F major seventh); each voice slowly breathes and is gently detuned. */
+const BED_CHORD = [174.61, 220, 261.63, 329.63];
+const SINE_SIZE = 8192, SINE_MASK = SINE_SIZE - 1;
+const SINE = Float32Array.from({ length: SINE_SIZE }, (_, index) => Math.sin(2 * Math.PI * index / SINE_SIZE));
+
+/**
+ * Lays a soft synthesised pad under a spoken 16-bit PCM WAV: it starts a moment before the voice and
+ * fades out after it. Longer speech, and anything that is not such a WAV, is returned unchanged.
+ */
+export function withBed(bytes: Uint8Array): Uint8Array {
+  const wav = readWav(bytes);
+  if (!wav || !wav.samples.length) return bytes;
+  const { samples, channels, sampleRate } = wav;
+  const frames = Math.floor(samples.length / channels);
+  if (frames / sampleRate > BED_MAX_SECONDS) return bytes;
+  const lead = Math.round(BED_LEAD * sampleRate), tail = Math.round(BED_TAIL * sampleRate), total = lead + frames + tail;
+  const bed = new Float32Array(total);
+  // Oscillators read a sine table with phase accumulators: a minute of pad costs a few milliseconds.
+  const step = (frequency: number) => frequency / sampleRate * SINE_SIZE;
+  BED_CHORD.forEach((frequency, voice) => {
+    const oscillators = [step(frequency), step(frequency + 0.6), step(2 * frequency)], gains = [0.5, 0.5, 0.075];
+    const phases = [0, voice * 311, voice * 97];
+    const breath = step(0.07 + voice * 0.023);
+    let breathPhase = voice * 1.7 / (2 * Math.PI) * SINE_SIZE;
+    for (let i = 0; i < total; i++) {
+      let value = 0;
+      for (let o = 0; o < 3; o++) { value += gains[o] * SINE[phases[o] & SINE_MASK]; phases[o] += oscillators[o]; }
+      bed[i] += (0.65 + 0.35 * SINE[breathPhase & SINE_MASK]) * value;
+      breathPhase += breath;
+    }
+  });
+  let squares = 0;
+  for (let i = 0; i < total; i++) squares += bed[i] ** 2;
+  const scale = 10 ** (BED_DB / 20) / Math.sqrt(squares / total || 1);
+  const out = new Int16Array(total * channels);
+  for (let i = 0; i < total; i++) {
+    const fade = Math.min(1, i / lead, (total - i) / tail);
+    const pad = bed[i] * scale * fade * fade;
+    for (let c = 0; c < channels; c++) {
+      const index = i - lead, voice = index >= 0 && index < frames ? samples[index * channels + c] / 32768 : 0;
+      let x = voice + pad;
+      const knee = 0.8, magnitude = Math.abs(x);
+      if (magnitude > knee) x = Math.sign(x) * (knee + (1 - knee) * Math.tanh((magnitude - knee) / (1 - knee)));
+      out[i * channels + c] = Math.max(-32768, Math.min(32767, Math.round(x * 32767)));
+    }
+  }
+  return writeWav(wav, out);
+}

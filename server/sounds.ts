@@ -30,11 +30,38 @@ function normalized(out: Float32Array, peak: number): Float32Array {
   return out.map(sample => sample / max * peak);
 }
 
-/** Four rising notes and a soft chord, about two seconds. */
-export function identJingle(): Uint8Array {
+/**
+ * The station's jingles: one bell voice and one key family, so every variant sounds like the same station.
+ * Each is a short motif landing on a soft chord, about two seconds.
+ */
+const IDENTS: Array<{ motif: number[]; spacing: number; chord: number[]; chordAt: number }> = [
+  { motif: [392, 523.25, 659.25, 783.99], spacing: 0.16, chord: [523.25, 659.25, 783.99, 1046.5], chordAt: 0.7 },
+  { motif: [783.99, 659.25, 783.99, 1046.5], spacing: 0.14, chord: [523.25, 783.99, 1046.5, 1318.5], chordAt: 0.62 },
+  { motif: [659.25, 523.25], spacing: 0.3, chord: [392, 523.25, 659.25, 987.77], chordAt: 0.62 },
+  { motif: [523.25, 587.33, 659.25, 783.99, 880], spacing: 0.1, chord: [440, 523.25, 659.25, 880], chordAt: 0.58 },
+];
+export const IDENT_VARIANTS = IDENTS.length;
+
+export function identJingle(variant = 0): Uint8Array {
+  const { motif, spacing, chord, chordAt } = IDENTS[Math.abs(Math.trunc(variant)) % IDENTS.length];
   const out = new Float32Array(Math.round(2.2 * RATE));
-  [392, 523.25, 659.25, 783.99].forEach((frequency, index) => note(out, index * 0.16, frequency, 1.6, 0.5, 0.45));
-  [523.25, 659.25, 783.99, 1046.5].forEach(frequency => note(out, 0.7, frequency, 1.5, 0.28, 0.7));
+  motif.forEach((frequency, index) => note(out, index * spacing, frequency, 1.6, 0.5, 0.45));
+  chord.forEach(frequency => note(out, chordAt, frequency, 1.5, 0.28, 0.7));
+  return wav(normalized(out, 0.7));
+}
+
+/** The news opener: a ticking pulse over a rising low tone, closed by a firm chord; about 2.6 seconds. */
+export function newsOpener(): Uint8Array {
+  const out = new Float32Array(Math.round(2.6 * RATE));
+  // The pulse: eight short ticks, the accent on every fourth.
+  for (let tick = 0; tick < 8; tick++) note(out, tick * 0.13, tick % 4 === 0 ? 1318.5 : 880, 0.09, tick % 4 === 0 ? 0.35 : 0.22, 0.03);
+  // The low tone swells under the ticks.
+  const swell = Math.round(1.1 * RATE);
+  for (let i = 0; i < swell; i++) {
+    const t = i / RATE, level = 0.18 * (t / 1.1) ** 2 * Math.min(1, (swell - i) / (0.05 * RATE));
+    out[i] += level * (Math.sin(2 * Math.PI * 146.83 * t) + 0.4 * Math.sin(4 * Math.PI * 146.83 * t));
+  }
+  [293.66, 440, 587.33, 698.46].forEach(frequency => note(out, 1.08, frequency, 1.5, 0.3, 0.5));
   return wav(normalized(out, 0.7));
 }
 

@@ -125,10 +125,19 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('dislike');
     // Station sound: the timeline names the sounds; jingle and time signal are generated, the hour is spoken once and kept.
     const sounds = ((await (await call('/api/timeline')).json()) as { sounds: Record<string, string> }).sounds;
-    assert.deepEqual(sounds, { identUrl: 'api/sounds/ident.wav', signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' });
+    // Without Gemini there are no live transitions: the timeline offers none, the route answers with silence.
+    assert.deepEqual(sounds, { identUrl: 'api/sounds/ident.wav', identUrls: [0, 1, 2, 3].map(n => `api/sounds/ident/${n}.wav`), newsUrl: 'api/sounds/news.wav',
+      signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' });
     const ident = await call('/api/sounds/ident.wav');
     assert.equal(ident.headers.get('Content-Type'), 'audio/wav');
     assert.ok((await ident.arrayBuffer()).byteLength > 40_000);
+    assert.equal((await call('/api/sounds/ident/3.wav')).status, 200);
+    assert.equal((await call('/api/sounds/ident/4.wav')).status, 404);
+    assert.equal((await call('/api/sounds/news.wav')).headers.get('Content-Type'), 'audio/wav');
+    assert.equal((await call('/api/linker?next=no%20id')).status, 400);
+    const quiet = await call(`/api/linker?after=${items[0].id}&next=${items[1].id}`);
+    assert.equal(quiet.headers.get('Content-Type'), 'audio/wav');
+    assert.equal((await quiet.arrayBuffer()).byteLength, 44 + 2 * Math.round(22_050 / 4));
     assert.equal((await call('/api/sounds/hour/24')).status, 404);
     const hour = await call('/api/sounds/hour/8');
     assert.equal(hour.status, 200);
@@ -236,6 +245,16 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.equal(items[0].state, 'ready'); assert.equal(items[0].title, 'Start 2027');
     assert.deepEqual(items[0].searchQueries, ['sonde 2027']);
     assert.deepEqual(items[0].sources, [{ title: 'example.org', url: 'https://example.org/sonde' }]);
+    // Live transition: written and voiced on request, kept in the bucket, served from there the second time.
+    const { items: open, sounds } = await (await call('/api/timeline')).json() as { items: Array<{ id: string }>; sounds: { linkerUrl?: string } };
+    assert.equal(sounds.linkerUrl, 'api/linker');
+    calls.length = 0;
+    const link = await call(`/${sounds.linkerUrl}?after=${open[0].id}&next=${open[1].id}`);
+    assert.equal(link.headers.get('Content-Type'), 'audio/mpeg');
+    assert.deepEqual(calls, ['draft', 'tts']);
+    assert.ok([...env.AUDIO.objects.keys()].some(key => key.startsWith(`linkers/${new Date().toISOString().slice(0, 10)}/${open[0].id}-${open[1].id}-`)));
+    assert.equal((await call(`/${sounds.linkerUrl}?after=${open[0].id}&next=${open[1].id}`)).headers.get('Content-Type'), 'audio/mpeg');
+    assert.deepEqual(calls, ['draft', 'tts']);
   } finally { globalThis.fetch = originalFetch; }
 });
 

@@ -75,9 +75,23 @@ data class Timeline(
     val mood: StationMood? = null,
 )
 
-/** The station's sound: ident jingle between music and speech, time signal and spoken hour; null = off. */
+/**
+ * The station's sound; null = off. Jingles between music and speech ([identUrls], else the single
+ * [identUrl]), the news opener, the time signal with the spoken hour, and live transitions ([linkerUrl]).
+ */
 @Serializable
-data class StationSounds(val identUrl: String? = null, val signalUrl: String? = null, val hourUrl: String? = null)
+data class StationSounds(
+    val identUrl: String? = null,
+    val identUrls: List<String> = emptyList(),
+    val newsUrl: String? = null,
+    val signalUrl: String? = null,
+    val hourUrl: String? = null,
+    val linkerUrl: String? = null,
+) {
+    /** One jingle variant per item, always the same for it, so a replay sounds the same. */
+    fun identFor(itemId: String): String? =
+        if (identUrls.isNotEmpty()) identUrls[Math.floorMod(itemId.hashCode(), identUrls.size)] else identUrl
+}
 
 /** A ready-made building block (`GET /api/blocks`): tap it, at most type one word, and it comes next. */
 @Serializable

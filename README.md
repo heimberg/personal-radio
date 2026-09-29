@@ -16,7 +16,8 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
-- Station sound: ident jingle, time signal and spoken hour at the full hour.
+- Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.
+- Live transitions: right before a spoken item airs, the host links it to what just ran (and may mention the time), written and voiced on the spot.
 
 **Listening (Android)**
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
@@ -189,6 +190,7 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `DAILY_GENERATIONS` | `24` | productions per UTC day; one hour of listening needs about 15–30 |
 | `DAILY_TTS_CHARACTERS` | `12000` | speech characters per UTC day |
 | `DAILY_FEED_REQUESTS` | `60` | feed fetches per UTC day |
+| `DAILY_LINKERS` | `40` | live transitions per UTC day (separate from productions and the TTS limit) |
 | `GEMINI_TEXT_MODEL` | `gemini-3.8-flash` | writing, editing, checks |
 | `GEMINI_RESEARCH_MODEL` | text model | web research |
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-tts` | voices |
