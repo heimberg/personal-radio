@@ -4,7 +4,7 @@ import { defaultStationConfig, parseStationConfig } from '../src/domain/station.
 import type { EditorialDirection, Script, Source } from '../src/domain/program.ts';
 import { BLOCKS, blockViews } from '../src/domain/blocks.ts';
 import { StationStore } from '../server/station-store.ts';
-import { addBlock, planTimeline, produceItem, scheduleShowNow, toView } from '../server/station.ts';
+import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, toView } from '../server/station.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
 
@@ -45,7 +45,9 @@ function harness(config = station()) {
 
 test('the block list offers the catalog, one song and the owner\'s active shows, with a subject only where it matters', () => {
   const views = blockViews(station());
-  assert.deepEqual(views.slice(0, BLOCKS.length).map(view => view.id), BLOCKS.map(block => block.id));
+  const offered = BLOCKS.filter(block => !block.hidden);
+  assert.deepEqual(views.slice(0, offered.length).map(view => view.id), offered.map(block => block.id));
+  assert.ok(!views.some(view => view.id === 'vertiefung'));
   assert.ok(views.some(view => view.id === 'song' && view.music));
   const own = views.filter(view => view.own);
   assert.ok(own.length > 0 && own.every(view => view.id.startsWith('show:')));
@@ -104,4 +106,43 @@ test('a day plan of blocks: slots take blocks, the planner rotates them with son
   assert.deepEqual(planned.map(item => item.showId), ['_block:morgen', '_musik', '_block:entdeckung', '_musik', '_block:morgen', '_musik', '_block:entdeckung']);
   assert.throws(() => parseStationConfig({ ...plan, schedule: [{ ...plan.schedule[0], showIds: ['_block:Kein Baustein'] }] }), /unbekannte Sendung/);
   assert.throws(() => parseStationConfig({ ...plan, schedule: [] }), /KI-Sprechbeiträge sind Pflicht/);
+});
+
+test('«Mehr dazu» places a follow-up right after the item; it starts from its sources and knows what was said', async () => {
+  const h = harness(); await h.setup();
+  const first = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
+  const second = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
+  const weather = (await addBlock(h.deps, 'o', 'wetter', undefined, first))!;
+  assert.equal(await produceItem(h.deps, 'o', weather), 'ready');
+  assert.equal(await addFollowUp(h.deps, 'o', 'unbekannt'), null);
+  const deeper = (await addFollowUp(h.deps, 'o', weather))!;
+  assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, weather, deeper, second]);
+  assert.equal(toView((await h.store.getItem('o', deeper))!, null).showName, 'Vertiefung');
+  assert.equal(await produceItem(h.deps, 'o', deeper), 'ready');
+  assert.deepEqual(h.seen.sources.map(item => [item.id, item.title]), [['p1', 'Wetter Bern'], ['w1', 'Web 1'], ['w2', 'Web 2']]);
+  assert.match(h.seen.direction!.instructions!, /Der vorherige Beitrag hiess «Beitrag» und sagte bereits: «Text\.»/);
+  assert.match(h.seen.research.at(-1)!, /Hintergründe, Ursachen, Folgen und neue Aspekte zu «Beitrag»/);
+  // The hidden block is not offered and cannot be added directly.
+  assert.equal(await addBlock(h.deps, 'o', 'vertiefung'), null);
+});
+
+test('«Neu von deinen Künstlern» plays new releases newest first; their titles never reach the moderation', async () => {
+  const h = harness(); await h.setup();
+  let moments: unknown;
+  const releases = [
+    { uri: 'spotify:track:new1', title: 'Neuer Song', artist: 'Band A', durationMs: 200_000 },
+    { uri: 'spotify:track:new2', title: 'Zweiter Song', artist: 'Band B', durationMs: 200_000 },
+  ];
+  h.deps.catalog = { find: async () => null };
+  h.deps.playlists = { tracks: async () => [], releases: async () => releases };
+  h.deps.musicWriter = {
+    pickSubject: async () => ({ subject: '', reason: '' }), pickTracks: async () => [], writeHour: async () => { throw new Error('no'); }, pickSongs: async () => [],
+    writeBlock: async input => { moments = input.moments; return input.moments.map((_, index) => `Moderation ${index}`); },
+  };
+  const id = (await addBlock(h.deps, 'o', 'neu'))!;
+  assert.equal(await produceItem(h.deps, 'o', id), 'ready');
+  const view = toView((await h.store.getItem('o', id))!, null);
+  assert.deepEqual(view.parts?.filter(part => part.kind === 'track').map(part => part.kind === 'track' && part.spotifyUri), ['spotify:track:new1', 'spotify:track:new2']);
+  assert.doesNotMatch(JSON.stringify(moments), /Neuer Song|Zweiter Song|Band A/);
+  assert.equal(view.showName, 'Neu von deinen Künstlern');
 });

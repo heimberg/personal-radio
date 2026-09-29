@@ -60,7 +60,16 @@ data class FailureSummary(val count: Int = 0, val latestError: String? = null, v
 
 /** `GET /api/timeline`: the items plus the public Spotify client ID when the Worker has one. */
 @Serializable
-data class Timeline(val items: List<TimelineItem>, val spotify: SpotifySetup? = null, val failures: FailureSummary = FailureSummary())
+data class Timeline(
+    val items: List<TimelineItem>,
+    val spotify: SpotifySetup? = null,
+    val failures: FailureSummary = FailureSummary(),
+    val sounds: StationSounds = StationSounds(),
+)
+
+/** The station's sound: ident jingle between music and speech, time signal and spoken hour; null = off. */
+@Serializable
+data class StationSounds(val identUrl: String? = null, val signalUrl: String? = null, val hourUrl: String? = null)
 
 /** A ready-made building block (`GET /api/blocks`): tap it, at most type one word, and it comes next. */
 @Serializable

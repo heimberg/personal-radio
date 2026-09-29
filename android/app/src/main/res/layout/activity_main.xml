@@ -214,6 +214,16 @@
                     app:icon="@drawable/ic_info" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/more"
+                    style="@style/Widget.PersonalRadio.Button.Icon"
+                    android:layout_width="@dimen/touch_target"
+                    android:layout_height="@dimen/touch_target"
+                    android:layout_marginEnd="@dimen/space_1"
+                    android:contentDescription="@string/more"
+                    android:tooltipText="@string/more"
+                    app:icon="@drawable/ic_plus_circle" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/dislike"
                     style="@style/Widget.PersonalRadio.Button.Icon"
                     android:layout_width="@dimen/touch_target"

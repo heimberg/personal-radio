@@ -264,3 +264,27 @@ class NoticeStateTest {
         assertEquals(NoticeState(), NoticeState.parse("kaputt"))
     }
 }
+
+class StationSoundTest {
+    private fun item(id: String, music: Boolean) = TimelineItem(id, 1, if (music) "_musik" else "s", "Show", "2026-09-29T08:00:00Z", "ready", 3.0,
+        audioUrl = if (music) null else "api/timeline/$id/audio",
+        parts = if (music) listOf(TimelinePart(kind = "track", spotifyUri = "spotify:track:1", title = "T", artist = "A", durationMs = 1000)) else emptyList())
+
+    @Test
+    fun identPrecedesSpeechAfterMusicOnly() {
+        val steps = StationSound.withIdents(listOf(item("a", false), item("b", true), item("c", false)), "api/sounds/ident.wav", before = item("x", true), stationName = "Radio")
+        assertEquals(listOf("a#ident", "a", "b#0", "c#ident", "c"), steps.map { it.mediaId })
+        assertFalse(steps.first().last)
+        assertEquals(listOf("a", "b#0", "c"), StationSound.withIdents(listOf(item("a", false), item("b", true), item("c", false)), null, item("x", true)).map { it.mediaId })
+    }
+
+    @Test
+    fun hourSignalOncePerHourEarlyOnly() {
+        val signal = HourSignal(startHour = 7)
+        assertFalse(signal.due(7, 55))
+        assertTrue(signal.due(8, 2))
+        assertFalse(signal.due(8, 10))
+        assertFalse(signal.due(9, 35))
+        assertFalse(signal.due(9, 40))
+    }
+}

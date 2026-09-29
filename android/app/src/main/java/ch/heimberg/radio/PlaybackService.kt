@@ -34,9 +34,12 @@ import androidx.media3.session.SessionResult
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackPolicy
+import ch.heimberg.radio.core.HourSignal
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.ProgramQueue
 import ch.heimberg.radio.core.SpeechStep
+import ch.heimberg.radio.core.StationSound
+import ch.heimberg.radio.core.StationSounds
 import ch.heimberg.radio.core.Step
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -95,6 +98,10 @@ class PlaybackService : MediaLibraryService() {
     private var sleepAfterItem = false
     /** True while jumping to a chosen production: the item left behind is neither rated nor dropped. */
     private var jumping = false
+    /** Station sound from the Worker: ident jingle, time signal and spoken hour. */
+    private var sounds = StationSounds()
+    private val hourSignal = HourSignal(java.time.LocalTime.now().hour)
+    private var soundCount = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -168,6 +175,7 @@ class PlaybackService : MediaLibraryService() {
         items.forEach { known[it.id] = it }
         notices.update(timeline)
         spotifyClientId = timeline.spotify?.clientId
+        sounds = timeline.sounds
         if (items.none { it.isOpen }) runCatching { api.plan() }
         if (items.any { it.isPlayable && it.hasMusic }) connectSpotify()
         val currentItem = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)
@@ -177,7 +185,7 @@ class PlaybackService : MediaLibraryService() {
         while (firstUpcoming < player.mediaItemCount && Program.itemIdOf(player.getMediaItemAt(firstUpcoming).mediaId) == currentItem) firstUpcoming++
         val present = (firstUpcoming until player.mediaItemCount).map { Program.itemIdOf(player.getMediaItemAt(it).mediaId) }.distinct()
         if (queue.matches(present, wanted)) return
-        val newSteps = wanted.flatMap(Program::steps)
+        val newSteps = StationSound.withIdents(wanted, sounds.identUrl, before = currentItem?.let(known::get))
         newSteps.forEach { steps[it.mediaId] = it }
         val ranOut = player.playbackState == Player.STATE_ENDED
         if (firstUpcoming < player.mediaItemCount) player.removeMediaItems(firstUpcoming, player.mediaItemCount)
@@ -494,7 +502,10 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = follow()
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (signalHour(mediaItem, reason)) return
+            follow()
+        }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = follow()
 
@@ -526,6 +537,33 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /**
+     * At the first change of item after a full hour: the time signal and the spoken hour play before the
+     * item that was about to start. Returns true when it inserted them (the item waits after them).
+     */
+    private fun signalHour(mediaItem: MediaItem?, reason: Int): Boolean {
+        val signalUrl = sounds.signalUrl ?: return false
+        val hourUrl = sounds.hourUrl ?: return false
+        val connection = connection ?: return false
+        if (mediaItem == null || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return false
+        val itemId = Program.itemIdOf(mediaItem.mediaId)
+        if (itemId == SOUND_ITEM || steps[mediaItem.mediaId] == null) return false
+        val index = player.currentMediaItemIndex
+        // Only where an item begins, never between the parts of an hour.
+        if (index > 0 && Program.itemIdOf(player.getMediaItemAt(index - 1).mediaId) == itemId) return false
+        val now = java.time.LocalTime.now()
+        if (!hourSignal.due(now.hour, now.minute)) return false
+        soundCount++
+        val sound = { name: String, url: String, title: String ->
+            MediaItem.Builder().setMediaId("$SOUND_ITEM#$name-$soundCount").setUri(connection.resolve(url))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setAlbumTitle(getString(R.string.app_name)).build()).build()
+        }
+        player.addMediaItems(index, listOf(sound("signal", signalUrl, getString(R.string.time_signal)), sound("hour", "$hourUrl${now.hour}", getString(R.string.time_signal))))
+        jumping = true
+        try { player.seekTo(index, 0) } finally { jumping = false }
+        return true
+    }
+
     /** Spoken parts stream from the Worker; Spotify tracks become silence of the track's length plus a margin. */
     private class ProgramSourceFactory(private val audio: MediaSource.Factory) : MediaSource.Factory by audio {
         override fun createMediaSource(mediaItem: MediaItem): MediaSource {
@@ -548,6 +586,8 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_SLEEP_AFTER_ITEM = "sleepAfterItem"
         val LIKE = SessionCommand("ch.heimberg.radio.LIKE", Bundle.EMPTY)
         val DISLIKE = SessionCommand("ch.heimberg.radio.DISLIKE", Bundle.EMPTY)
+        /** Media IDs of the station sound (time signal, spoken hour); not an item of the program. */
+        const val SOUND_ITEM = "_sound"
         private const val ROOT = "root"
         private const val PROGRAM = "program"
         private const val ARCHIVE = "archive"

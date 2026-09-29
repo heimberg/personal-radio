@@ -120,6 +120,25 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     insights = await (await call('/api/insights')).json() as any;
     assert.deepEqual(insights.reasons, []);
     env.DB.raw.prepare('DELETE FROM feedback_events WHERE action = ?').run('dislike');
+    // Station sound: the timeline names the sounds; jingle and time signal are generated, the hour is spoken once and kept.
+    const sounds = ((await (await call('/api/timeline')).json()) as { sounds: Record<string, string> }).sounds;
+    assert.deepEqual(sounds, { identUrl: 'api/sounds/ident.wav', signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' });
+    const ident = await call('/api/sounds/ident.wav');
+    assert.equal(ident.headers.get('Content-Type'), 'audio/wav');
+    assert.ok((await ident.arrayBuffer()).byteLength > 40_000);
+    assert.equal((await call('/api/sounds/hour/24')).status, 404);
+    const hour = await call('/api/sounds/hour/8');
+    assert.equal(hour.status, 200);
+    assert.ok([...audio.objects.keys()].some(key => /^sounds\/hour-[a-z0-9]+-8\.mp3$/.test(key)));
+    assert.equal((await call('/api/sounds/hour/8')).status, 200);
+    // «Mehr dazu» queues a follow-up right after the item.
+    const queued = sent.length;
+    const deeper = await call(`/api/timeline/${items[0].id}/more`, { method: 'POST' });
+    assert.equal(deeper.status, 200);
+    assert.equal(sent.length, queued + 1);
+    assert.equal(sent.at(-1)!.itemId, ((await deeper.json()) as { itemId: string }).itemId);
+    (env.DB as any).raw.prepare(`DELETE FROM timeline_items WHERE show_id = '_block:vertiefung'`).run();
+    sent.pop();
     // Changing an agent is logged for the quality trend.
     const stored = ((await (await call('/api/station')).json()) as { config: any }).config;
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify({ ...stored, agents: { jury: { threshold: 4 } } }) })).status, 200);
