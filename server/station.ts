@@ -10,6 +10,7 @@ import { finishScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
 import { BLOCKS, BLOCK_PREFIX, SURPRISE_ID, WILDCARD, WILDCARD_TASTES, blockOf, blockShow, drawSurprise, isSurprise, surpriseChance, surpriseLevel } from '../src/domain/blocks.ts';
 import { agentOf, resolveAgents } from '../src/domain/agents.ts';
+import { applyMood } from '../src/domain/mood.ts';
 import type { AgentConfig } from '../src/domain/agents.ts';
 import { NOTE_WINDOW_DAYS, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { Weather } from './tools.ts';
@@ -96,6 +97,8 @@ function needsSongsAfter(config: StationConfig, showId: string | undefined): boo
  */
 export function planTimeline(config: StationConfig, open: Array<Pick<TimelineRow, 'estimated_minutes'>>, last: Pick<TimelineRow, 'seq' | 'show_id'> | null,
   now: Date, newId: () => string, tail: string[] = last ? [last.show_id] : [], random: () => number = () => 1): PlannedItem[] {
+  // Today's mood leans the plan (more music, more knowledge, …) without changing the saved day plan.
+  config = applyMood(config, now);
   let ahead = open.reduce((sum, item) => sum + item.estimated_minutes, 0);
   let seq = (last?.seq ?? 0) + 1;
   let lastShow = [...tail].reverse().find(id => id !== MUSIC_SHOW_ID && !isSurprise(id));

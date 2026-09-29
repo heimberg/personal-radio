@@ -119,7 +119,14 @@ export interface StationConfig {
   sounds?: StationSounds;
   /** How often the planner mixes in surprises (0–100); missing means 25, about one an hour. */
   surprise?: number;
+  /** «Heute»: a mood for the rest of the day, set in the app; it shapes what the planner adds. */
+  mood?: StationMood;
 }
+
+/** Moods for the rest of the day; see src/domain/mood.ts for what each one changes. */
+export const MOOD_IDS = ['ruhig', 'wissen', 'musik', 'aktuell', 'ueberraschung'] as const;
+export type MoodId = typeof MOOD_IDS[number];
+export interface StationMood { id: MoodId; until: string }
 
 export interface StationSounds { ident: boolean; hourChange: boolean }
 export const stationSounds = (config: StationConfig): StationSounds => config.sounds ?? { ident: true, hourChange: true };
@@ -372,6 +379,13 @@ export function parseStationConfig(raw: unknown): StationConfig {
     surprise = Number(c.surprise);
     if (typeof c.surprise !== 'number' || !Number.isInteger(surprise) || surprise < 0 || surprise > 100) fail('surprise', 'ganze Zahl von 0 bis 100');
   }
+  let mood: StationMood | undefined;
+  if (c.mood !== undefined && c.mood !== null) {
+    const m = record(c.mood, 'mood');
+    if (!MOOD_IDS.includes(m.id as MoodId)) fail('mood.id', MOOD_IDS.join(', '));
+    if (typeof m.until !== 'string' || Number.isNaN(Date.parse(m.until))) fail('mood.until', 'Zeitpunkt (ISO 8601)');
+    mood = { id: m.id as MoodId, until: new Date(m.until as string).toISOString() };
+  }
   let sounds: StationSounds | undefined;
   if (c.sounds !== undefined && c.sounds !== null) {
     const s = record(c.sounds, 'sounds');
@@ -379,7 +393,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     if (typeof s.hourChange !== 'boolean') fail('sounds.hourChange', 'true oder false');
     sounds = { ident: s.ident as boolean, hourChange: s.hourChange as boolean };
   }
-  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}) };
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}), ...(mood ? { mood } : {}) };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */

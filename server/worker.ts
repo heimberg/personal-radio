@@ -18,7 +18,9 @@ import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps, TrialAgent } from './station.ts';
-import { ConfigError, parseStationConfig, stationSounds } from '../src/domain/station.ts';
+import { ConfigError, MOOD_IDS, parseStationConfig, stationSounds } from '../src/domain/station.ts';
+import type { MoodId, StationConfig } from '../src/domain/station.ts';
+import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
 import { hourKey, hourText, identJingle, timeSignal } from './sounds.ts';
@@ -346,8 +348,10 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const body = await readJson(request, 65_536);
     if (body.error) return body.error;
     try {
-      const config = parseStationConfig(body.value);
+      // Today's mood is set in the app (POST /api/mood); saving the settings keeps it.
+      const { mood: _mood, ...parsed } = parseStationConfig(body.value);
       const before = await store.getConfig(owner), now = new Date();
+      const config: StationConfig = before?.mood ? { ...parsed, mood: before.mood } : parsed;
       const changed = AGENTS.filter(agent => JSON.stringify(before?.agents?.[agent.id] ?? null) !== JSON.stringify(config.agents?.[agent.id] ?? null)).map(agent => agent.name);
       await store.saveConfig(owner, config, now);
       if (before && changed.length) await store.logAgentChange(owner, now, changed);
@@ -357,6 +361,21 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       throw error;
     }
   }
+  if (url.pathname === '/api/mood') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 256);
+    if (body.error) return body.error;
+    const id = (body.value as { mood?: unknown } | null)?.mood ?? null;
+    if (id !== null && !MOOD_IDS.includes(id as MoodId)) return json({ error: 'invalid_mood' }, 400);
+    const config = await store.getConfig(owner), now = new Date();
+    if (!config) return json({ error: 'not_configured' }, 409);
+    // A mood holds until midnight in the station's time zone; null clears it.
+    const { mood: _old, ...rest } = config;
+    const next: StationConfig = id === null ? rest : { ...rest, mood: { id: id as MoodId, until: endOfDay(now, config.timezone).toISOString() } };
+    await store.saveConfig(owner, next, now);
+    return json({ mood: next.mood ?? null }, 200);
+  }
   if (url.pathname === '/api/timeline') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     const config = await store.getConfig(owner);
@@ -365,7 +384,8 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
     const sounds = config ? stationSounds(config) : { ident: false, hourChange: false };
-    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify,
+    const mood = config && activeMood(config, new Date()) ? { mood: config.mood } : {};
+    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood,
       sounds: { ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav' } : {}), ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}) } }, 200);
   }
   if (url.pathname === '/api/sounds/ident.wav' || url.pathname === '/api/sounds/pips.wav') {
