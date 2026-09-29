@@ -13,7 +13,6 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 ## Nächste Ausbauschritte
 
-- [ ] **App, Schritt 3:** Tagesplan und Bausteine nativ in der App, Stimmungs-Chips («heute eher ruhig», «mehr Wissen», «mehr Musik») als schneller Einstieg.
 - [ ] **App, Schritt 4:** mitlaufendes Transkript, Widget auf dem Startbildschirm (Play und «Anders»), übersichtlichere Android-Auto-Ansicht.
 - [ ] **Überraschungen, Schritt 2:** Zeitfenster ohne Zufall, «heute ohne Überraschungen», Lernen pro Überraschungsart aus 👍/👎.
 - [ ] **Offline-Puffer ausbauen:** statt der nächsten vier Beiträge 30–60 Minuten Sprache inklusive Stationssound vorladen.
@@ -26,7 +25,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - **Inhalte:** Web-Recherche mit Google-Suche oder Feeds; Kurzbeitrag, Dialog, Künstler-/Genre-/Themenstunde, Musikblock; Schlussredaktion, Qualitäts-Jury, Faktencheck; Wetter, Schlagzeilen, Datum; keine Uhrzeiten in vorproduzierten Texten.
 - **Bausteine und Tagesplan:** ein Tipp fügt einen Baustein ein; Tagesplan mit Zeitfenstern; Songs zwischen Beiträgen; 🎲 Überraschungen mit Regler; «Mehr dazu»; «Neu von deinen Künstlern».
 - **Redaktion:** alle Agenten konfigurierbar (Anweisungen, Freiheit, An/Aus, Stil-Vorlagen, Probeläufe), Qualitätsverlauf, Hinweise aus 👎-Gründen, Verbrauchsübersicht.
-- **Android-App (Compose):** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Jetzt · Gleich · Später», «Anders»; Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound, In-App-Updates, Farbe und Symbol pro Inhaltsart.
+- **Android-App (Compose):** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Jetzt · Gleich · Später», «Anders», Stimmung «Heute», Tagesplan in der App; Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound, In-App-Updates, Farbe und Symbol pro Inhaltsart.
 - **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; an die KI gehen davon nur die Namen der Top-Künstler und der Neuerscheinungen.
 
 ## Architekturentscheidungen

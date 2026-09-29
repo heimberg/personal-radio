@@ -60,6 +60,8 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.deepEqual(await (await call('/api/station')).json(), { config: null });
     const station = defaultStationConfig({ profile: { topics: [], interests: ['Raumfahrt'], interestWeights: {}, speechMinutes: 2, exploration: 0 },
       feeds: [{ name: 'Wissen', url: 'https://feeds.example.test/wissen.xml' }] });
+    // No surprises: the worker plans with Math.random, and the test expects the feed brief.
+    station.surprise = 0;
     // This environment only has ASK: the feed show writes with ASK, the web research show stays off.
     station.shows = station.shows.map(show => show.id === 'kurz' ? { ...show, textProvider: 'ask' } : show.id === 'entdecken' ? { ...show, enabled: false } : show);
     station.host = { ...station.host, voiceId: 'voice-test' };
@@ -223,7 +225,8 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     ...init, headers: { 'Cf-Access-Jwt-Assertion': token, Origin: ORIGIN, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
   }), env as never);
   try {
-    const station = defaultStationConfig({ profile: { topics: [], interests: ['Raumfahrt'], interestWeights: {}, speechMinutes: 2, exploration: 0 }, voiceId: 'voice-test' });
+    // No surprises: the worker plans with Math.random, and the test expects the brief first.
+    const station = { ...defaultStationConfig({ profile: { topics: [], interests: ['Raumfahrt'], interestWeights: {}, speechMinutes: 2, exploration: 0 }, voiceId: 'voice-test' }), surprise: 0 };
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
     await call('/api/timeline/plan', { method: 'POST' });
     await worker.queue({ messages: [{ body: sent[0], ack: () => {} }] }, env as never);
@@ -352,7 +355,7 @@ test('artist hour through the Worker: produce now, queue, parts in the timeline 
     ...init, headers: { 'Cf-Access-Jwt-Assertion': token, Origin: ORIGIN, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
   }), env as never);
   try {
-    const station = defaultStationConfig({ voiceId: 'voice-test' });
+    const station = { ...defaultStationConfig({ voiceId: 'voice-test' }), surprise: 0 };
     station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, artist: 'Bristol Trip-Hop', tracks: 3 } : show);
     assert.equal((await call('/api/station', { method: 'PUT', body: JSON.stringify(station) })).status, 200);
     assert.equal((await call('/api/shows/gibt-es-nicht/produce', { method: 'POST' })).status, 404);

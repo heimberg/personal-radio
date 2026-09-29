@@ -4,6 +4,7 @@ import ch.heimberg.radio.core.AccessDiagnosis
 import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
+import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
@@ -13,6 +14,7 @@ import ch.heimberg.radio.core.TimelineJson
 import ch.heimberg.radio.core.Transcript
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -37,6 +39,27 @@ class ApiClient(private val connection: Connection) {
 
     /** Plans and queues production right away instead of waiting for the next cron tick. */
     suspend fun plan() { withContext(Dispatchers.IO) { request("POST", "api/timeline/plan") } }
+
+    /** «Heute»: sets today's mood (until midnight), or clears it with null. */
+    suspend fun setMood(id: String?) {
+        withContext(Dispatchers.IO) { request("POST", "api/mood", JSONObject().put("mood", id ?: JSONObject.NULL).toString()) }
+    }
+
+    /** The day plan (time windows and surprise level) from the station settings. */
+    suspend fun dayPlan(): DayPlan? = withContext(Dispatchers.IO) { DayPlan.parse(request("GET", "api/station")) }
+
+    /**
+     * Saves the day plan: the current settings are read again and only `schedule` and `surprise` are
+     * replaced, so everything else (persona, shows, agents) stays exactly as the studio left it.
+     */
+    suspend fun saveDayPlan(plan: DayPlan) {
+        withContext(Dispatchers.IO) {
+            val config = JSONObject(request("GET", "api/station")).getJSONObject("config")
+            config.put("schedule", JSONArray(plan.schedulesJson()))
+            config.put("surprise", plan.surprise)
+            request("PUT", "api/station", config.toString())
+        }
+    }
 
     /** Configured show choices for the native "produce now" dialog. */
     suspend fun shows(): List<ShowOption> = withContext(Dispatchers.IO) {

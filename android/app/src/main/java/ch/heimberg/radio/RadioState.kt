@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
+import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FailureSummary
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Look
@@ -57,6 +58,16 @@ class RadioState {
     var archiveNote by mutableStateOf("")
     var archiveRefreshing by mutableStateOf(false)
 
+    // «Heute» and the day plan.
+    var mood by mutableStateOf<String?>(null)
+    var dayPlan by mutableStateOf<DayPlan?>(null)
+    var dayPlanOpen by mutableStateOf(false)
+    var dayPlanDirty by mutableStateOf(false)
+    var dayPlanSaving by mutableStateOf(false)
+    /** A window's start (true) or end (false) time being chosen. */
+    var timeAsk by mutableStateOf<Pair<String, Boolean>?>(null)
+    var blockPickFor by mutableStateOf<String?>(null)
+
     // Updates, messages and open dialogs.
     var update by mutableStateOf<AppBuild?>(null)
     var updateNote by mutableStateOf("")
@@ -106,6 +117,13 @@ interface RadioActions {
 
     fun loadArchive()
     fun delete(item: TimelineItem)
+
+    /** «Heute»: a mood until midnight, or none. */
+    fun setMood(id: String?)
+    fun openDayPlan()
+    fun editDayPlan(plan: DayPlan)
+    fun saveDayPlan()
+    fun closeDayPlan()
 
     fun connectSpotify()
     fun installUpdate()
