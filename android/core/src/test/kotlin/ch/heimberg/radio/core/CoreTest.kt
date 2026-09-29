@@ -191,6 +191,29 @@ class ProgramClockTest {
         assertEquals(items, ProgramClock.move(items, 1, 0, "b"))
         assertEquals(listOf("a", "b", "c"), ProgramClock.move(items, 1, 0, null).map { it.id })
     }
+
+    @Test fun playNextAndShiftKeepThePlayingItemFirst() {
+        val items = listOf(item("a", 1, 2.0), item("b", 2, 4.0), item("c", 3, 6.0), item("d", 4, 1.0))
+        assertEquals(listOf("b", "d", "a", "c"), ProgramClock.playNext(items, "d", "b").map { it.id })
+        assertEquals(listOf("d", "a", "b", "c"), ProgramClock.playNext(items, "d", null).map { it.id })
+        assertEquals(listOf("b", "c", "a", "d"), ProgramClock.shift(items, "a", 1, "b").map { it.id })
+        // The playing item cannot be passed, and unknown items change nothing.
+        assertEquals(listOf("b", "a", "c", "d"), ProgramClock.shift(items, "a", -1, "b").map { it.id })
+        assertEquals(items, ProgramClock.shift(items, "x", 1, "b"))
+    }
+
+    @Test fun sectionsSplitNowNextAndLater() {
+        val items = listOf(item("a", 1, 2.0), item("b", 2, 4.0), item("c", 3, 6.0))
+        val playing = ProgramSections.of(items, "b")
+        assertEquals("b", playing.now?.id)
+        assertEquals("a", playing.next?.id)
+        assertEquals(listOf("c"), playing.later.map { it.id })
+        val idle = ProgramSections.of(items, null)
+        assertEquals(null, idle.now)
+        assertEquals("a", idle.next?.id)
+        assertEquals(listOf("b", "c"), idle.later.map { it.id })
+        assertEquals(ProgramSections(null, null, emptyList()), ProgramSections.of(emptyList(), "b"))
+    }
 }
 
 class TranscriptTest {

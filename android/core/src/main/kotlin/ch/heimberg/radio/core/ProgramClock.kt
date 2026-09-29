@@ -36,5 +36,31 @@ object ProgramClock {
         return items.toMutableList().apply { add(to, removeAt(from)) }
     }
 
+    /** A new order with [id] right after the playing item: «Als Nächstes». */
+    fun playNext(items: List<TimelineItem>, id: String, currentId: String?): List<TimelineItem> {
+        val ordered = playingOrder(items, currentId)
+        val from = ordered.indexOfFirst { it.id == id }
+        val to = if (ordered.firstOrNull()?.id == currentId && currentId != null) 1 else 0
+        return if (from < 0) items else move(ordered, from, to, currentId)
+    }
+
+    /** A new order with [id] moved by [offset] places (−1 up, +1 down); the playing item stays first. */
+    fun shift(items: List<TimelineItem>, id: String, offset: Int, currentId: String?): List<TimelineItem> {
+        val ordered = playingOrder(items, currentId)
+        val from = ordered.indexOfFirst { it.id == id }
+        return if (from < 0) items else move(ordered, from, from + offset, currentId)
+    }
+
     private fun lengthMs(item: TimelineItem): Long = (item.estimatedMinutes * 60_000).toLong().coerceAtLeast(0)
+}
+
+/** The program as «Jetzt · Gleich · Später»: what plays, what comes right after it, and the rest. */
+data class ProgramSections(val now: TimelineItem?, val next: TimelineItem?, val later: List<TimelineItem>) {
+    companion object {
+        fun of(open: List<TimelineItem>, playingId: String?): ProgramSections {
+            val now = open.firstOrNull { it.id == playingId }
+            val rest = open.filter { it.id != playingId }
+            return ProgramSections(now, rest.firstOrNull(), rest.drop(1))
+        }
+    }
 }
