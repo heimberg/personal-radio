@@ -1,13 +1,11 @@
 # Personal Radio
 
-A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen in a native Android app; you configure everything in a web cockpit.
+A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen and steer the program in a native Android app; settings live in its «Studio» tab, a web page served by the Worker.
 
 The station speaks German. Everything runs in your own Cloudflare and Google accounts; nothing is shared with other users.
 
 <p>
-  <img src="docs/images/cockpit-program.png" alt="Program view with player, building blocks and the timeline" width="300">
-  &nbsp;
-  <img src="docs/images/cockpit-settings.png" alt="Settings overview" width="300">
+  <img src="docs/images/cockpit-settings.png" alt="Studio: settings overview" width="300">
 </p>
 
 ## Features
@@ -23,7 +21,9 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 **Listening (Android)**
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
 - Music plays in the Spotify app (App Remote); the app hands over between speech and songs.
-- 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, drag to reorder, archive, sleep timer, transcript with sources.
+- Four tabs – Hören, Programm, Archiv, Studio – with a mini player; the program as «Jetzt · Gleich · Später».
+- «Anders» swaps the next item for something different; swipe to remove, long press to move or play next.
+- 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, archive, sleep timer, transcript with sources.
 - In-app updates from your own Worker.
 
 **Control**
@@ -35,7 +35,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 ```mermaid
 flowchart LR
   app[Android app] -- Access service token --> worker
-  browser[Web cockpit] -- Access login --> worker
+  browser[Web studio] -- Access login --> worker
   subgraph Cloudflare
     worker[Worker<br/>API · planner · producer]
     cron((Cron<br/>every 10 min)) --> worker
@@ -61,8 +61,8 @@ The AI picks songs from its own knowledge; Spotify only resolves them to tracks.
 | --- | --- |
 | Backend | Cloudflare Workers (TypeScript), D1, R2, Queues, Cron Triggers, Cloudflare Access |
 | AI | Gemini (text, Google Search grounding, TTS); optional ASK (OpenAI-compatible) as independent verifier, optional Mistral voices |
-| Web cockpit | React 19, Vite |
-| Android | Kotlin, Media3 (ExoPlayer, MediaLibraryService), Spotify App Remote SDK, WorkManager |
+| Web studio | React 19, Vite |
+| Android | Kotlin, Jetpack Compose (Material 3), Media3 (ExoPlayer, MediaLibraryService), Spotify App Remote SDK, WorkManager |
 | CI/CD | GitHub Actions: tests, Worker deploy with migrations, signed APK |
 
 ## Run your own station
@@ -138,7 +138,7 @@ Worker → **Settings → Variables and Secrets**, type *Secret* (or `npx wrangl
 | `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL` | no | an OpenAI-compatible endpoint; when all three are set it verifies facts as an independent second model |
 | `MISTRAL_API_KEY` | no | enables Mistral voices in addition to the Gemini voices |
 
-Open `https://personal-radio-private.<your-subdomain>.workers.dev` in the browser, log in through Access and click **Programm einrichten**. The cockpit works now; the next steps add music and the app.
+Open `https://personal-radio-private.<your-subdomain>.workers.dev` in the browser, log in through Access and click **Programm einrichten**. The studio works now; the next steps add music and the app.
 
 ### 6. Connect Spotify (optional, for music)
 
@@ -149,7 +149,7 @@ Open `https://personal-radio-private.<your-subdomain>.workers.dev` in the browse
 3. **Android package:** `ch.heimberg.radio` with the SHA-1 fingerprint of your signing key (step 7; the Android workflow prints it in the step *Prepare signing key*).
 4. **User Management:** while the app is in development mode, add the Spotify account you listen with.
 5. On the Worker, add the variable `SPOTIFY_CLIENT_ID` (type *Text*) and the secret `SPOTIFY_CLIENT_SECRET`. Optionally set `SPOTIFY_MARKET` (default `CH`).
-6. In the cockpit: **Einstellungen → Musik → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional).
+6. In the studio: **Einstellungen → Musik → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional).
 
 ### 7. Create the Android signing key
 
@@ -196,16 +196,16 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral voices |
 | `SPOTIFY_MARKET` | `CH` | Spotify catalogue |
 
-Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The cockpit's **Verbrauch** page shows calls and tokens per day, and the daily limits above cap spending.
+Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The studio's **Verbrauch** page shows calls and tokens per day, and the daily limits above cap spending.
 
 ## Development
 
 ```sh
 npm ci
-npm run dev          # web cockpit on http://localhost:5173 (the API needs a Worker)
+npm run dev          # web studio on http://localhost:5173 (the API needs a Worker)
 npm run check        # TypeScript
 npm test             # unit and Worker tests, D1 via node:sqlite
-npx playwright test  # browser tests of the cockpit
+npx playwright test  # browser tests of the studio
 npm run build
 cd android && ./gradlew -p core test   # Android program logic, no SDK needed
 ```
@@ -216,7 +216,7 @@ cd android && ./gradlew -p core test   # Android program logic, no SDK needed
 
 ```
 server/        Worker: API, planner, producer, providers (Gemini, ASK, Mistral, Spotify), agents
-src/           web cockpit (React) and the shared domain model
+src/           web studio (React) and the shared domain model
 android/       Android app (app/) and its pure-Kotlin logic with tests (core/)
 migrations/    D1 schema
 tests/         Node and Playwright tests

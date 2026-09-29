@@ -1,6 +1,6 @@
 # Android playback acceptance test
 
-Applies to the [Android app](android.md), the listening product. The web cockpit's browser player is a check tool, not part of these acceptance criteria.
+Applies to the [Android app](android.md), the listening product. The web studio has no player.
 
 Status: User confirmed on 2026-09-28 that the Android playback test completed successfully. Device/build details and individual observations were not recorded here. Desktop automation cannot pass this gate.
 

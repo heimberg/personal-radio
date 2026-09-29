@@ -2,7 +2,7 @@
 
 ## Status (28.09.2026): editorial team for music hours
 
-Music hours can be produced by the editorial team: `production: agents` per show (cockpit: «Produktion → Redaktionsteam (Beta)»); `standard` stays the default. Code: `server/agentic/music-hour.ts`.
+Music hours can be produced by the editorial team: `production: agents` per show (studio: «Produktion → Redaktionsteam (Beta)»); `standard` stays the default. Code: `server/agentic/music-hour.ts`.
 
 - **Phase A:** `music.dossier` (grounded research on the subject) → `music.director` (title, thread, song list with a role and a research question per song, up to two specialist questions) → `spotify.resolve` (deterministic matching, no AI; fewer than three matches end the run with `TOO_FEW_TRACKS`).
 - **Phase B**, built from the resolved songs: per song `music.song-researcher` (grounded, sources `s<n>w…`) and `music.lyric-analyst` (themes and mood in own words, no lyric quotes, marked as interpretation), optional `research.specialist` (sources `x<n>w…`), then `music.segment-editor` → `music.fact-checker` → `music.continuity-editor`.
@@ -31,7 +31,7 @@ For the current Cloudflare Worker, Workflows are the shortest path to durable re
 
 The director is a planner, not an unrestricted autonomous agent. It receives the block request and the enabled agent catalog, and returns a structured plan. A deterministic validator rejects anything outside configured policy. Agents get only the tools and credentials granted by the server adapter; a prompt or plan cannot grant itself access. Outputs are schema-checked and cited research is retained as artifacts for later editorial review.
 
-The Android app starts production and shows its progress through the Worker API. Viewing runs in detail or editing the agent catalogue belongs in the web cockpit, following the [division of work](architecture.md#division-of-work-app-and-web-cockpit).
+The Android app starts production and shows its progress through the Worker API. Viewing runs in detail or editing the agent catalogue belongs in the web studio, following the [division of work](architecture.md#division-of-work-app-and-web-cockpit).
 
 | Role | Typical responsibility | Inputs / outputs |
 |---|---|---|
