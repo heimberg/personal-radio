@@ -374,7 +374,11 @@ class PlaybackService : MediaLibraryService() {
         if (lastSpotifyAttempt != 0L && now - lastSpotifyAttempt < SPOTIFY_RETRY_MS) return
         lastSpotifyAttempt = now
         spotify.connect(clientId, showAuthView = false) { error ->
-            if (error != null) return@connect
+            if (error != null) {
+                // Spotify withdrew the permission: the app offers «Spotify verbinden» again.
+                if ("UserNotAuthorized" in error) RadioSettings(this@PlaybackService).spotifyLinked = false
+                return@connect
+            }
             // Spotify already allows us: the app no longer offers «Spotify verbinden».
             RadioSettings(this@PlaybackService).spotifyLinked = true
             scope.launch { sync() }
