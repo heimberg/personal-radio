@@ -47,7 +47,7 @@ h2 { font-size: 1.15rem; letter-spacing: -.3px; margin-bottom: 4px; }
 .brand-mark { display: inline-flex; align-items: flex-end; gap: 3px; height: 22px; padding: 4px 6px; border-radius: 9px; background: linear-gradient(135deg, #D06BD8, #9184D9 55%, #5B95F5); }
 .brand-mark i { width: 3px; border-radius: 2px; background: #fff; }
 .brand-mark i:nth-child(1) { height: 7px; } .brand-mark i:nth-child(2) { height: 14px; } .brand-mark i:nth-child(3) { height: 10px; }
-.dot { color: var(--accent); margin-left: -6px; }
+.dot { color: var(--accent); margin-left: -10px; }
 .host { color: var(--muted); font-size: .85rem; }
 .tabs { position: sticky; top: 0; z-index: 4; display: flex; gap: 4px; padding: 8px 0; margin-bottom: 18px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); }
 .tabs button { border: 0; background: transparent; padding: 8px 14px; border-radius: 999px; color: var(--muted); font-weight: 600; font-size: .92rem; }
@@ -197,11 +197,11 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
 a.button { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
 .problem { color: var(--danger); font-size: .88rem; }
 .savebar {
-  position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%); transition: transform .2s ease;
+  position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%); opacity: 0; visibility: hidden; transition: transform .2s ease, opacity .2s ease, visibility 0s linear .2s;
   display: flex; align-items: center; gap: 10px; width: min(820px, calc(100% - 24px));
   background: var(--surface-2); color: var(--text); border: 1px solid var(--brand); padding: 10px 10px 10px 16px; border-radius: 16px; box-shadow: 0 10px 30px #0008; z-index: 6;
 }
-.savebar.visible { transform: translate(-50%, 0); }
+.savebar.visible { transform: translate(-50%, 0); opacity: 1; visibility: visible; transition: transform .2s ease, opacity .2s ease; }
 .savebar span { flex: 1; font-size: .9rem; min-width: 0; }
 .savebar .button.ghost { color: var(--text); border-color: var(--line); }
 
