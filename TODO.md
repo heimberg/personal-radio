@@ -25,7 +25,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - **Bausteine und Tagesplan:** ein Tipp fügt einen Baustein ein; Tagesplan mit Zeitfenstern; Songs zwischen Beiträgen; 🎲 Überraschungen mit Regler; «Mehr dazu»; «Neu von deinen Künstlern».
 - **Redaktion:** alle Agenten konfigurierbar (Anweisungen, Freiheit, An/Aus, Stil-Vorlagen, Probeläufe), Qualitätsverlauf, Hinweise aus 👎-Gründen, Verbrauchsübersicht.
 - **Android-App:** Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound, In-App-Updates, Farbe und Symbol pro Inhaltsart.
-- **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; Spotify-Daten gehen nicht an die KI.
+- **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; an die KI gehen davon nur die Namen der Top-Künstler und der Neuerscheinungen.
 
 ## Architekturentscheidungen
 
