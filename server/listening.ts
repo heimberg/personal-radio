@@ -5,6 +5,7 @@ import type { D1Database } from './station-store.ts';
 
 type Fetch = typeof fetch;
 const CACHE_HOURS = 12;
+const STATE_MINUTES = 10;
 /** Top artists for the music picks; playlist access so music blocks can play the owner's private playlists. */
 export const LISTENING_SCOPE = 'user-top-read playlist-read-private playlist-read-collaborative';
 
@@ -22,6 +23,21 @@ export class SpotifyListening {
 
   authorizeUrl(redirectUri: string, state: string): string {
     return `https://accounts.spotify.com/authorize?${new URLSearchParams({ client_id: this.clientId, response_type: 'code', redirect_uri: redirectUri, scope: LISTENING_SCOPE, state })}`;
+  }
+
+  /** A fresh single-use state for the login; older ones of the owner are dropped. */
+  async beginConnect(owner: string, now: Date): Promise<string> {
+    const state = crypto.randomUUID();
+    await this.db.prepare('DELETE FROM spotify_oauth_states WHERE owner_id = ?').bind(owner).run();
+    await this.db.prepare('INSERT INTO spotify_oauth_states (state, owner_id, created_at) VALUES (?, ?, ?)').bind(state, owner, now.toISOString()).run();
+    return state;
+  }
+
+  /** True once for a state this owner started in the last ten minutes. */
+  async takeState(owner: string, state: string, now: Date): Promise<boolean> {
+    const row = await this.db.prepare('DELETE FROM spotify_oauth_states WHERE state = ? AND owner_id = ? AND created_at >= ? RETURNING state')
+      .bind(state, owner, new Date(now.getTime() - STATE_MINUTES * 60_000).toISOString()).first<{ state: string }>();
+    return !!row;
   }
 
   private async token(body: Record<string, string>): Promise<{ access_token: string; refresh_token?: string }> {
