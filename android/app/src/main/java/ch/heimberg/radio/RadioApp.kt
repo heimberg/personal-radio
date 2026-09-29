@@ -28,8 +28,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,11 +52,23 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.TimelineItem
 
+/** Longer messages get «Details» and show two lines on screen. */
+private const val LONG_MESSAGE = 90
+
 /** The app: four tabs, a mini player above them, and the dialogs the screens open. */
 @Composable
 fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, version: String) {
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it.text) } }
+    // Messages stay short on screen; a long one (an error with Spotify's words) opens in full on «Details».
+    LaunchedEffect(state.message) {
+        val message = state.message ?: return@LaunchedEffect
+        val long = message.text.length > LONG_MESSAGE
+        val result = snackbar.showSnackbar(
+            message.text, actionLabel = if (long) "Details" else null,
+            duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) state.detail = message.text
+    }
     // Back goes through the studio's pages, then to «Hören»; from there it leaves the app.
     BackHandler(enabled = state.tab != Tab.LISTEN) {
         val web = if (state.tab == Tab.STUDIO) studio() else null
@@ -65,7 +80,15 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     }
     Scaffold(
         containerColor = Nocturne.bg,
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = {
+            SnackbarHost(snackbar) { data ->
+                Snackbar(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    action = data.visuals.actionLabel?.let { label -> { TextButton(onClick = data::performAction) { Text(label, color = Nocturne.accentLight) } } },
+                    containerColor = Nocturne.surfaceHigh, contentColor = Nocturne.text,
+                ) { Text(data.visuals.message, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+        },
         bottomBar = {
             Column {
                 if (state.tab != Tab.LISTEN && state.hasMedia) MiniPlayer(state, actions)
@@ -129,6 +152,14 @@ private fun MiniPlayer(state: RadioState, actions: RadioActions) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Dialogs(state: RadioState, actions: RadioActions) {
+    state.detail?.let { text ->
+        AlertDialog(
+            onDismissRequest = { state.detail = null },
+            text = { Text(text, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = { state.detail = null }) { Text("Schliessen") } },
+            containerColor = Nocturne.surface,
+        )
+    }
     state.reasonFor?.let { itemId ->
         ChoiceDialog("Warum weniger?", FeedbackReason.entries.map { it.label }, dismiss = "Egal", onDismiss = { state.reasonFor = null }) { index ->
             state.reasonFor = null

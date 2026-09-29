@@ -180,6 +180,13 @@ class MainActivity : AppCompatActivity(), RadioActions {
             renderTimes()
         }
         renderProgress(player)
+        state.phase = when {
+            player.mediaItemCount == 0 -> Phase.WAITING
+            player.playbackState == Player.STATE_BUFFERING -> Phase.BUFFERING
+            player.playbackState == Player.STATE_ENDED -> Phase.ENDED
+            player.isPlaying -> Phase.PLAYING
+            else -> Phase.PAUSED
+        }
         state.status = getString(
             when {
                 player.mediaItemCount == 0 -> R.string.status_waiting
@@ -239,7 +246,10 @@ class MainActivity : AppCompatActivity(), RadioActions {
     override fun togglePlay() {
         val player = controller ?: return
         if (player.mediaItemCount == 0) {
+            // Nothing loaded yet: ask for the program and start as soon as the first item arrives.
             state.status = getString(R.string.status_waiting)
+            player.play()
+            sync()
             plan()
             return
         }

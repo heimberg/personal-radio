@@ -10,6 +10,7 @@ import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FailureSummary
 import ch.heimberg.radio.core.FeedbackReason
+import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.ProgramSections
@@ -23,6 +24,15 @@ enum class Tab(val label: String, val icon: Int) {
     STUDIO("Studio", R.drawable.ic_sliders),
 }
 
+/** What the player is doing, in a word for the header chip. */
+enum class Phase(val icon: String, val label: String) {
+    WAITING("⏳", "In Produktion"),
+    BUFFERING("⏳", "Lädt"),
+    PLAYING("●", "Läuft"),
+    PAUSED("⏸", "Pausiert"),
+    ENDED("⏳", "Wartet auf den nächsten Beitrag"),
+}
+
 /** A short message for the snackbar; the counter lets the same text show twice. */
 data class Message(val text: String, val id: Int)
 
@@ -34,6 +44,7 @@ class RadioState {
     var title by mutableStateOf("")
     var show by mutableStateOf("")
     var status by mutableStateOf("")
+    var phase by mutableStateOf(Phase.WAITING)
     var playWhenReady by mutableStateOf(false)
     var live by mutableStateOf(false)
     var hasMedia by mutableStateOf(false)
@@ -73,6 +84,8 @@ class RadioState {
     var updateNote by mutableStateOf("")
     var updating by mutableStateOf(false)
     var message by mutableStateOf<Message?>(null)
+    /** A long message opened from the snackbar's «Details». */
+    var detail by mutableStateOf<String?>(null)
     private var messages by mutableIntStateOf(0)
     var reasonFor by mutableStateOf<String?>(null)
     var sleepOpen by mutableStateOf(false)
@@ -84,6 +97,13 @@ class RadioState {
     val current: TimelineItem? get() = open.firstOrNull { it.id == currentItemId }
     val look: Look? get() = current?.let(Looks::of)
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val readyCount: Int get() = open.count { it.isPlayable }
+
+    /** Music starts within the hour: only then is Spotify worth a note on «Hören». */
+    val musicSoon: Boolean get() {
+        val horizon = Instant.now().plusSeconds(3_600)
+        return open.any { Looks.of(it).kind == Kind.MUSIC && (starts[it.id]?.isBefore(horizon) ?: true) }
+    }
 
     fun say(text: String) {
         if (text.isBlank()) return
