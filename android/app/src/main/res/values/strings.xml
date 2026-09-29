@@ -39,6 +39,10 @@
     <string name="status_paused">Pausiert</string>
     <string name="liked">Gemerkt: mehr davon.</string>
     <string name="disliked">Gemerkt: weniger davon.</string>
+    <string name="time_signal">Zeitzeichen</string>
+    <string name="more">Mehr dazu</string>
+    <string name="more_ordered">Vertiefung bestellt – sie läuft direkt danach.</string>
+    <string name="more_unavailable">Zu diesem Beitrag ist keine Vertiefung möglich.</string>
     <string name="reason_title">Warum weniger?</string>
     <string name="reason_skip">Egal</string>
     <string name="reason_saved">Danke – die Redaktion achtet darauf.</string>

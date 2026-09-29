@@ -105,7 +105,7 @@ legend { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
 .now-controls { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 12px; }
 .now .play { border: 0; background: var(--brand); color: var(--on-brand); font-weight: 700; border-radius: 999px; min-height: 50px; padding: 0 28px; }
 .now .round { border: 1px solid #ffffff2a; background: transparent; color: var(--now-text); border-radius: 50%; width: 46px; height: 46px; }
-.now-rate { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+.now-rate { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
 .now-rate button { border: 1px solid #ffffff2a; background: transparent; color: var(--now-text); border-radius: 999px; padding: 6px 14px; font-size: .85rem; }
 .now-rate button[aria-pressed=true] { background: #ffffff1f; border-color: var(--brand); }
 .now-error { color: var(--danger); font-size: .85rem; margin: 10px 0 0; }

@@ -49,7 +49,11 @@ export interface CatalogTrack { uri: string; durationMs: number }
 export interface MusicCatalog { find(pick: Pick<TrackPick, 'title' | 'artist'>): Promise<CatalogTrack | null> }
 /** A track of one of the owner's playlists. Shown to the owner and played; never sent to an AI provider. */
 export interface PlaylistTrack extends CatalogTrack { title: string; artist: string }
-export interface PlaylistSource { tracks(owner: string, playlistId: string): Promise<PlaylistTrack[]> }
+export interface PlaylistSource {
+  tracks(owner: string, playlistId: string): Promise<PlaylistTrack[]>;
+  /** New albums and singles of the owner's top artists, newest first; like playlist tracks never sent to an AI provider. */
+  releases?(owner: string): Promise<PlaylistTrack[]>;
+}
 
 const text = (value: unknown, max: number) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 
@@ -301,6 +305,56 @@ export class SpotifyCatalog implements MusicCatalog {
       return null;
     }
     return null;
+  }
+
+  private async get<T>(url: string, label: string): Promise<T> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await this.fetcher(url, { headers: { Authorization: `Bearer ${await this.accessToken()}` }, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+      if (response.status === 401 && attempt === 0) { this.token = undefined; continue; }
+      if (!response.ok) {
+        const retry = Number(response.headers.get('Retry-After'));
+        throw new ProviderError(label, response.status, Number.isFinite(retry) && retry > 0 ? { retryAfterMs: retry * 1000 } : {});
+      }
+      return await response.json() as T;
+    }
+    throw new ProviderError(label, 401);
+  }
+
+  /**
+   * New albums and singles (released on or after [since]) of the given artists, one track each (the
+   * first), newest first. Artists are found by exact name; releases dated only by year are skipped.
+   */
+  async newReleases(artists: string[], since: Date, maxArtists = 15): Promise<PlaylistTrack[]> {
+    const same = (a: string, b: string) => a.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim() === b.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim();
+    const releases: Array<{ id: string; date: string; artist: string }> = [];
+    for (const name of [...new Set(artists)].slice(0, maxArtists)) {
+      const found = await this.get<{ artists?: { items?: Array<{ id?: string; name?: string }> } }>(
+        `https://api.spotify.com/v1/search?${new URLSearchParams({ q: name, type: 'artist', limit: '5', market: this.market })}`, 'Spotify search');
+      const artist = (found.artists?.items ?? []).find(item => typeof item.id === 'string' && /^[A-Za-z0-9]{22}$/.test(item.id) && typeof item.name === 'string' && same(item.name, name));
+      if (!artist) continue;
+      const albums = await this.get<{ items?: Array<{ id?: string; release_date?: string; release_date_precision?: string }> }>(
+        `https://api.spotify.com/v1/artists/${artist.id}/albums?${new URLSearchParams({ include_groups: 'album,single', market: this.market, limit: '10' })}`, 'Spotify albums');
+      let perArtist = 0;
+      for (const album of albums.items ?? []) {
+        if (typeof album.id !== 'string' || !/^[A-Za-z0-9]{22}$/.test(album.id) || typeof album.release_date !== 'string') continue;
+        const date = album.release_date_precision === 'day' ? album.release_date : album.release_date_precision === 'month' ? `${album.release_date}-01` : '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Date.parse(`${date}T00:00:00Z`) < since.getTime()) continue;
+        if (releases.some(item => item.id === album.id)) continue;
+        releases.push({ id: album.id, date, artist: artist.name! });
+        if (++perArtist >= 2) break;
+      }
+    }
+    releases.sort((a, b) => b.date.localeCompare(a.date));
+    const tracks: PlaylistTrack[] = [];
+    for (const release of releases.slice(0, 20)) {
+      const body = await this.get<{ items?: Array<{ uri?: string; name?: string; duration_ms?: number; artists?: Array<{ name?: string }> }> }>(
+        `https://api.spotify.com/v1/albums/${release.id}/tracks?${new URLSearchParams({ limit: '1', market: this.market })}`, 'Spotify album tracks');
+      const item = body.items?.[0];
+      if (!item || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
+      const artist = (item.artists ?? []).map(value => value.name ?? '').filter(Boolean).join(', ') || release.artist;
+      tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0 });
+    }
+    return tracks;
   }
 
   /**

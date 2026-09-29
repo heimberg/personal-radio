@@ -56,6 +56,43 @@ object Program {
 }
 
 /**
+ * The station ident: a short jingle before a spoken item that follows music (a song, an hour or a
+ * block). [before] is the item playing now, so the first new item is judged too. The jingle is a step
+ * of the item it introduces (`<item id>#ident`), never its last one.
+ */
+object StationSound {
+    fun withIdents(items: List<TimelineItem>, identUrl: String?, before: TimelineItem?, stationName: String = ""): List<Step> {
+        var previous = before
+        return items.flatMap { item ->
+            val steps = Program.steps(item)
+            val ident = identUrl != null && previous?.hasMusic == true && !item.hasMusic && steps.isNotEmpty()
+            previous = item
+            if (ident) listOf(SpeechStep(item.id, "${item.id}$IDENT", identUrl!!, stationName.ifBlank { item.showName }, item.showName, last = false)) + steps else steps
+        }
+    }
+
+    const val IDENT = "#ident"
+}
+
+/**
+ * The time signal at the full hour: once per hour, on the first change of item within the first
+ * [WINDOW_MINUTES] minutes. The hour the player started in is never announced.
+ */
+class HourSignal(startHour: Int) {
+    private var last = startHour
+
+    fun due(hour: Int, minute: Int): Boolean {
+        if (hour == last) return false
+        last = hour
+        return minute < WINDOW_MINUTES
+    }
+
+    companion object {
+        const val WINDOW_MINUTES = 20
+    }
+}
+
+/**
  * Watches the Spotify player while one of our tracks plays and says when to hand back: the track
  * ended, or Spotify moved on to something else (autoplay, a skip in the Spotify app). Before the
  * track has actually started, older states from Spotify are ignored.

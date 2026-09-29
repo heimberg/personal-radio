@@ -136,6 +136,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.transcript).setOnClickListener { openTranscript() }
         titleView.setOnClickListener { openTranscript() }
         findViewById<Button>(R.id.dislike).setOnClickListener { rate(false) }
+        findViewById<Button>(R.id.more).setOnClickListener { deepen() }
         spotifyButton.setOnClickListener { connectSpotify() }
         findViewById<Button>(R.id.archive).setOnClickListener { archive.launch(Intent(this, LibraryActivity::class.java)) }
         findViewById<Button>(R.id.cockpit).setOnClickListener { startActivity(Intent(this, CockpitActivity::class.java)) }
@@ -352,6 +353,20 @@ class MainActivity : AppCompatActivity() {
             statusView.text = result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" })
             val showId = upcomingItems.firstOrNull { it.id == id }?.showId
             if (!liked && result.isSuccess && FeedbackReason.asksFor(showId)) askReason(id)
+        }
+    }
+
+    /** «Mehr dazu»: the server researches a deeper follow-up and places it right after this item. */
+    private fun deepen() {
+        val id = controller?.currentMediaItem?.mediaId?.let(Program::itemIdOf) ?: return
+        statusView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        lifecycleScope.launch {
+            val result = runCatching { api.deepen(id) }
+            statusView.text = if (result.isSuccess) getString(R.string.more_ordered) else getString(R.string.more_unavailable)
+            if (result.isSuccess) {
+                controller?.takeIf { it.isSessionCommandAvailable(PlaybackService.SYNC) }?.sendCustomCommand(PlaybackService.SYNC, Bundle.EMPTY)
+                refreshTimeline()
+            }
         }
     }
 

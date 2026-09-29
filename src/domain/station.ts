@@ -61,7 +61,11 @@ export interface ShowConfig {
  * One group of a music block: the owner's Spotify playlists, or – without playlists – songs the AI picks
  * from `taste`. Playlist tracks are never sent to an AI provider, so their moderation stays generic.
  */
-export interface PlaylistGroup { name: string; playlists: string[]; taste: string }
+export interface PlaylistGroup {
+  name: string; playlists: string[]; taste: string;
+  /** New albums and singles of the owner's top artists (needs the connected listening profile). */
+  releases?: boolean;
+}
 /** When the host speaks inside a music block; 0 turns a counting trigger off. */
 export interface BlockTriggers {
   blockStart: boolean;
@@ -111,7 +115,12 @@ export interface StationConfig {
   schedule: ScheduleSlot[];
   /** The owner's changes to the editorial agents (prompts, temperature, on/off); defaults otherwise. */
   agents?: AgentConfig;
+  /** Station sound in the app: an ident jingle between music and speech, the time signal at the full hour. Missing: both on. */
+  sounds?: StationSounds;
 }
+
+export interface StationSounds { ident: boolean; hourChange: boolean }
+export const stationSounds = (config: StationConfig): StationSounds => config.sounds ?? { ident: true, hourChange: true };
 
 /** `archived`: produced but not heard before it left the program; it can still be played from the archive. */
 export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'archived' | 'failed' | 'expired';
@@ -207,7 +216,9 @@ function musicBlock(s: Record<string, unknown>, path: string, whole: (value: unk
       if (!found) fail(`${path}.groups[${index}].playlists[${i}]`, 'Spotify-Playlist-Link oder -ID erwartet');
       return found;
     });
-    return { name: text(g.name, `${path}.groups[${index}].name`, 60), playlists: [...new Set(playlists)], taste: text(g.taste ?? '', `${path}.groups[${index}].taste`, 500, false) };
+    if (g.releases !== undefined && typeof g.releases !== 'boolean') fail(`${path}.groups[${index}].releases`, 'true oder false');
+    return { name: text(g.name, `${path}.groups[${index}].name`, 60), playlists: [...new Set(playlists)], taste: text(g.taste ?? '', `${path}.groups[${index}].taste`, 500, false),
+      ...(g.releases === true ? { releases: true } : {}) };
   });
   if (!groups.length) fail(`${path}.groups`, 'mindestens eine Gruppe');
   const t = s.triggers === undefined ? DEFAULT_TRIGGERS : record(s.triggers, `${path}.triggers`);
@@ -352,7 +363,14 @@ export function parseStationConfig(raw: unknown): StationConfig {
   }
 
   const agents = parseAgentConfig(c.agents, fail);
-  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}) };
+  let sounds: StationSounds | undefined;
+  if (c.sounds !== undefined && c.sounds !== null) {
+    const s = record(c.sounds, 'sounds');
+    if (typeof s.ident !== 'boolean') fail('sounds.ident', 'true oder false');
+    if (typeof s.hourChange !== 'boolean') fail('sounds.hourChange', 'true oder false');
+    sounds = { ident: s.ident as boolean, hourChange: s.hourChange as boolean };
+  }
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}) };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */

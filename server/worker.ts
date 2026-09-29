@@ -12,15 +12,18 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps, TrialAgent } from './station.ts';
-import { ConfigError, parseStationConfig } from '../src/domain/station.ts';
+import { ConfigError, parseStationConfig, stationSounds } from '../src/domain/station.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
+import { hourKey, hourText, identJingle, timeSignal } from './sounds.ts';
+
+let identAudio: Uint8Array | undefined, signalAudio: Uint8Array | undefined;
 import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, isFeedbackReason, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { FeedbackAction } from '../src/domain/recommendation.ts';
 
@@ -258,6 +261,9 @@ function stationDeps(env: Environment): StationDeps {
   };
 }
 
+/** Releases younger than this count as new for the «Neu von deinen Künstlern» block. */
+const RELEASE_DAYS = 60;
+
 /** The owner's token reads private playlists; without a connection (or when refused) the app token reads public ones. */
 function playlistsFor(catalog: SpotifyCatalog, listening: SpotifyListening | null): PlaylistSource {
   return {
@@ -268,6 +274,11 @@ function playlistsFor(catalog: SpotifyCatalog, listening: SpotifyListening | nul
         catch (error) { if (!(error instanceof ProviderError) || ![401, 403, 404].includes(error.status ?? 0)) throw error; }
       }
       return catalog.playlistTracks(id);
+    },
+    releases: async owner => {
+      const artists = listening ? await listening.topArtists(owner, new Date()) : [];
+      if (!artists.length) throw new Error('Spotify-Hörprofil nicht verbunden oder noch ohne Top-Künstler');
+      return catalog.newReleases(artists, new Date(Date.now() - RELEASE_DAYS * 86_400_000));
     },
   };
 }
@@ -353,7 +364,31 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (url.searchParams.get('peek') !== '1') await store.touch(owner, new Date());
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
-    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify }, 200);
+    const sounds = config ? stationSounds(config) : { ident: false, hourChange: false };
+    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify,
+      sounds: { ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav' } : {}), ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}) } }, 200);
+  }
+  if (url.pathname === '/api/sounds/ident.wav' || url.pathname === '/api/sounds/pips.wav') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const audio = url.pathname.endsWith('ident.wav') ? (identAudio ??= identJingle()) : (signalAudio ??= timeSignal());
+    return new Response(audio as BodyInit, { headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(audio.byteLength), 'Cache-Control': 'private, max-age=604800' } });
+  }
+  const hourMatch = url.pathname.match(/^\/api\/sounds\/hour\/(\d{1,2})$/);
+  if (hourMatch) {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const hour = Number(hourMatch[1]), config = await store.getConfig(owner);
+    if (hour > 23 || !config) return json({ error: 'not_found' }, 404);
+    // Recorded once per hour, voice and station name; later requests read it from the bucket.
+    const key = hourKey(hour, `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}`, config.name);
+    for (const [suffix, type] of [['.mp3', 'audio/mpeg'], ['.wav', 'audio/wav']] as const) {
+      const stored = await env.AUDIO.get(key + suffix);
+      if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
+    }
+    try {
+      const voiced = await pipelineFor(env).voice(owner, { title: 'Zeitansage', text: hourText(hour, config.name), sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle);
+      await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+      return new Response(voiced.audio as BodyInit, { headers: { 'Content-Type': voiced.contentType, 'Content-Length': String(voiced.audio.byteLength), 'Cache-Control': 'private, max-age=86400' } });
+    } catch (error) { return json({ error: 'voice_failed' }, statusFor(error)); }
   }
   if (url.pathname === '/api/places') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
@@ -492,13 +527,21 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|remove|delete|script)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|remove|delete|script)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
   if (match[2] === 'script') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json(transcriptView(row, await store.getConfig(owner)), 200);
+  }
+  if (match[2] === 'more') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const itemId = await addFollowUp(stationDeps(env), owner, row.id);
+    if (!itemId) return json({ error: 'not_deepenable' }, 409);
+    await env.PRODUCTION.send({ owner, itemId });
+    return json({ itemId }, 200);
   }
   if (match[2] === 'reason') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);

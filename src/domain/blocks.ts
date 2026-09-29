@@ -14,6 +14,8 @@ export interface Block {
   input?: { kind: BlockInput; label: string; example: string };
   /** Songs come from Spotify: needs the Spotify app on the phone. */
   music?: boolean;
+  /** Not offered in the palette: added by another action (e.g. «Mehr dazu»). */
+  hidden?: boolean;
   show: Omit<ShowConfig, 'id' | 'name' | 'enabled'>;
 }
 
@@ -47,6 +49,13 @@ export const BLOCKS: readonly Block[] = [
   { id: 'musik', name: 'Musikblock', description: '30 Minuten Musik nach deinem Geschmack', music: true,
     show: { ...spoken, format: 'music_block', targetMinutes: 30, verification: 'off', sourceMode: 'web', instructions: '',
       groups: [{ name: 'Mein Geschmack', playlists: [], taste: '' }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20, triggers: { ...DEFAULT_TRIGGERS } } },
+  { id: 'neu', name: 'Neu von deinen Künstlern', description: 'Neue Alben und Singles aus deinem Spotify-Hörprofil', music: true,
+    show: { ...spoken, format: 'music_block', targetMinutes: 20, verification: 'off', sourceMode: 'web', instructions: '',
+      groups: [{ name: 'Neuerscheinungen', playlists: [], taste: '', releases: true }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20,
+      triggers: { ...DEFAULT_TRIGGERS, beforeTrack: 0, afterTrack: 0, everyMinutes: 10 } } },
+  { id: 'vertiefung', name: 'Vertiefung', description: 'Mehr zum Beitrag davor', hidden: true,
+    show: { ...spoken, format: 'brief', targetMinutes: 3, verification: 'strict', sourceMode: 'web',
+      instructions: 'Vertiefe den vorherigen Beitrag: Hintergründe, Ursachen, Folgen und ein konkretes Beispiel. Wiederhole nicht, was er schon gesagt hat.' } },
 ];
 
 /** Timeline items of a block carry this show ID. */
@@ -76,7 +85,7 @@ const OWN_INPUT = {
 
 export function blockViews(config: StationConfig): BlockView[] {
   return [
-    ...BLOCKS.map(({ show, ...block }) => ({ ...block, minutes: show.targetMinutes, music: !!block.music, own: false })),
+    ...BLOCKS.filter(block => !block.hidden).map(({ show, hidden: _hidden, ...block }) => ({ ...block, minutes: show.targetMinutes, music: !!block.music, own: false })),
     { id: 'song', name: 'Song', description: 'Ein Song nach deinem Geschmack', minutes: SONG_MINUTES, music: true, own: false },
     ...config.shows.filter(show => show.enabled).map(show => {
       const focus = HOUR_FOCUS[show.format];

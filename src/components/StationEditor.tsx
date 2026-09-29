@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Topic } from '../domain/program.ts';
-import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId } from '../domain/station.ts';
+import { ConfigError, DEFAULT_TRIGGERS, HOUR_FOCUS, MINUTES_LIMITS, bringsOwnMusic, parseStationConfig, playlistId, stationSounds } from '../domain/station.ts';
 import type { BlockTriggers, FeedConfig, HourFocus, PlaylistGroup, ShowConfig, ShowFormat, ShowTool, StationConfig } from '../domain/station.ts';
 import { FORMAT_LABELS, api } from '../station-client.ts';
 import { ListeningProfile } from './ListeningProfile.tsx';
@@ -87,10 +87,11 @@ function BlockSettings({ show, onChange }: { show: ShowConfig; onChange(update: 
           <button type="button" className="button ghost small danger" aria-label={`${group.name} entfernen`} disabled={groups.length <= 1}
             onClick={() => onChange(current => ({ ...current, groups: (current.groups ?? []).filter((_, i) => i !== index) }))}>×</button>
         </div>
+        <label className="check"><input type="checkbox" checked={!!group.releases} onChange={event => setGroup(index, { releases: event.target.checked || undefined })} />Neuerscheinungen deiner Top-Künstler (Spotify-Hörprofil)</label>
         <Field label="Spotify-Playlists" hint="Ein Link pro Zeile (Teilen → Link kopieren). Leer: die KI wählt.">
           <PlaylistLinks value={group.playlists} onChange={playlists => setGroup(index, { playlists })} />
         </Field>
-        {!group.playlists.length && <Field label="Geschmack dieser Gruppe" hint="Leer: dein allgemeiner Musikgeschmack.">
+        {!group.playlists.length && !group.releases && <Field label="Geschmack dieser Gruppe" hint="Leer: dein allgemeiner Musikgeschmack.">
           <input value={group.taste} maxLength={500} placeholder="z. B. Krautrock und frühe Elektronik" onChange={event => setGroup(index, { taste: event.target.value })} />
         </Field>}
       </div>)}
@@ -223,6 +224,10 @@ export function StationEditor({ config: stored, onSave }: Props) {
       </Field>
       <fieldset className="spaced"><legend>Wo du hörst</legend>
         <LocationPicker value={draft.location} onChange={location => change(next => { if (location) next.location = location; else delete next.location; })} />
+      </fieldset>
+      <fieldset className="spaced"><legend>Stationssound (in der App)</legend>
+        <label className="check"><input type="checkbox" checked={stationSounds(draft).ident} onChange={event => change(next => { next.sounds = { ...stationSounds(next), ident: event.target.checked }; })} />Kurzer Jingle, wenn nach Musik wieder gesprochen wird</label>
+        <label className="check"><input type="checkbox" checked={stationSounds(draft).hourChange} onChange={event => change(next => { next.sounds = { ...stationSounds(next), hourChange: event.target.checked }; })} />Zeitzeichen und Zeitansage zur vollen Stunde</label>
       </fieldset>
     </Section>
 

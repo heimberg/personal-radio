@@ -7,6 +7,7 @@ import type { FeedbackReason } from '../domain/listener-notes.ts';
 interface Props {
   player: RadioPlayer; readyCount: number; onListen(): void; onRate(action: FeedbackAction): void; rated: FeedbackAction | null;
   onReason(reason: FeedbackReason): void; reason: FeedbackReason | null;
+  onMore(): void; deepened: boolean;
 }
 
 const STATUS: Record<string, string> = {
@@ -15,7 +16,7 @@ const STATUS: Record<string, string> = {
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
 /** Listening in the browser: the spoken program. Music hours play in the Android app, where Spotify is. */
-export function NowPlaying({ player, readyCount, onListen, onRate, rated, onReason, reason }: Props) {
+export function NowPlaying({ player, readyCount, onListen, onRate, rated, onReason, reason, onMore, deepened }: Props) {
   const state = useSyncExternalStore(player.subscribe, player.snapshot);
   const track = player.tracks[state.index];
   const started = player.tracks.length > 0;
@@ -38,6 +39,7 @@ export function NowPlaying({ player, readyCount, onListen, onRate, rated, onReas
     {track?.timelineId && <div className="now-rate" role="group" aria-label="Beitrag bewerten">
       <button aria-label="Mehr davon" aria-pressed={rated === 'like'} onClick={() => onRate('like')}>👍 Mehr davon</button>
       <button aria-label="Weniger davon" aria-pressed={rated === 'dislike'} onClick={() => onRate('dislike')}>👎 Weniger</button>
+      <button aria-label="Mehr dazu" aria-pressed={deepened} disabled={deepened} onClick={onMore}>＋ Mehr dazu</button>
     </div>}
     {track?.timelineId && rated === 'dislike' && <div className="now-reasons" role="group" aria-label="Warum weniger?">
       <span>{reason ? 'Danke, gemerkt.' : 'Warum? (optional)'}</span>

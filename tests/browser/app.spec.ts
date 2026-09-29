@@ -136,6 +136,12 @@ test('program view: timeline, actions, browser playback with feedback; music hou
   await expect.poll(() => reasons).toEqual([{ reason: 'too_long' }]);
   await page.getByRole('button', { name: 'Mehr davon' }).click();
   await expect(page.getByRole('button', { name: 'Mehr davon' })).toHaveAttribute('aria-pressed', 'true');
+  let deepened = 0;
+  await page.route('**/api/timeline/t1/more', route => { deepened++; return route.fulfill({ contentType: 'application/json', body: '{"itemId":"t9"}' }); });
+  await page.getByRole('button', { name: 'Mehr dazu' }).click();
+  await expect(page.getByText(/Vertiefung bestellt/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mehr dazu' })).toBeDisabled();
+  expect(deepened).toBe(1);
   await expect(page.getByRole('group', { name: 'Warum weniger?' })).toHaveCount(0);
   await page.evaluate(() => { const audio = (window as unknown as { testAudio: HTMLAudioElement }).testAudio; audio.currentTime = audio.duration - 0.1; });
   await expect.poll(() => worker.feedback).toEqual([{ action: 'dislike', listenedRatio: 1 }, { action: 'like', listenedRatio: 1 }, { action: 'complete', listenedRatio: 1 }]);

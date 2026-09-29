@@ -269,8 +269,21 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
           if (news.sources.length) notes.push('Die aktuellen Schlagzeilen stehen in den Quellen «h1» bis «h' + news.sources.length + '».');
         }
       }
+      let researchPrompt = expandPlaceholders(configured.researchPrompt, values);
+      // «Mehr dazu»: the item it deepens gives its sources and what was already said.
+      const parentId = followUpOf(row);
+      if (parentId && row.state === 'planned') {
+        const parent = await deps.store.getItem(owner, parentId);
+        let said: Script | undefined, before: Source[] = [];
+        try { said = JSON.parse(parent?.script_json ?? 'null') ?? undefined; before = JSON.parse(parent?.sources_json ?? '[]'); } catch { /* Handled below. */ }
+        if (!said?.title || typeof said.text !== 'string') return fail('FOLLOW_UP_WITHOUT_ITEM');
+        const parentSources = before.slice(0, 6).map((source, index) => ({ ...source, id: `p${index + 1}`, excerpt: source.excerpt.slice(0, 2500) }));
+        toolSources.push(...parentSources);
+        notes.push(`Der vorherige Beitrag hiess «${said.title}» und sagte bereits: «${said.text.replace(/\s+/g, ' ').slice(0, 1500)}». Wiederhole das nicht, sondern gehe tiefer.${parentSources.length ? ` Seine Quellen stehen in «p1» bis «p${parentSources.length}».` : ''}`);
+        researchPrompt = `Recherchiere Hintergründe, Ursachen, Folgen und neue Aspekte zu «${said.title}», die über einen kurzen Nachrichtenbeitrag hinausgehen.`;
+      }
       const instructions = [expandPlaceholders(configured.instructions, values), ...notes].filter(Boolean).join(' ');
-      show = { ...configured, instructions, researchPrompt: expandPlaceholders(configured.researchPrompt, values) };
+      show = { ...configured, instructions, researchPrompt };
     }
     if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
@@ -606,7 +619,8 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   const groups = show.groups ?? [], triggers = show.triggers!;
   if (!deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
   if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
-  if (groups.some(group => group.playlists.length) && !deps.playlists) return fail('SPOTIFY_NOT_CONFIGURED');
+  if (groups.some(group => group.playlists.length || group.releases) && !deps.playlists) return fail('SPOTIFY_NOT_CONFIGURED');
+  if (groups.some(group => group.releases) && !deps.playlists?.releases) return fail('SPOTIFY_NOT_CONFIGURED');
   await deps.reserveGeneration(owner);
   const random = deps.random ?? Math.random;
   const history = await blockHistory(deps, owner, show.id);
@@ -622,10 +636,14 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   const refill = async (index: number, wanted: number) => {
     const group = groups[index], queue = queues.get(index) ?? [];
     queues.set(index, queue);
-    if (group.playlists.length) {
+    if (group.playlists.length || group.releases) {
       if (exhausted.has(index)) return;
       exhausted.add(index); // A playlist group is loaded once per block.
       const pool: PlaylistTrack[] = [];
+      if (group.releases) {
+        try { pool.push(...await deps.playlists!.releases!(owner)); }
+        catch (error) { problems.push(`Neuerscheinungen: ${error instanceof Error ? error.message : 'nicht lesbar'}`.slice(0, 160)); }
+      }
       for (const id of group.playlists) {
         try { pool.push(...await deps.playlists!.tracks(owner, id)); }
         catch (error) { problems.push(`Playlist ${id}: ${error instanceof Error ? error.message : 'nicht lesbar'}`.slice(0, 120)); }
@@ -634,7 +652,8 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
       // Unheard tracks first; when a playlist has been played through, it starts over.
       const unheard = fresh.filter(track => !used.has(track.uri));
       const candidates = unheard.length ? unheard : fresh;
-      for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
+      // Releases stay newest first; playlists are shuffled.
+      if (!group.releases) for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
       queue.push(...candidates.map(track => ({ ...track, group: index, picked: 'playlist' as const })));
       return;
     }
@@ -755,7 +774,7 @@ export async function addBlock(deps: StationDeps, owner: string, blockId: string
   }
   // The owner's own shows are blocks too ("show:<id>"); music hours among them take a subject.
   const own = blockId.startsWith(SHOW_BLOCK) ? config.shows.find(show => show.id === blockId.slice(SHOW_BLOCK.length)) : undefined;
-  const block = own ? undefined : BLOCKS.find(item => item.id === blockId);
+  const block = own ? undefined : BLOCKS.find(item => item.id === blockId && !item.hidden);
   if (!own && !block) return null;
   const now = deps.now();
   const last = await deps.store.lastItem(owner);
@@ -767,6 +786,32 @@ export async function addBlock(deps: StationDeps, owner: string, blockId: string
   if (word) await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: word }) }, now);
   await placeAfter(deps, owner, id, after);
   return id;
+}
+
+/**
+ * «Mehr dazu»: a deeper follow-up to a produced spoken item, right after it. It starts from the item's
+ * sources, researches more on the web and is checked like every item; it knows what was already said.
+ */
+export async function addFollowUp(deps: StationDeps, owner: string, parentId: string): Promise<string | null> {
+  const parent = await deps.store.getItem(owner, parentId);
+  if (!parent?.script_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(parent.state)) return null;
+  let script: Partial<Script> & { parts?: unknown };
+  try { script = JSON.parse(parent.script_json); } catch { return null; }
+  if (script.parts || typeof script.text !== 'string' || !script.title) return null;
+  const now = deps.now(), last = await deps.store.lastItem(owner);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: `${BLOCK_PREFIX}vertiefung`, plannedAt: now.toISOString(), estimatedMinutes: 3 }, now);
+  await deps.store.update(owner, id, { research_json: JSON.stringify({ followUp: parent.id }) }, now);
+  const open = (await deps.store.openItems(owner)).map(item => item.id);
+  await placeAfter(deps, owner, id, open.includes(parent.id) ? parent.id : undefined);
+  return id;
+}
+
+function followUpOf(row: TimelineRow): string | undefined {
+  try {
+    const value = (JSON.parse(row.research_json ?? '{}') as { followUp?: unknown }).followUp;
+    return typeof value === 'string' ? value : undefined;
+  } catch { return undefined; }
 }
 
 /** Moves a new item right after [after] (the item that is playing), or to the start of the program. */

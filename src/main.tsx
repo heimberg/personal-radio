@@ -137,6 +137,21 @@ function App() {
     setReasons(current => ({ ...current, [track.timelineId!]: reason }));
   }
 
+  const [deepened, setDeepened] = useState<Record<string, boolean>>({});
+  async function more() {
+    const track = player.tracks[player.state.index];
+    if (!track?.timelineId) return;
+    setDeepened(current => ({ ...current, [track.timelineId!]: true }));
+    try {
+      await post('api/timeline/' + track.timelineId + '/more');
+      setNotice('Vertiefung bestellt – sie wird recherchiert, geprüft und läuft danach.');
+      await refresh();
+    } catch {
+      setDeepened(current => ({ ...current, [track.timelineId!]: false }));
+      setNotice('Zu diesem Beitrag ist keine Vertiefung möglich.');
+    }
+  }
+
   const ready = items.filter(playableInBrowser).length;
   const currentId = player.tracks[player.state.index]?.timelineId;
   // YAML is for bulk edits; it opens from the settings instead of taking a place in the navigation.
@@ -151,7 +166,8 @@ function App() {
     <button className="button primary" onClick={() => void setUp()}>Programm einrichten</button></section>;
   else content = <>
     {view === 'program' && <>
-      {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} onReason={giveReason} reason={currentId ? reasons[currentId] ?? null : null} />}
+      {!embeddedInApp && <NowPlaying player={player} readyCount={ready} onListen={listen} onRate={rate} rated={currentId ? ratings[currentId] ?? null : null} onReason={giveReason} reason={currentId ? reasons[currentId] ?? null : null}
+        onMore={() => void more()} deepened={currentId ? !!deepened[currentId] : false} />}
       <Timeline config={config} items={items} failures={failures} refresh={refresh} />
     </>}
     {view === 'settings' && <>

@@ -35,7 +35,7 @@ export function DayPlan({ schedule, shows, onChange }: Props) {
   const name = (id: string) => id.startsWith(BLOCK_PREFIX) ? BLOCKS.find(block => `${BLOCK_PREFIX}${block.id}` === id)?.name ?? id : shows.find(show => show.id === id)?.name ?? id;
   const update = (index: number, change: (slot: ScheduleSlot) => ScheduleSlot) => onChange(schedule.map((slot, i) => i === index ? change(slot) : slot));
   const choices = [
-    ...BLOCKS.map(block => ({ id: `${BLOCK_PREFIX}${block.id}`, name: block.name, hint: block.description, own: false })),
+    ...BLOCKS.filter(block => !block.hidden).map(block => ({ id: `${BLOCK_PREFIX}${block.id}`, name: block.name, hint: block.description, own: false })),
     ...shows.filter(show => show.enabled).map(show => ({ id: show.id, name: show.name, hint: 'Deine Sendung', own: true })),
   ];
 
