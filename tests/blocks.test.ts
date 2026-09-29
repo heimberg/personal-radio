@@ -4,7 +4,8 @@ import { defaultStationConfig, parseStationConfig } from '../src/domain/station.
 import type { EditorialDirection, Script, Source } from '../src/domain/program.ts';
 import { BLOCKS, blockViews } from '../src/domain/blocks.ts';
 import { StationStore } from '../server/station-store.ts';
-import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, toView } from '../server/station.ts';
+import { addBlock, addFollowUp, planTimeline, produceItem, scheduleShowNow, tick, toView } from '../server/station.ts';
+import { briefSystemPrompt } from '../server/providers.ts';
 import type { StationDeps } from '../server/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
 
@@ -20,7 +21,8 @@ function station(feeds = false) {
 }
 
 function harness(config = station()) {
-  const store = new StationStore(sqliteD1());
+  const db = sqliteD1();
+  const store = new StationStore(db);
   let ids = 0;
   const seen: { direction?: EditorialDirection; sources: Source[]; research: string[] } = { sources: [], research: [] };
   const deps: StationDeps = {
@@ -40,7 +42,7 @@ function harness(config = station()) {
       voice: async () => ({ audio: new Uint8Array([1]), contentType: 'audio/mpeg' as const, ttsCharacters: 5 }),
     },
   };
-  return { store, deps, seen, setup: () => store.saveConfig('o', config, NOW) };
+  return { db, store, deps, seen, setup: () => store.saveConfig('o', config, NOW) };
 }
 
 test('the block list offers the catalog, one song and the owner\'s active shows, with a subject only where it matters', () => {
@@ -63,7 +65,7 @@ test('a weather block comes right after the playing item and is produced with da
   assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, id, second]);
   assert.equal(toView((await h.store.getItem('o', id))!, null).showName, 'Wetter');
   assert.equal(await produceItem(h.deps, 'o', id), 'ready');
-  assert.match(h.seen.direction!.instructions!, /Heute ist Montag, 28\. September 2026, es ist 07:30 Uhr\. Das aktuelle Wetter steht in der Quelle «wetter»\./);
+  assert.match(h.seen.direction!.instructions!, /Heute ist Montag, 28\. September 2026; der Beitrag läuft voraussichtlich am Morgen\. Das aktuelle Wetter steht in der Quelle «wetter»\./);
   assert.deepEqual(h.seen.sources.map(item => item.id), ['wetter']);
   // Without a place the weather cannot be told.
   await h.store.saveConfig('o', parseStationConfig({ ...station(), location: undefined }), NOW);
@@ -145,4 +147,22 @@ test('«Neu von deinen Künstlern» plays new releases newest first; their title
   assert.deepEqual(view.parts?.filter(part => part.kind === 'track').map(part => part.kind === 'track' && part.spotifyUri), ['spotify:track:new1', 'spotify:track:new2']);
   assert.doesNotMatch(JSON.stringify(moments), /Neuer Song|Zweiter Song|Band A/);
   assert.equal(view.showName, 'Neu von deinen Künstlern');
+});
+
+test('pre-produced items: time of day of the expected air time, no clock time, and late time-bound items leave the program', async () => {
+  const h = harness(); await h.setup();
+  // Planned for the evening (19:30 in Zurich): the note names the evening, never a clock time.
+  const weather = (await addBlock(h.deps, 'o', 'wetter'))!;
+  h.db.prepare('UPDATE timeline_items SET planned_at = ? WHERE id = ?').bind('2026-09-28T17:30:00.000Z', weather).run();
+  assert.equal(await produceItem(h.deps, 'o', weather), 'ready');
+  assert.match(h.seen.direction!.instructions!, /läuft voraussichtlich am Abend/);
+  assert.doesNotMatch(h.seen.direction!.instructions!, /\d{1,2}:\d{2}/);
+  const discovery = (await addBlock(h.deps, 'o', 'entdeckung', 'Tiefsee'))!;
+  assert.equal(await produceItem(h.deps, 'o', discovery), 'ready');
+  // Three hours past their air time: the weather is archived, the timeless discovery stays.
+  for (const id of [weather, discovery]) h.db.prepare('UPDATE timeline_items SET planned_at = ? WHERE id = ?').bind('2026-09-28T02:00:00.000Z', id).run();
+  await tick(h.deps, 'o');
+  assert.equal((await h.store.getItem('o', weather))!.state, 'archived');
+  assert.equal((await h.store.getItem('o', discovery))!.state, 'ready');
+  assert.match(briefSystemPrompt(undefined), /vorproduziert und läuft später: nenne keine Uhrzeit/);
 });

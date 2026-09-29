@@ -63,6 +63,8 @@ const LEASE_MINUTES = 10;
 const MAX_ATTEMPTS = 3;
 const MAX_NEW_ITEMS = 12;
 const STALE_HOURS = 12;
+/** Time-bound items leave the program when their planned air time is this far in the past. */
+const TIMELY_HOURS = 2;
 const ACTIVE_LISTENER_HOURS = 3;
 export const AUDIO_RETENTION_DAYS = 7;
 const PURGE_AFTER_HOURS = 24;
@@ -129,6 +131,13 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const config = await deps.store.getConfig(owner);
   if (!config) return { planned: 0, due: [], expired: 0 };
   const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now);
+  // Time-bound items (weather, headlines, date, a music block's time of day) that missed their air time
+  // by hours no longer fit: finished ones move to the archive, and the planner makes fresh ones.
+  for (const row of await deps.store.openItems(owner)) {
+    if ((row.state !== 'ready' && row.state !== 'voicing') || Date.parse(row.planned_at) > now.getTime() - TIMELY_HOURS * 3_600_000 || !timeBound(row, config)) continue;
+    await deps.store.update(owner, row.id, { state: row.state === 'ready' ? 'archived' : 'expired', lease_until: null }, now);
+    expired.push({ ...row, state: row.state === 'ready' ? 'archived' : 'expired' });
+  }
   // Archived items keep their audio for the retention period, so they can still be heard.
   const stale = expired.filter(row => row.state === 'expired');
   for (const row of [...stale, ...await deps.store.audioToRelease(owner, minutes(now, -AUDIO_RETENTION_DAYS * 24 * 60))]) {
@@ -177,11 +186,11 @@ async function collectSources(deps: StationDeps, owner: string, config: StationC
 
 /** What comes before an item: for the bridge into it and the station ident after music. */
 async function stationContext(deps: StationDeps, owner: string, config: StationConfig, row: TimelineRow, now: Date): Promise<StationContext> {
-  const clock = clockValues(now, config.timezone);
+  const air = airTime(row, now), clock = clockValues(air, config.timezone);
   const previous = await deps.store.previousItem(owner, row.seq);
   const before = previous ? toView(previous, config) : undefined;
   const musical = !!previous && (previous.show_id === MUSIC_SHOW_ID || bringsOwnMusic((config.shows.find(show => show.id === previous.show_id) ?? blockOf(previous.show_id)?.show)?.format ?? 'brief'));
-  return { stationName: config.name, when: `${clock.wochentag}, ${clock.uhrzeit}`, afterMusic: musical,
+  return { stationName: config.name, when: `${clock.wochentag}, am ${daytime(air, config.timezone)}`, afterMusic: musical,
     ...(before && previous!.show_id !== MUSIC_SHOW_ID ? { previous: before.title ?? before.showName } : {}) };
 }
 
@@ -246,12 +255,15 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
     // weather and headlines also become sources, so the writer can cite them.
     let show = configured, toolSources: Source[] = [];
     if (configured) {
-      const values = clockValues(now, config.timezone, config.location);
+      // Items are produced ahead: date and time of day are those of the expected air time, and the
+      // speech never names a clock time (the live time signal in the app does that).
+      const air = airTime(row, now), values = clockValues(air, config.timezone, config.location);
+      values.uhrzeit = daytime(air, config.timezone);
       const tools = new Set(configured.tools ?? []);
       if (usesWeather(configured)) tools.add('weather');
       if (usesHeadlines(configured)) tools.add('headlines');
       const notes: string[] = [];
-      if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}, es ist ${values.uhrzeit} Uhr.`);
+      if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}; der Beitrag läuft voraussichtlich am ${values.uhrzeit}.`);
       // Only a new draft needs fresh information; a retry of the voice keeps the approved script.
       if (row.state === 'planned') {
         if (tools.has('weather')) {
@@ -574,6 +586,19 @@ const MAX_AI_BATCHES = 4;
 /** Speech takes part of a block's length; the music fills the rest. */
 const BLOCK_MUSIC_SHARE = 0.85;
 
+/** Items whose content belongs to their time: live tools, placeholders, or a music block's time-of-day moderation. */
+function timeBound(row: TimelineRow, config: StationConfig): boolean {
+  const show = config.shows.find(item => item.id === row.show_id) ?? blockOf(row.show_id)?.show;
+  if (!show) return false;
+  return !!show.tools?.length || usesWeather(show as ShowConfig) || usesHeadlines(show as ShowConfig) || /\{(datum|wochentag|uhrzeit)\}/i.test(`${show.instructions} ${show.researchPrompt}`) || show.format === 'music_block';
+}
+
+/** When an item is expected on air: its planned time, or now when that has passed. */
+function airTime(row: TimelineRow, now: Date): Date {
+  const planned = Date.parse(row.planned_at);
+  return Number.isFinite(planned) && planned > now.getTime() ? new Date(planned) : now;
+}
+
 function daytime(date: Date, timezone: string): string {
   const hour = Math.floor(localClock(date, timezone).minutes / 60);
   return hour < 5 ? 'Nacht' : hour < 11 ? 'Morgen' : hour < 14 ? 'Mittag' : hour < 18 ? 'Nachmittag' : hour < 22 ? 'Abend' : 'Nacht';
@@ -722,7 +747,7 @@ async function produceMusicBlock(deps: StationDeps, owner: string, config: Stati
   const groupNames = [...new Set(tracks.map(track => groups[track.group].name))];
   const texts = await deps.musicWriter.writeBlock({
     blockName: show.name, groups: groupNames, nextShow: nextShowName(config, show, new Date(row.planned_at)),
-    daytime: daytime(new Date(row.planned_at), config.timezone), talkSeconds: show.talkSeconds ?? 20,
+    daytime: daytime(airTime(row, deps.now()), config.timezone), talkSeconds: show.talkSeconds ?? 20,
     moments: positions.map(position => moments.get(position)!),
     direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
   });
