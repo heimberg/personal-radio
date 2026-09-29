@@ -234,4 +234,4 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 
 ## License
 
-No license has been chosen yet. The code is visible, but that does not grant permission to reuse it.
+[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the Inter font (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.
