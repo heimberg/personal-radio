@@ -55,6 +55,16 @@ export async function finishScript(editor: ScriptEditor, draft: Script, sources:
   return { ...best, ...(score ? { quality: score } : {}) };
 }
 
+/**
+ * One repair after a rejected fact check: the editor removes or narrows exactly the claims the check could
+ * not find in the sources. Returns the draft unchanged if the rewrite fails or breaks the contract.
+ */
+export async function repairScript(editor: ScriptEditor, draft: Script, sources: Source[], direction: EditorialDirection | undefined, context: StationContext, reasons: string): Promise<Script> {
+  const notes = `Die Faktenprüfung hat diese Aussagen nicht in den Quellen gefunden: ${reasons.slice(0, 600)}. Streiche sie oder formuliere sie so, dass die Quellen sie wörtlich decken; füge nichts Neues hinzu.`;
+  try { return { ...keepContract(parseScript(await editor.polish(draft, sources, direction, context, notes), sources), draft), ...(draft.quality ? { quality: draft.quality } : {}) }; }
+  catch { return draft; }
+}
+
 /** The rewrite keeps the format (dialog stays dialog), the title's role and the interest tags. */
 function keepContract(script: Script, draft: Script): Script {
   if (!!draft.turns !== !!script.turns) throw new Error('format changed');

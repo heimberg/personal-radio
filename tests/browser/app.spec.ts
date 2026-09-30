@@ -34,7 +34,7 @@ async function fakeWorker(page: Page, initial: unknown) {
   await page.route('**/api/timeline/*/remove', route => { state.calls.push(`remove ${new URL(route.request().url()).pathname.split('/')[3]}`); return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
   for (const action of ['plan', 'retry', 'cleanup']) {
     await page.route(`**/api/timeline/${action}`, route => { state.calls.push(action); return route.fulfill({ contentType: 'application/json',
-      body: JSON.stringify(action === 'plan' ? { planned: 2, queued: 2 } : action === 'retry' ? { retired: 1, restarted: 0, planned: 1, queued: 1 } : { removed: 1 }) }); });
+      body: JSON.stringify(action === 'plan' ? { planned: 2, queued: 2 } : action === 'retry' ? { retried: 1, retired: 0, restarted: 0, planned: 1, queued: 1 } : { removed: 1 }) }); });
   }
   await page.route('**/api/blocks', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ blocks: [
     { id: 'wetter', name: 'Wetter', description: 'Das Wetter für heute und morgen', minutes: 1, music: false, own: false },

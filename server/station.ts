@@ -6,7 +6,7 @@ import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts'
 import type { FeedItem } from './feed.ts';
 import { ProviderError, withoutVoiceTags } from './providers.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
-import { finishScript } from './editing.ts';
+import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
 import { BLOCKS, BLOCK_PREFIX, SURPRISE_ID, WILDCARD, WILDCARD_TASTES, blockOf, blockShow, drawSurprise, isSurprise, surpriseChance, surpriseLevel } from '../src/domain/blocks.ts';
 import { agentOf, resolveAgents } from '../src/domain/agents.ts';
@@ -335,8 +335,17 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents, listenerNotes: await notesFor(deps, owner, now) };
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
-      if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, await stationContext(deps, owner, config, row, now));
-      await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
+      const context = await stationContext(deps, owner, config, row, now);
+      if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, context);
+      try { await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions); }
+      catch (error) {
+        // A rejected script gets one repair: the editor drops or narrows the unsupported claims, then the check runs again.
+        if (!(error instanceof PipelineError) || error.code !== 'REJECTED' || !deps.editor) throw error;
+        const repaired = await repairScript(deps.editor, script, sources, direction, context, error.detail ?? '');
+        if (repaired === script) throw error;
+        script = repaired;
+        await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
+      }
       if (script.quality) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: script.quality.overall, at: now });
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: queries.length ? JSON.stringify({ queries }) : null };

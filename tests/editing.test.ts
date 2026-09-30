@@ -8,6 +8,7 @@ import type { StationDeps } from '../server/station.ts';
 import { finishScript, parseQuality } from '../server/editing.ts';
 import type { ScriptEditor, StationContext } from '../server/editing.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
+import { PipelineError } from '../server/segment-pipeline.ts';
 
 const NOW = new Date('2026-09-28T05:30:00Z');
 const sources: Source[] = [{ id: 's1', url: 'https://example.org/a', title: 'Quelle', excerpt: 'Fakt.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }];
@@ -76,4 +77,43 @@ test('production runs the final edit with the program around the item; the trans
   assert.match(reviewed!.text, /Geschliffen\.$/);
   assert.equal(transcriptView((await store.getItem('o', id))!, config).quality?.overall, 4);
   assert.deepEqual((await store.qualityLog('o', new Date(0))).map(entry => [entry.showId, entry.overall]), [['_block:wetter', 4]]);
+});
+
+test('a rejected fact check gets one repair: the editor drops the unsupported claim, the check runs again', async () => {
+  const base = defaultStationConfig({ timezone: 'Europe/Zurich' });
+  const config = parseStationConfig({ ...base, location: { name: 'Bern', latitude: 46.9, longitude: 7.4 }, music: { ...base.music, between: 0 } });
+  const store = new StationStore(sqliteD1());
+  await store.saveConfig('o', config, NOW);
+  let ids = 0, reviews = 0;
+  const notes: Array<string | undefined> = [];
+  const deps = (rejectTwice: boolean): StationDeps => ({
+    store, podcastAvailable: false, now: () => NOW, newId: () => `i${++ids}`,
+    fetchFeed: async () => [], reserveFeed: async () => {}, reserveGeneration: async () => {},
+    audio: { put: async () => {}, delete: async () => {} },
+    weather: { report: async () => ({ text: 'sonnig', source: { ...sources[0], id: 'wetter' } }) },
+    editor: {
+      polish: async (script, _sources, _direction, _context, note) => { notes.push(note); return { ...script, text: note ? 'Heute scheint in Bern die Sonne.' : script.text }; },
+      judge: async () => marks(4),
+    },
+    pipeline: {
+      draft: async (): Promise<Script> => ({ title: 'Wetter', text: 'Heute scheint in Bern die Sonne, morgen schneit es sicher.', sourceIds: ['wetter'] }),
+      review: async () => {
+        reviews++;
+        if (reviews === 1 || rejectTwice) throw new PipelineError('REJECTED', 'Nicht belegt: «morgen schneit es»');
+        return { approved: true, reasons: [] };
+      },
+      voice: async () => ({ audio: new Uint8Array([1]), contentType: 'audio/mpeg' as const, ttsCharacters: 5 }),
+    },
+  });
+  const id = (await addBlock(deps(false), 'o', 'wetter'))!;
+  assert.equal(await produceItem(deps(false), 'o', id), 'ready');
+  assert.equal(reviews, 2);
+  assert.match(notes.at(-1)!, /Nicht belegt: «morgen schneit es»/);
+  assert.equal(transcriptView((await store.getItem('o', id))!, config).lines[0].text, 'Heute scheint in Bern die Sonne.');
+  // Rejected again after the repair: the item fails with the check's reason.
+  reviews = 0;
+  const other = (await addBlock(deps(true), 'o', 'wetter'))!;
+  assert.equal(await produceItem(deps(true), 'o', other), 'failed');
+  assert.equal(reviews, 2);
+  assert.match((await store.getItem('o', other))!.error!, /REJECTED/);
 });

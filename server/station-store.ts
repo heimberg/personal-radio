@@ -144,17 +144,21 @@ export class StationStore {
   }
 
   /**
-   * Manual restart after a provider problem: failed items are retired (they no longer count towards the
-   * failure pause) and waiting items become due now with fresh attempts. Approved scripts are kept.
+   * «Erneut versuchen»: items that failed within the last day are produced again from scratch (research,
+   * script, check; a chosen subject is kept), older failures are retired; waiting items become due now with
+   * fresh attempts, keeping approved scripts. Either way they no longer count towards the failure pause.
    */
-  async retryNow(owner: string, now: Date): Promise<{ retired: number; restarted: number }> {
-    const at = now.toISOString();
+  async retryNow(owner: string, now: Date): Promise<{ retried: number; retired: number; restarted: number }> {
+    const at = now.toISOString(), since = new Date(now.getTime() - 86_400_000).toISOString();
+    const retried = (await this.db.prepare(`UPDATE timeline_items SET state = 'planned', attempts = 0, lease_until = NULL, error = NULL,
+      script_json = NULL, sources_json = NULL, verification = NULL, audio_key = NULL, content_type = NULL, updated_at = ?
+      WHERE owner_id = ? AND state = 'failed' AND updated_at >= ? RETURNING id`).bind(at, owner, since).all<{ id: string }>()).results.length;
     const retired = (await this.db.prepare(`UPDATE timeline_items SET state = 'expired', lease_until = NULL, updated_at = ?
       WHERE owner_id = ? AND state = 'failed' RETURNING id`).bind(at, owner).all<{ id: string }>()).results.length;
     const restarted = (await this.db.prepare(`UPDATE timeline_items SET lease_until = NULL, attempts = 0, updated_at = ?
       WHERE owner_id = ? AND state IN ('planned', 'voicing') AND lease_until IS NOT NULL AND error IS NOT NULL RETURNING id`)
       .bind(at, owner).all<{ id: string }>()).results.length;
-    return { retired, restarted };
+    return { retried, retired, restarted };
   }
 
   /** What the cockpit lists: everything still to come and the last few heard segments. */
