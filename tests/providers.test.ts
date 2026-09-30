@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt, withoutVoiceTags } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt, withoutVoiceTags, mapLimited } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -353,4 +353,16 @@ test('own voices: library in German, designed and cloned voices, delete', async 
 
 test('every persona prompt asks for scripts written to be heard', () => {
   assert.match(personaPrompt({ persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } }, 'brief'), /Schreibe fürs Ohr/);
+});
+
+test('mapLimited runs a few calls at once and keeps the order', async () => {
+  let running = 0, most = 0;
+  const results = await mapLimited([30, 5, 20, 1, 10], 3, async (ms, index) => {
+    running++; most = Math.max(most, running);
+    await new Promise(resolve => setTimeout(resolve, ms));
+    running--;
+    return index;
+  });
+  assert.deepEqual(results, [0, 1, 2, 3, 4]);
+  assert.equal(most, 3);
 });
