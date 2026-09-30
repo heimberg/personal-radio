@@ -156,3 +156,51 @@ export function withBed(bytes: Uint8Array): Uint8Array {
   }
   return writeWav(wav, out);
 }
+
+/** Fade at the ends of each joined part: a hard cut from or to non-zero samples clicks. */
+const JOIN_FADE_MS = 12;
+
+/**
+ * Joins spoken parts (one per dialog turn) into one WAV: each part brought to the same speech level, faded
+ * in and out, resampled to the first part's rate and mono, with [pause] seconds of silence between them.
+ * Parts that are not 16-bit PCM WAV are skipped.
+ */
+export function joinSpeech(parts: Uint8Array[], pause: number): Uint8Array {
+  const wavs = parts.map(part => readWav(normalizeSpeech(part))).filter((wav): wav is Wav => !!wav && wav.samples.length > 0);
+  if (!wavs.length) throw new Error('No speech to join');
+  const rate = wavs[0].sampleRate;
+  const tracks = wavs.map(wav => {
+    // Mono: the first channel of each frame.
+    const mono = wav.channels === 1 ? wav.samples : Int16Array.from({ length: Math.floor(wav.samples.length / wav.channels) }, (_, i) => wav.samples[i * wav.channels]);
+    const resampled = wav.sampleRate === rate ? mono : resample(mono, wav.sampleRate, rate);
+    const fade = Math.min(Math.round(rate * JOIN_FADE_MS / 1000), Math.floor(resampled.length / 2));
+    const out = Int16Array.from(resampled);
+    for (let i = 0; i < fade; i++) {
+      const gain = i / fade;
+      out[i] = Math.round(out[i] * gain);
+      out[out.length - 1 - i] = Math.round(out[out.length - 1 - i] * gain);
+    }
+    return out;
+  });
+  const gap = Math.round(rate * pause);
+  const total = tracks.reduce((sum, track) => sum + track.length, 0) + gap * (tracks.length - 1);
+  const samples = new Int16Array(total);
+  let offset = 0;
+  tracks.forEach((track, index) => { if (index) offset += gap; samples.set(track, offset); offset += track.length; });
+  const fmt = new Uint8Array(16), view = new DataView(fmt.buffer);
+  view.setUint16(0, 1, true); view.setUint16(2, 1, true); view.setUint32(4, rate, true);
+  view.setUint32(8, rate * 2, true); view.setUint16(12, 2, true); view.setUint16(14, 16, true);
+  return writeWav({ channels: 1, sampleRate: rate, samples, fmt }, samples);
+}
+
+/** Linear resampling; enough for speech between the rates TTS voices deliver. */
+function resample(samples: Int16Array, from: number, to: number): Int16Array {
+  const length = Math.max(1, Math.round(samples.length * to / from));
+  const out = new Int16Array(length);
+  for (let i = 0; i < length; i++) {
+    const position = i * from / to, index = Math.floor(position), frac = position - index;
+    const a = samples[Math.min(index, samples.length - 1)], b = samples[Math.min(index + 1, samples.length - 1)];
+    out[i] = Math.round(a + (b - a) * frac);
+  }
+  return out;
+}

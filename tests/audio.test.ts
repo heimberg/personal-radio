@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSpeech, speechLevel, withBed } from '../server/audio.ts';
+import { joinSpeech, normalizeSpeech, speechLevel, withBed } from '../server/audio.ts';
 import { pcmToWav } from '../server/providers.ts';
 
 /** A quiet 440 Hz tone framed by a second of silence on both sides, as 16-bit mono PCM at 24 kHz. */
@@ -60,4 +60,29 @@ test('a soft onset before the voice is kept, only true silence is cut', () => {
   const out = normalizeSpeech(pcmToWav(pcm, rate));
   const seconds = (out.length - 44) / 2 / rate;
   assert.ok(seconds > 1.6, `${seconds} s: the soft onset stays`);
+});
+
+test('dialog turns from separate calls are joined at one level, without clicks, at one sample rate', () => {
+  // A loud turn that starts and ends mid-wave (no silence: a hard cut would click) at 16 kHz, then a quiet one at 24 kHz.
+  const hard = (amplitude: number, rate: number) => {
+    const pcm = new Uint8Array(rate * 2), view = new DataView(pcm.buffer);
+    for (let i = 0; i < rate; i++) view.setInt16(i * 2, Math.round(Math.cos(2 * Math.PI * 220 * i / rate) * amplitude * 32767), true);
+    return pcmToWav(pcm, rate);
+  };
+  const joined = joinSpeech([hard(0.9, 16_000), quietTone(0.03)], 0.35);
+  const view = new DataView(joined.buffer, joined.byteOffset);
+  assert.equal(view.getUint32(24, true), 16_000);
+  const samples = (joined.length - 44) / 2, at = (i: number) => view.getInt16(44 + i * 2, true);
+  // The first turn fades in and out instead of starting and stopping at full swing.
+  assert.ok(Math.abs(at(0)) < 200, `starts at ${at(0)}`);
+  const firstEnd = 16_000 - 1;
+  assert.ok(Math.abs(at(firstEnd)) < 200, `first turn ends at ${at(firstEnd)}`);
+  // Both turns at about the same level.
+  const level = (from: number, to: number) => {
+    let squares = 0, count = 0;
+    for (let i = from; i < to; i++) { const x = at(i) / 32768; if (Math.abs(x) > 0.003) { squares += x * x; count++; } }
+    return 20 * Math.log10(Math.sqrt(squares / count));
+  };
+  const a = level(0, 16_000), b = level(16_000 + 5600, samples);
+  assert.ok(Math.abs(a - b) < 3, `turn levels ${a} and ${b} dBFS`);
 });

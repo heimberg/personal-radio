@@ -3,6 +3,7 @@ import { parseScript } from '../src/domain/program.ts';
 import { agentOf } from '../src/domain/agents.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
+import { joinSpeech } from './audio.ts';
 
 type Fetch = typeof fetch;
 export class ProviderError extends Error {
@@ -718,7 +719,8 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
         if (!response.ok) throw await googleFailure('Gemini TTS', response);
         parts.push(await interactionAudio(response));
       }
-      return joinWav(parts, 0.35);
+      // Separate calls come back at different levels: joinSpeech evens them out and fades the cuts.
+      return joinSpeech(parts, 0.35);
     }
     const speakers = ['host-a', 'host-b'] as const;
     const response = await request({ model: this.model, input: [{ type: 'user_input', content: turns.map(turn => ({
@@ -731,14 +733,3 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
   }
 }
 
-/** Joins 16-bit mono WAVs of one sample rate with [pause] seconds of silence between them. */
-export function joinWav(parts: Uint8Array[], pause: number): Uint8Array {
-  const data = (wav: Uint8Array) => wav.subarray(44);
-  const rate = parts.length ? new DataView(parts[0].buffer, parts[0].byteOffset).getUint32(24, true) : 24_000;
-  const gap = new Uint8Array(Math.round(rate * pause) * 2);
-  const chunks = parts.flatMap((part, index) => index ? [gap, data(part)] : [data(part)]);
-  const pcm = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
-  let offset = 0;
-  for (const chunk of chunks) { pcm.set(chunk, offset); offset += chunk.length; }
-  return pcmToWav(pcm, rate);
-}
