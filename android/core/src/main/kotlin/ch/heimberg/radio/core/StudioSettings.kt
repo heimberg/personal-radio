@@ -49,6 +49,8 @@ data class StudioSettings(
     val voiceId: String? = null,
     val voiceStyle: String = "",
     val cohostName: String = "",
+    /** The co-host's voice in dialogs (Gemini voices only); null = the server's default. */
+    val cohostVoiceId: String? = null,
     val instructions: String = "",
     val place: Place? = null,
     val topics: List<String> = emptyList(),
@@ -87,6 +89,7 @@ data class StudioSettings(
             put("voiceStyle", JsonPrimitive(voiceStyle.trim().take(300)))
             put("cohostName", JsonPrimitive(cohostName.trim().take(40)))
             if (voiceId.isNullOrBlank()) remove("voiceId") else put("voiceId", JsonPrimitive(voiceId))
+            if (cohostVoiceId.isNullOrBlank()) remove("cohostVoiceId") else put("cohostVoiceId", JsonPrimitive(cohostVoiceId))
         }
         val profile = config.obj("profile").edit {
             put("topics", JsonArray(topics.map(::JsonPrimitive)))
@@ -133,7 +136,7 @@ data class StudioSettings(
                 name = config.text("name"),
                 hostName = host.text("name"), tone = host.text("tone"), style = host.text("style"),
                 voiceId = host.text("voiceId").ifBlank { null }, voiceStyle = host.text("voiceStyle"),
-                cohostName = host.text("cohostName"), instructions = host.text("instructions"),
+                cohostName = host.text("cohostName"), cohostVoiceId = host.text("cohostVoiceId").ifBlank { null }, instructions = host.text("instructions"),
                 place = location?.let { spot ->
                     val lat = spot["latitude"]?.jsonPrimitive?.doubleOrNull
                     val lon = spot["longitude"]?.jsonPrimitive?.doubleOrNull

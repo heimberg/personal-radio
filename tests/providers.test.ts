@@ -58,6 +58,22 @@ test('Gemini TTS sends two configured voices and accepts only WAV audio', async 
   const result = await synth.synthesize('A B', [{ speaker: 'host-a', text: 'A' }, { speaker: 'host-b', text: 'B' }]);
   assert.equal(Buffer.from(result).toString('ascii', 0, 4), 'RIFF');
 });
+test('dialogs speak with the station voices; with an own voice every turn is spoken alone and joined', async () => {
+  const pcm = Buffer.alloc(4800, 1).toString('base64');
+  const calls: any[] = [];
+  const synth = new GeminiPodcastSpeechSynthesizer({ key: 'k' }, async (_url, init) => {
+    calls.push(JSON.parse(String(init?.body)));
+    return Response.json({ steps: [{ type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/l16;rate=24000', data: pcm }] }] });
+  });
+  const turns = [{ speaker: 'host-a' as const, text: 'Hallo' }, { speaker: 'host-b' as const, text: 'Hoi' }, { speaker: 'host-a' as const, text: 'Also' }];
+  await synth.synthesize('Hallo Hoi Also', turns, undefined, undefined, { voices: ['gemini_Laomedeia', 'de_kerstin_cc0'] });
+  assert.deepEqual(calls[0].generation_config.speech_config.speakers.map((speaker: any) => speaker.voice), ['Laomedeia', 'Puck']);
+  calls.length = 0;
+  const audio = await synth.synthesize('Hallo Hoi Also', turns, undefined, undefined, { voices: ['gemini_voice_mine', 'gemini_Charon'] });
+  assert.deepEqual(calls.map(call => call.generation_config.speech_config[0].voice), ['voice_mine', 'Charon', 'voice_mine']);
+  // Three turns of 0.1 s and two pauses of 0.35 s.
+  assert.equal(audio.length, 44 + 3 * 4800 + 2 * Math.round(24_000 * 0.35) * 2);
+});
 test('ASK keeps source text in data and uses configured endpoint', async () => {
   const ask = new AskTextGenerator({ baseUrl: 'https://ask.example/api/v1/', key: 'test-only', model: 'test-model' }, async (url, init) => {
     assert.equal(url, 'https://ask.example/api/v1/chat/completions');

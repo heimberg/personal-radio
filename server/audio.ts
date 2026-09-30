@@ -3,11 +3,13 @@
 
 /** Speech level to aim for, as RMS of the voiced parts in dBFS (roughly −16 LUFS for speech). */
 const TARGET_DB = -19;
-/** Frames quieter than this count as silence: they neither set the level nor stay at the edges. */
+/** Frames quieter than this count as silence for the level. */
 const SILENCE_DB = -45;
+/** At the edges only true silence is cut: soft onsets (a breath, an «s», an «h») are quieter than speech. */
+const EDGE_DB = -60;
 const FRAME_MS = 20;
 /** Silence kept before and after the voice, so words are not clipped. */
-const PAD_MS = 120;
+const PAD_MS = 250;
 const MIN_GAIN = 0.1, MAX_GAIN = 8;
 
 interface Wav { channels: number; sampleRate: number; samples: Int16Array; fmt: Uint8Array }
@@ -69,9 +71,9 @@ export function normalizeSpeech(bytes: Uint8Array): Uint8Array {
   if (!voicedCount) return bytes;
   // Trim silence at the edges, keeping a short pad.
   const pad = Math.ceil(PAD_MS / FRAME_MS);
-  const first = Math.max(0, levels.findIndex(level => level > SILENCE_DB) - pad);
+  const first = Math.max(0, levels.findIndex(level => level > EDGE_DB) - pad);
   let last = levels.length - 1;
-  while (last > 0 && levels[last] <= SILENCE_DB) last--;
+  while (last > 0 && levels[last] <= EDGE_DB) last--;
   last = Math.min(levels.length - 1, last + pad);
   const trimmed = samples.subarray(first * frame, Math.min(samples.length, (last + 1) * frame));
 

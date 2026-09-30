@@ -97,6 +97,8 @@ class RadioState {
     /** Which studio card is open; one at a time keeps the page short. */
     var studioCard by mutableStateOf<String?>(null)
     var voiceSearch by mutableStateOf("")
+    /** The voice list sets the co-host's voice (dialogs) instead of the host's. */
+    var voiceForCohost by mutableStateOf(false)
     // Own voices: designing one from a description, cloning one from two recordings.
     var designOpen by mutableStateOf(false)
     var cloneOpen by mutableStateOf(false)

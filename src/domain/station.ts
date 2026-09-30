@@ -277,6 +277,7 @@ export function parseStationConfig(raw: unknown): StationConfig {
     instructions: text(h.instructions ?? '', 'host.instructions', 2000, false),
     ...(h.cohostName !== undefined && String(h.cohostName).trim() ? { cohostName: text(h.cohostName, 'host.cohostName', 40) } : {}),
     ...(h.voiceId !== undefined ? { voiceId: voiceIdOf(h.voiceId, 'host.voiceId') } : {}),
+    ...(h.cohostVoiceId !== undefined && h.cohostVoiceId !== '' ? { cohostVoiceId: voiceIdOf(h.cohostVoiceId, 'host.cohostVoiceId') } : {}),
     ...(h.voiceStyle !== undefined && String(h.voiceStyle).trim() ? { voiceStyle: text(h.voiceStyle, 'host.voiceStyle', 300) } : {}),
   };
 

@@ -18,9 +18,9 @@ test('speech is brought to one level, silent edges are trimmed, peaks stay below
   const levelA = speechLevel(a)!, levelB = speechLevel(b)!;
   assert.ok(Math.abs(levelA - -19) < 1.5, `quiet speech at ${levelA} dBFS`);
   assert.ok(Math.abs(levelA - levelB) < 2, `levels ${levelA} and ${levelB}`);
-  // Three seconds in, a bit more than one second of tone plus short pads out.
+  // Three seconds in, a bit more than one second of tone plus short pads (0.25 s each) out.
   const seconds = (a.length - 44) / 2 / 24_000;
-  assert.ok(seconds > 1 && seconds < 1.4, `${seconds} s after trimming`);
+  assert.ok(seconds > 1.4 && seconds < 1.6, `${seconds} s after trimming`);
   const view = new DataView(b.buffer, 44);
   let peak = 0;
   for (let i = 0; i < (b.length - 44) / 2; i++) peak = Math.max(peak, Math.abs(view.getInt16(i * 2, true)));
@@ -50,4 +50,14 @@ test('a short moderation gets a soft bed that starts before the voice and fades 
   assert.equal(withBed(long), long);
   const mp3 = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]);
   assert.equal(withBed(mp3), mp3);
+});
+
+test('a soft onset before the voice is kept, only true silence is cut', () => {
+  const rate = 24_000, pcm = new Uint8Array(rate * 3 * 2), view = new DataView(pcm.buffer);
+  // One second of silence, half a second of a soft «h» (about -52 dBFS), then a second of voice.
+  for (let i = 0; i < rate / 2; i++) view.setInt16((rate + i) * 2, Math.round(Math.sin(i / 3) * 0.0035 * 32767), true);
+  for (let i = 0; i < rate; i++) view.setInt16((rate * 1.5 + i) * 2, Math.round(Math.sin(2 * Math.PI * 440 * i / rate) * 0.3 * 32767), true);
+  const out = normalizeSpeech(pcmToWav(pcm, rate));
+  const seconds = (out.length - 44) / 2 / rate;
+  assert.ok(seconds > 1.6, `${seconds} s: the soft onset stays`);
 });

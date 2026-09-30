@@ -230,6 +230,11 @@ export function StationEditor({ config: stored, onSave }: Props) {
           </select>
         </Field>
         <Field label="Co-Moderation in Dialogen"><input value={draft.host.cohostName ?? ''} maxLength={40} onChange={event => change(next => { next.host.cohostName = event.target.value; })} /></Field>
+        <Field label="Stimme der Co-Moderation" hint="In Dialogen; die Moderation spricht mit ihrer eigenen Stimme.">
+          <select value={draft.host.cohostVoiceId ?? ''} onChange={event => change(next => { if (event.target.value) next.host.cohostVoiceId = event.target.value; else delete next.host.cohostVoiceId; })}>
+            <option value="">Standard</option>{voices.filter(voice => voice.id.startsWith('gemini_')).map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+          </select>
+        </Field>
       </div>
       <Field label="Sprechstil" hint="Wie die Stimme spricht – Gemini-Stimmen folgen dieser Anweisung, z. B. «begeistert, warm, mit Tempowechseln und hörbarem Lächeln».">
         <input value={draft.host.voiceStyle ?? ''} maxLength={300} onChange={event => change(next => { next.host.voiceStyle = event.target.value; })} />

@@ -16,7 +16,7 @@ export interface CharacterBudgetStore { reserve(ownerId: string, characters: num
  * [reserve] false: the caller caps the cost itself (live transitions); [bed]: a soft music bed under short
  * speech; [lite]: the cheaper voice model for short, frequent speech.
  */
-export interface VoiceOptions { reserve?: boolean; bed?: boolean; lite?: boolean }
+export interface VoiceOptions { reserve?: boolean; bed?: boolean; lite?: boolean; /** A dialog's two voices (host, co-host). */ voices?: Array<string | undefined> }
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
@@ -147,7 +147,8 @@ export class SegmentPipeline {
     const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const characters = [...script.text].length;
     if (options.reserve !== false) await this.budget.reserve(ownerId, characters);
-    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style, options.lite ? { lite: true } : undefined);
+    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style,
+      options.lite || options.voices ? { ...(options.lite ? { lite: true } : {}), ...(options.voices ? { voices: options.voices } : {}) } : undefined);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
     // Mistral returns MP3; Gemini voices return WAV, which is brought to one speech level with trimmed edges.
     const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
