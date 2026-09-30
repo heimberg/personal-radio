@@ -149,6 +149,12 @@ class AccessDiagnosisTest {
         assertTrue(AccessDiagnosis.message(403, null, """{"error":"origin_rejected"}""").contains("Origin"))
         assertEquals("Tageslimit erreicht.", AccessDiagnosis.message(429, null, ""))
     }
+
+    @Test fun aGoneItemIsNotAWrongAddress() {
+        assertTrue(AccessDiagnosis.message(404, null, """{"error":"not_found"}""").contains("Beitrag"))
+        assertTrue(AccessDiagnosis.message(404, null, """{"error":"unknown_block"}""").contains("Baustein"))
+        assertTrue(AccessDiagnosis.message(404, null, "<html>Not Found</html>").contains("kein Radio-Server"))
+    }
 }
 
 class LibraryTest {

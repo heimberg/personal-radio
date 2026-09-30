@@ -145,7 +145,10 @@ class ApiClient(private val connection: Connection) {
             http.instanceFollowRedirects = false
             connection.headers().forEach { (name, value) -> http.setRequestProperty(name, value) }
             val status = http.responseCode
-            if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, http.getHeaderField("Location"), ""))
+            if (status !in 200..299) {
+                val text = runCatching { http.errorStream?.bufferedReader()?.use { it.readText().take(2000) } }.getOrNull() ?: ""
+                throw ApiException(status, AccessDiagnosis.message(status, http.getHeaderField("Location"), text))
+            }
             http.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
         } finally {
             http.disconnect()
