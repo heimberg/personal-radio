@@ -525,7 +525,8 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const config = await store.getConfig(owner);
     return json({ blocks: config ? blockViews(config) : [] }, 200);
   }
-  const addBlockMatch = url.pathname.match(/^\/api\/blocks\/(song|[a-z0-9-]{1,40}|show:[a-z0-9-]{1,40})\/add$/);
+  // Clients may encode the colon of an own show's block id ("show%3A<id>").
+  const addBlockMatch = url.pathname.replace(/%3A/gi, ':').match(/^\/api\/blocks\/(song|[a-z0-9-]{1,40}|show:[a-z0-9-]{1,40})\/add$/);
   if (addBlockMatch) {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);

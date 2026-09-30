@@ -22,6 +22,8 @@ object AccessDiagnosis {
         }
         // A setting the Worker refused names the field and what it expects.
         if (status == 400) detail.find(body)?.groupValues?.get(1)?.let { return "Nicht gespeichert – $it" }
+        // The Worker answers 404 with a reason when something is gone; only a bare 404 means a wrong address.
+        if (status == 404) error.find(body)?.groupValues?.get(1)?.let { return gone(it) }
         return when (status) {
             403 -> "Anfrage abgelehnt (Origin). Prüfe, ob die Adresse genau die des Workers ist."
             404 -> "Adresse gefunden, aber kein Radio-Server dahinter."
@@ -30,6 +32,17 @@ object AccessDiagnosis {
         }
     }
 
+    private fun gone(code: String): String = when (code) {
+        "not_found" -> "Diesen Beitrag gibt es nicht mehr – das Programm wird neu geladen."
+        "audio_unavailable" -> "Der Ton dieses Beitrags ist nicht mehr gespeichert."
+        "unknown_block" -> "Diesen Baustein gibt es nicht mehr."
+        "unknown_show" -> "Diese Sendung gibt es nicht mehr."
+        "not_configured" -> "Der Sender ist noch nicht eingerichtet."
+        "spotify_not_configured" -> "Spotify ist im Worker nicht eingerichtet."
+        else -> "Nicht gefunden ($code)."
+    }
+
+    private val error = Regex("\"error\"\\s*:\\s*\"([a-z_]{1,40})\"")
     private val detail = Regex("\"detail\"\\s*:\\s*\"([^\"]{1,300})\"")
 
     const val ACCESS_REFUSED = "Cloudflare Access lehnt das Token ab: Client-ID oder Client-Secret stimmt nicht, oder das Token fehlt in der Service-Auth-Regel der Access-Anwendung."
