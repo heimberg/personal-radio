@@ -49,7 +49,8 @@ export interface TextGenerator {
 }
 export interface SpeechSynthesizer {
   /** [style] is a spoken-delivery instruction; voices that cannot follow it ignore it. */
-  synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array>;
+  /** [options.lite]: a cheaper model for short, frequent speech, where the provider has one. */
+  synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string, options?: { lite?: boolean }): Promise<Uint8Array>;
 }
 
 export const defaultProfile: Profile = {

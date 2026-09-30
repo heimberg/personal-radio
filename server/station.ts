@@ -4,7 +4,7 @@ import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemVi
 import type { Profile, QualityScore, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
-import { ProviderError } from './providers.ts';
+import { ProviderError, withoutVoiceTags } from './providers.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -995,10 +995,10 @@ export function transcriptView(row: TimelineRow, config: StationConfig | null): 
   if (Array.isArray(script.parts)) {
     lines = script.parts.map(part => part.kind === 'track'
       ? { text: `${part.title} – ${part.artist}`, song: true }
-      : { text: part.text });
+      : { text: withoutVoiceTags(part.text) });
   } else if (Array.isArray(script.turns)) {
-    lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: turn.text }));
-  } else lines = script.text ? [{ text: script.text }] : [];
+    lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: withoutVoiceTags(turn.text) }));
+  } else lines = script.text ? [{ text: withoutVoiceTags(script.text) }] : [];
   return {
     ...(script.quality ? { quality: script.quality } : {}),
     title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,

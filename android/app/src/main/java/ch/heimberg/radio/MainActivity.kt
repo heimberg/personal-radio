@@ -31,6 +31,7 @@ import ch.heimberg.radio.core.ProgramClock
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
+import ch.heimberg.radio.core.VoiceOption
 import com.google.common.util.concurrent.ListenableFuture
 import com.spotify.sdk.android.auth.AuthorizationClient
 import com.spotify.sdk.android.auth.AuthorizationRequest
@@ -61,6 +62,15 @@ class MainActivity : AppCompatActivity(), RadioActions {
     /** The voice sample playing in the studio, and whether the radio was playing before it. */
     private var sample: android.media.MediaPlayer? = null
     private var resumeAfterSample = false
+    /** Cloning a voice: the recorder and the two recordings (they never leave the app except to Google, on «Erstellen»). */
+    private val recorder = VoiceRecorder()
+    private var sampleWav: ByteArray? = null
+    private var consentWav: ByteArray? = null
+    private var recordingConsent = false
+    private var recordTicker: kotlinx.coroutines.Job? = null
+    private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) toggleRecording(recordingConsent) else state.say("Ohne Mikrofon lässt sich keine Stimme klonen.")
+    }
     /** Items taken out by a swipe; a second swipe signal does not send it twice. */
     private val removing = mutableSetOf<String>()
     private var lastMinute = -1L
@@ -158,6 +168,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
     }
 
     override fun onDestroy() {
+        recorder.release()
         stopSample()
         studio?.destroy()
         studio = null
@@ -596,6 +607,96 @@ class MainActivity : AppCompatActivity(), RadioActions {
         state.previewing = null
         if (resumeAfterSample) controller?.play()
         resumeAfterSample = false
+    }
+
+    override fun searchVoices(query: String) {
+        state.voiceSearch = query
+        lifecycleScope.launch { runCatching { api.voices(query) }.onSuccess { state.voices = it } }
+    }
+
+    override fun designVoice(name: String, description: String, gender: String?) {
+        if (state.voiceBusy) return
+        state.voiceBusy = true
+        lifecycleScope.launch {
+            val result = runCatching { api.designVoice(name.trim(), description.trim(), gender) }
+            state.voiceBusy = false
+            result.onSuccess { voice -> if (voice != null) adoptVoice(voice, "Stimme «${voice.name}» entworfen – hör sie dir an.") else state.say("Google hat keine Stimme zurückgegeben.") }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    override fun toggleRecording(consent: Boolean) {
+        if (state.recording) {
+            val wav = recorder.stop()
+            recordTicker?.cancel()
+            state.recording = false
+            val seconds = (wav.size - 44) / (VoiceRecorder.RATE * 2)
+            if (recordingConsent) { consentWav = wav; state.consentSeconds = seconds } else { sampleWav = wav; state.sampleSeconds = seconds }
+            return
+        }
+        recordingConsent = consent
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        // The radio pauses while you speak.
+        controller?.pause()
+        runCatching { recorder.start() }.onFailure { return state.say(it.message ?: "Mikrofon nicht verfügbar.") }
+        state.recording = true
+        state.recordedSeconds = 0
+        recordTicker = lifecycleScope.launch {
+            while (recorder.recording) {
+                state.recordedSeconds = recorder.seconds
+                delay(250)
+            }
+            // The recorder stops itself at its limit.
+            if (state.recording) toggleRecording(recordingConsent)
+        }
+    }
+
+    override fun cloneVoice(name: String) {
+        val sample = sampleWav ?: return state.say("Zuerst die Sprachprobe aufnehmen.")
+        val consent = consentWav ?: return state.say("Zuerst den Einverständnis-Satz aufnehmen.")
+        if (state.voiceBusy) return
+        state.voiceBusy = true
+        lifecycleScope.launch {
+            val result = runCatching { api.cloneVoice(name.trim(), sample, consent) }
+            state.voiceBusy = false
+            result.onSuccess { voice -> if (voice != null) adoptVoice(voice, "Deine Stimme «${voice.name}» ist bereit – hör sie dir an.") else state.say("Google hat keine Stimme zurückgegeben.") }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    /** A new own voice: listed first, chosen for the host (still to be saved) and played as a sample. */
+    private fun adoptVoice(voice: VoiceOption, message: String) {
+        closeVoiceDialogs()
+        state.voices = listOf(voice) + state.voices.filter { it.id != voice.id }
+        state.studio?.let { editStudio(it.copy(voiceId = voice.id)) }
+        state.say(message)
+        previewVoice(voice.id)
+    }
+
+    override fun deleteVoice(voice: VoiceOption) {
+        state.voiceDeleteAsk = null
+        lifecycleScope.launch {
+            val result = runCatching { api.deleteVoice(voice.id) }
+            if (result.isSuccess) {
+                state.voices = state.voices.filter { it.id != voice.id }
+                state.studio?.takeIf { it.voiceId == voice.id }?.let { editStudio(it.copy(voiceId = null)) }
+            }
+            state.say(result.fold({ "Stimme «${voice.name}» gelöscht." }, { it.message ?: getString(R.string.connection_failed) }))
+        }
+    }
+
+    override fun closeVoiceDialogs() {
+        if (state.recording) toggleRecording(recordingConsent)
+        state.designOpen = false
+        state.cloneOpen = false
+        state.cloneStep = 0
+        state.sampleSeconds = 0
+        state.consentSeconds = 0
+        sampleWav = null
+        consentWav = null
     }
 
     override fun openWebStudio() {

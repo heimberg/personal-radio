@@ -19,7 +19,7 @@ async function fakeWorker(page: Page, initial: unknown) {
     if (route.request().method() === 'PUT') { state.stored = JSON.parse(route.request().postData() ?? '{}'); state.saved.push(state.stored); }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ config: state.stored }) });
   });
-  await page.route('**/api/mistral-voices', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ voices: [{ id: 'de_kerstin_cc0', name: 'Kerstin · Deutsch (CC0)' }, { id: 'fr_marie_neutral', name: 'Marie · Neutral' }] }) }));
+  await page.route('**/api/voices', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ voices: [{ id: 'de_kerstin_cc0', name: 'Kerstin · Deutsch (CC0)' }, { id: 'fr_marie_neutral', name: 'Marie · Neutral' }] }) }));
   await page.route('**/api/timeline', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: state.stored ? [
     { id: 't1', seq: 1, showId: 'entdecken', showName: 'Entdeckungen', plannedAt: '2026-09-27T08:00:00.000Z', state: 'ready', estimatedMinutes: 2,
       sources: [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }], searchQueries: ['sonde landung'] },

@@ -17,6 +17,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
 - Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.
+- Voices: 30 prebuilt Gemini voices, Google's German voice library, a voice designed from a description, or your own voice cloned in the app (with Google's spoken consent); lively delivery with vocal tags (`<laugh>`, `|mhm|`).
 - Live transitions: right before a spoken item airs, the host links it to what just ran, written and voiced on the spot.
 
 **Listening (Android)**
@@ -193,7 +194,8 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `DAILY_LINKERS` | `40` | live transitions per UTC day (separate from productions and the TTS limit) |
 | `GEMINI_TEXT_MODEL` | `gemini-3.8-flash` | writing, editing, checks |
 | `GEMINI_RESEARCH_MODEL` | text model | web research |
-| `GEMINI_TTS_MODEL` | `gemini-3.8-flash-tts` | voices |
+| `GEMINI_TTS_MODEL` | `gemini-3.8-flash-tts` | voices (Interactions API) |
+| `GEMINI_TTS_LITE_MODEL` | `gemini-3.8-flash-lite-tts` | live transitions and the hour announcement (prebuilt voices) |
 | `GEMINI_VOICE_A`, `GEMINI_VOICE_B` | `Kore`, `Puck` | the two dialog voices |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral voices |
 | `SPOTIFY_MARKET` | `CH` | Spotify catalogue |

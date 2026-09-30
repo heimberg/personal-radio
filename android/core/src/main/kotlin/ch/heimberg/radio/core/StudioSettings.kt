@@ -17,8 +17,24 @@ data class Place(val name: String, val latitude: Double, val longitude: Double, 
     val label: String get() = listOf(name, region, country).filter { it.isNotBlank() }.joinToString(", ")
 }
 
-/** A voice the host can speak with (`GET /api/mistral-voices`). */
-data class VoiceOption(val id: String, val name: String)
+/**
+ * A voice the host can speak with (`GET /api/voices`): [group] is `own` (designed or cloned), `standard`
+ * (the prebuilt Gemini voices), `library` (German voices from Google's library) or `mistral`.
+ */
+data class VoiceOption(val id: String, val name: String, val group: String = "standard", val description: String = "") {
+    val own: Boolean get() = group == "own"
+}
+
+/** The groups in the order the studio lists them. */
+object VoiceGroups {
+    val ORDER = listOf("own" to "Eigene Stimmen", "standard" to "Standard", "library" to "Bibliothek", "mistral" to "Mistral")
+
+    /** The sentence Google requires the speaker to say before a voice is cloned (German). */
+    const val CONSENT = "Ich bin der Eigentümer dieser Stimme und bin damit einverstanden, dass Google diese Stimme zur Erstellung eines synthetischen Stimmmodells verwendet."
+
+    /** Something to read for the voice sample: varied sounds, calm pace, about 20 seconds. */
+    const val SAMPLE = "Guten Morgen und herzlich willkommen. Heute erzähle ich dir, was die Welt bewegt: von neuen Entdeckungen im Weltraum über Musik, die man nicht verpassen sollte, bis zu Geschichten aus der Nachbarschaft. Mach es dir bequem, hol dir einen Kaffee – wir starten gemeinsam in den Tag."
+}
 
 /**
  * The settings the native studio edits: station and host, interests, music and station sound. Pure
@@ -142,13 +158,20 @@ data class StudioSettings(
                 Place(place.text("name"), Math.round(lat * 10_000) / 10_000.0, Math.round(lon * 10_000) / 10_000.0, place.text("region"), place.text("country"))
             }
 
-        /** `GET /api/mistral-voices`: the voices to choose from. */
+        /** `GET /api/voices`: the voices to choose from. */
         fun parseVoices(body: String): List<VoiceOption> =
             (json.parseToJsonElement(body).jsonObject["voices"] as? JsonArray ?: JsonArray(emptyList())).mapNotNull { element ->
                 val voice = element as? JsonObject ?: return@mapNotNull null
                 val id = voice.text("id").ifBlank { return@mapNotNull null }
-                VoiceOption(id, voice.text("name").ifBlank { id })
+                VoiceOption(id, voice.text("name").ifBlank { id }, voice.text("group").ifBlank { "standard" }, voice.text("description"))
             }
+
+        /** `POST /api/voices/design|clone`: the new voice. */
+        fun parseCreatedVoice(body: String): VoiceOption? {
+            val voice = json.parseToJsonElement(body).jsonObject["voice"] as? JsonObject ?: return null
+            val id = voice.text("id").ifBlank { return null }
+            return VoiceOption(id, voice.text("name").ifBlank { id }, "own")
+        }
 
         fun parseConfig(body: String): JsonObject = json.parseToJsonElement(body).jsonObject["config"]!!.jsonObject
     }

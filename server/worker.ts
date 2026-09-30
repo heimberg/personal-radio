@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GEMINI_VOICES, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, GEMINI_VOICES, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
 import type { TextGenerator } from '../src/domain/program.ts';
@@ -69,6 +69,8 @@ interface Environment {
   SPOTIFY_CLIENT_SECRET?: string;
   SPOTIFY_MARKET?: string;
   GEMINI_TTS_MODEL?: string;
+  /** The cheaper voice model for live transitions and the hour announcement. */
+  GEMINI_TTS_LITE_MODEL?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
 }
@@ -169,7 +171,7 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
     const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music), facts, 'Gemini linker', 0.8));
     if (!text) return quiet();
     const voiced = await pipelineFor(env).voice(owner, { title: 'Übergang', text, sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle,
-      { reserve: false, bed: stationSounds(config).bed });
+      { reserve: false, bed: stationSounds(config).bed, lite: true });
     await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     return audio(voiced.audio, voiced.contentType);
   } catch (error) {
@@ -277,7 +279,7 @@ function pipelineFor(env: Environment): SegmentPipeline {
           if (!response.ok) throw new Error('German reference audio unavailable');
           return new Uint8Array(await response.arrayBuffer());
         },
-      }, metered(env)), env.GEMINI_API_KEY ? new GeminiSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }, metered(env)) : undefined),
+      }, metered(env)), env.GEMINI_API_KEY ? new GeminiSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, liteModel: env.GEMINI_TTS_LITE_MODEL }, metered(env)) : undefined),
       providers.verifier,
       new D1CharacterBudget(env.DB, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)),
       4,
@@ -485,7 +487,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
     }
     try {
-      const voiced = await pipelineFor(env).voice(owner, { title: 'Zeitansage', text: hourText(hour, config.name), sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle);
+      const voiced = await pipelineFor(env).voice(owner, { title: 'Zeitansage', text: hourText(hour, config.name), sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle, { lite: true });
       await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
       return new Response(voiced.audio as BodyInit, { headers: { 'Content-Type': voiced.contentType, 'Content-Length': String(voiced.audio.byteLength), 'Cache-Control': 'private, max-age=86400' } });
     } catch (error) { return json({ error: 'voice_failed' }, statusFor(error)); }
@@ -740,7 +742,7 @@ export default {
     if (url.pathname === '/api/voices/preview') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
       const voice = url.searchParams.get('voice') ?? '', style = (url.searchParams.get('style') ?? '').trim().slice(0, 300);
-      if (!/^[A-Za-z0-9_-]{1,100}$/.test(voice)) return json({ error: 'invalid_voice' }, 400);
+      if (!/^[A-Za-z0-9_-]{1,170}$/.test(voice)) return json({ error: 'invalid_voice' }, 400);
       const config = await new StationStore(env.DB).getConfig(owner);
       const text = previewText(config?.host.name ?? '', config?.name ?? ''), key = previewKey(voice, style, text);
       for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
@@ -752,6 +754,50 @@ export default {
         await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
         return new Response(voiced.audio as BodyInit, { headers: { 'Content-Type': voiced.contentType, 'Content-Length': String(voiced.audio.byteLength), 'Cache-Control': 'private, max-age=86400' } });
       } catch (error) { return json({ error: 'voice_failed' }, statusFor(error)); }
+    }
+    // All voices for the studio: the prebuilt Gemini voices, own (designed or cloned) and German library voices, then Mistral.
+    if (url.pathname === '/api/voices') {
+      if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      const standard = env.GEMINI_API_KEY ? GEMINI_VOICES.map(voice => ({ id: `gemini_${voice.name}`, name: `${voice.name} · ${voice.character}`, group: 'standard', gender: voice.gender })) : [];
+      const [google, mistral] = await Promise.all([
+        env.GEMINI_API_KEY ? new GeminiVoiceCatalog({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }, metered(env)).list(url.searchParams.get('search') ?? '').catch(() => []) : Promise.resolve([]),
+        listMistralVoices().then(voices => voices.map(voice => ({ id: voice.id, name: voice.name, group: 'mistral' }))).catch(() => []),
+      ]);
+      const own = google.filter(voice => voice.group === 'own'), library = google.filter(voice => voice.group === 'library');
+      return json({ voices: [...own, ...standard, ...library, ...mistral] }, 200);
+    }
+    // Own voices: designed from a description or cloned from a recording with the speaker's consent.
+    const voiceAction = url.pathname.match(/^\/api\/voices\/(design|clone|gemini_voice_[A-Za-z0-9_-]{1,160})$/);
+    if (voiceAction && voiceAction[1] !== 'preview') {
+      if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+      if (!env.GEMINI_API_KEY) return json({ error: 'gemini_not_configured' }, 409);
+      const catalog = new GeminiVoiceCatalog({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL }, metered(env));
+      const action = voiceAction[1];
+      if (action !== 'design' && action !== 'clone') {
+        if (request.method !== 'DELETE') return json({ error: 'method_not_allowed' }, 405);
+        try { await catalog.remove(action); return json({ removed: action }, 200); }
+        catch (error) { return json({ error: 'voice_failed', detail: error instanceof Error ? error.message.slice(0, 200) : undefined }, statusFor(error)); }
+      }
+      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+      const body = await readJson(request, action === 'clone' ? 12_000_000 : 4096);
+      if (body.error) return body.error;
+      const input = (body.value ?? {}) as Record<string, unknown>;
+      const name = typeof input.name === 'string' ? input.name.trim().slice(0, 60) : '';
+      if (!name) return json({ error: 'invalid_voice', detail: 'Name fehlt' }, 400);
+      const wav = (value: unknown) => typeof value === 'string' && value.length > 1000 && value.length < 6_000_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+      if (action === 'design') {
+        const description = typeof input.description === 'string' ? input.description.trim().slice(0, 600) : '';
+        if (description.length < 10) return json({ error: 'invalid_voice', detail: 'Beschreibung zu kurz' }, 400);
+        if (input.gender !== undefined && input.gender !== 'female' && input.gender !== 'male') return json({ error: 'invalid_voice', detail: 'gender' }, 400);
+      } else if (!wav(input.source) || !wav(input.consent)) return json({ error: 'invalid_voice', detail: 'Aufnahmen fehlen oder sind zu lang' }, 400);
+      try {
+        // A new voice is a paid call: it counts like a production.
+        await new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24));
+        const voice = action === 'design'
+          ? await catalog.design({ name, description: String(input.description).trim().slice(0, 600), ...(input.gender ? { gender: input.gender as 'female' | 'male' } : {}) })
+          : await catalog.replicate({ name, source: input.source as string, consent: input.consent as string });
+        return json({ voice }, 200);
+      } catch (error) { return json({ error: 'voice_failed', detail: error instanceof Error ? error.message.slice(0, 200) : undefined }, statusFor(error)); }
     }
     if (url.pathname === '/api/mistral-voices') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

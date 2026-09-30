@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt, withoutVoiceTags } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -257,29 +257,82 @@ test('ASK verification tolerates code fences, explains cut-off answers, and Gemi
   assert.equal(geminiCalls, 0);
 });
 
-test('Gemini voices: prebuilt voice, delivery style in the prompt, PCM wrapped as WAV; the router picks the engine by voice ID', async () => {
-  let body: any, url = '';
+test('Gemini voices: Interactions API with the style as annotation, lite model for short speech, PCM wrapped as WAV; the router picks the engine by voice ID', async () => {
+  const calls: Array<{ url: string; body: any }> = [];
   const pcm = new Uint8Array(4800).fill(1);
   const gemini = new GeminiSpeechSynthesizer({ key: 'g', model: 'gemini-3.8-flash-tts' }, async (input, init) => {
-    url = String(input); body = JSON.parse(String(init?.body));
-    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: btoa(String.fromCharCode(...pcm)) } }] } }] });
+    calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return Response.json({ steps: [{ type: 'thought' }, { type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/l16;rate=24000', data: btoa(String.fromCharCode(...pcm)) }] }] });
   });
-  const audio = await gemini.synthesize('Guten Morgen, Melchnau!', undefined, 'gemini_Puck', 'energisch und warm');
-  assert.match(url, /models\/gemini-3\.8-flash-tts:generateContent$/);
-  assert.deepEqual(body.generationConfig, { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } } });
-  assert.match(body.contents[0].parts[0].text, /^# AUDIO PROFILE: radio host\n## DIRECTOR'S NOTES\nStyle: energisch und warm\.[\s\S]*\n#### TRANSCRIPT\nGuten Morgen, Melchnau!$/);
+  const audio = await gemini.synthesize('Guten Morgen, <laugh> Melchnau!', undefined, 'gemini_Puck', 'energisch und warm');
+  assert.match(calls[0].url, /\/v1beta\/interactions$/);
+  assert.equal(calls[0].body.model, 'gemini-3.8-flash-tts');
+  assert.deepEqual(calls[0].body.generation_config, { speech_config: [{ voice: 'Puck' }] });
+  assert.deepEqual(calls[0].body.input[0].content[0], { type: 'text', text: 'Guten Morgen, <laugh> Melchnau!', annotations: [{ type: 'speech_metadata', style: 'energisch und warm; Deutsch' }] });
   assert.equal(String.fromCharCode(...audio.subarray(0, 4)), 'RIFF');
   assert.equal(audio.length, 44 + pcm.length);
-  assert.equal(new DataView(pcm.buffer.slice(0)).byteLength, 4800);
   assert.equal(new DataView(pcmToWav(pcm).buffer).getUint32(24, true), 24000);
+  // Short speech takes the lite model, except with an own voice, which was made with the full one.
+  await gemini.synthesize('Kurz.', undefined, 'gemini_Kore', undefined, { lite: true });
+  assert.equal(calls[1].body.model, 'gemini-3.8-flash-lite-tts');
+  await gemini.synthesize('Kurz.', undefined, 'gemini_voice_abc123', undefined, { lite: true });
+  assert.equal(calls[2].body.model, 'gemini-3.8-flash-tts');
+  assert.deepEqual(calls[2].body.generation_config.speech_config, [{ voice: 'voice_abc123' }]);
   await assert.rejects(gemini.synthesize('x', undefined, 'de_kerstin_cc0'), /Gemini voice is not selected/);
 
-  const used: string[] = [];
-  const engine = (name: string) => ({ synthesize: async () => { used.push(name); return new Uint8Array([1]); } });
+  // Without the Interactions API, a prebuilt voice falls back to generateContent, without voice tags.
+  let legacy: any;
+  const fallback = new GeminiSpeechSynthesizer({ key: 'g' }, async (input, init) => {
+    if (String(input).endsWith('/interactions')) return new Response('{}', { status: 404 });
+    legacy = { url: String(input), body: JSON.parse(String(init?.body)) };
+    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: btoa(String.fromCharCode(...pcm)) } }] } }] });
+  });
+  await fallback.synthesize('Hallo <sigh> du |mhm| da.', undefined, 'gemini_Puck');
+  assert.match(legacy.url, /models\/gemini-3\.8-flash-tts:generateContent$/);
+  assert.match(legacy.body.contents[0].parts[0].text, /#### TRANSCRIPT\nHallo du da\.$/);
+
+  const used: string[] = [], texts: string[] = [];
+  const engine = (name: string) => ({ synthesize: async (text: string) => { used.push(name); texts.push(text); return new Uint8Array([1]); } });
   const router = new VoiceRouter(engine('mistral'), engine('gemini'));
-  await router.synthesize('a', undefined, 'gemini_Fenrir'); await router.synthesize('a', undefined, 'de_kerstin_cc0'); await router.synthesize('a');
+  await router.synthesize('a <laugh>', undefined, 'gemini_Fenrir'); await router.synthesize('a <laugh> b', undefined, 'de_kerstin_cc0'); await router.synthesize('a');
   assert.deepEqual(used, ['gemini', 'mistral', 'mistral']);
+  assert.deepEqual(texts, ['a <laugh>', 'a b', 'a']);
   await assert.rejects(new VoiceRouter(engine('mistral')).synthesize('a', undefined, 'gemini_Puck'), /GEMINI_API_KEY/);
+});
+
+test('voice tags stay out of what is read and checked', () => {
+  assert.equal(withoutVoiceTags('Das ist <laugh> erstaunlich. |mhm| Wirklich <short pause>!'), 'Das ist erstaunlich. Wirklich!');
+  assert.equal(withoutVoiceTags('3 < 5 und 7 > 2'), '3 < 5 und 7 > 2');
+  assert.match(personaPrompt({ persona: { name: 'Mira', tone: 'ruhig', style: 'Radio', instructions: '' } }, 'brief'), /<laugh>/);
+});
+
+test('own voices: library in German, designed and cloned voices, delete', async () => {
+  const calls: Array<{ method: string; url: string; body?: any }> = [];
+  const catalog = new GeminiVoiceCatalog({ key: 'g' }, async (input, init) => {
+    const url = String(input), method = init?.method ?? 'GET';
+    calls.push({ method, url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+    if (method === 'DELETE') return new Response(null, { status: 204 });
+    if (method === 'POST') return Response.json({ id: 'voice_new1', sample_audio: { data: 'AAAA' } });
+    const type = new URL(url).searchParams.get('type');
+    if (type === 'prompted') return Response.json({ voices: [{ id: 'voice_mine', display_name: 'Meine Moderatorin', gender: 'FEMALE' }] });
+    if (type === 'replicated') return Response.json({ voices: [] });
+    return Response.json({ voices: [{ id: 'Bernerin', display_name: 'Bernerin', description: 'warm, Berner Dialekt' }, { id: 'bad id!' }] });
+  });
+  const voices = await catalog.list('warm');
+  assert.deepEqual(voices, [
+    { id: 'gemini_voice_mine', name: 'Meine Moderatorin', group: 'own', gender: 'female' },
+    { id: 'gemini_Bernerin', name: 'Bernerin', group: 'library', description: 'warm, Berner Dialekt' },
+  ]);
+  const library = new URL(calls.find(call => new URL(call.url).searchParams.get('type') === 'prebuilt')!.url);
+  assert.deepEqual(library.searchParams.getAll('language_code'), ['de-DE', 'de-CH']);
+  assert.equal(library.searchParams.get('search'), 'warm');
+  assert.deepEqual(await catalog.design({ name: 'Mira', description: 'Warme Moderatorin, ruhig', gender: 'female' }), { id: 'gemini_voice_new1', name: 'Mira', group: 'own' });
+  assert.deepEqual(calls.at(-1)!.body, { store: true, voice: { model: 'gemini-3.8-flash-tts', type: 'prompted', display_name: 'Mira', language_code: 'de-DE', gender: 'female', prompted: { input: 'Warme Moderatorin, ruhig' } } });
+  await catalog.replicate({ name: 'Ich', source: 'U09VUkNF', consent: 'Q09OU0VOVA==' });
+  assert.deepEqual(calls.at(-1)!.body.voice.replicated, { source_audio: { mime_type: 'audio/wav', data: 'U09VUkNF' }, consent_audio: { mime_type: 'audio/wav', data: 'Q09OU0VOVA==' } });
+  await catalog.remove('gemini_voice_new1');
+  assert.equal(calls.at(-1)!.method, 'DELETE'); assert.match(calls.at(-1)!.url, /\/v1beta\/voices\/voice_new1$/);
+  await assert.rejects(catalog.remove('gemini_Kore'));
 });
 
 test('every persona prompt asks for scripts written to be heard', () => {

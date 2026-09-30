@@ -3,6 +3,7 @@ import { parseProfile, parseScript } from '../src/domain/program.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
 import type { VerificationPolicy } from '../src/domain/station.ts';
 import { normalizeSpeech, withBed } from './audio.ts';
+import { withoutVoiceTags } from './providers.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
 /** [hints]: the owner's extra instructions for the fact check; they may sharpen it, never loosen it. */
@@ -11,8 +12,11 @@ export interface VoicedAudio { audio: Uint8Array; contentType: 'audio/mpeg' | 'a
 export interface PreparedSegment { script: Script; audio: Uint8Array; contentType: 'audio/mpeg' | 'audio/wav'; ttsCharacters: number; mode: 'brief' | 'podcast' }
 export interface PodcastProviders { text: TextGenerator; speech: SpeechSynthesizer }
 export interface CharacterBudgetStore { reserve(ownerId: string, characters: number): Promise<void> }
-/** [reserve] false: the caller caps the cost itself (live transitions); [bed]: a soft music bed under short speech. */
-export interface VoiceOptions { reserve?: boolean; bed?: boolean }
+/**
+ * [reserve] false: the caller caps the cost itself (live transitions); [bed]: a soft music bed under short
+ * speech; [lite]: the cheaper voice model for short, frequent speech.
+ */
+export interface VoiceOptions { reserve?: boolean; bed?: boolean; lite?: boolean }
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
@@ -125,7 +129,9 @@ export class SegmentPipeline {
   async review(script: Script, sources: Source[], policy: VerificationPolicy, hints?: string): Promise<EditorialDecision> {
     if (policy !== 'strict') return { approved: true, reasons: [`VERIFICATION_${policy.toUpperCase()}`] };
     let decision: EditorialDecision;
-    try { decision = await this.verifier.verify(script, sources, hints || undefined); }
+    // Voice tags are performance, not claims: the check reads the words only.
+    const words: Script = { ...script, text: withoutVoiceTags(script.text), ...(script.turns ? { turns: script.turns.map(turn => ({ ...turn, text: withoutVoiceTags(turn.text) })) } : {}) };
+    try { decision = await this.verifier.verify(words, sources, hints || undefined); }
     catch (error) {
       // A rate-limited verifier says nothing about the script; let the caller wait and retry.
       if ((error as { status?: unknown } | null)?.status === 429) throw error;
@@ -141,7 +147,7 @@ export class SegmentPipeline {
     const speechProvider = mode === 'podcast' ? this.podcast!.speech : this.speech;
     const characters = [...script.text].length;
     if (options.reserve !== false) await this.budget.reserve(ownerId, characters);
-    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style);
+    const audio = await speechProvider.synthesize(script.text, script.turns, mode === 'brief' ? voiceId : undefined, style, options.lite ? { lite: true } : undefined);
     if (!(audio instanceof Uint8Array) || audio.length < 1 || audio.length > 18_000_000) throw new PipelineError('INVALID_INPUT');
     // Mistral returns MP3; Gemini voices return WAV, which is brought to one speech level with trimmed edges.
     const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
