@@ -194,6 +194,11 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     await worker.scheduled({}, env as never, { waitUntil: promise => { pending.push(promise); } });
     await Promise.all(pending);
     assert.equal(sent.length, 10 + 10);
+
+    // An own show as a block: the app encodes the colon of "show:<id>" in the path.
+    const own = await call('/api/blocks/show%3Akurz/add', { method: 'POST', body: JSON.stringify({ after: 'end' }) });
+    assert.equal(own.status, 200);
+    assert.ok(((await own.json()) as { itemId?: string }).itemId);
   } finally { globalThis.fetch = originalFetch; }
 });
 

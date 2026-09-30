@@ -168,7 +168,7 @@ class ApiClient(private val connection: Connection) {
             if (subject.isNotBlank()) put("subject", subject.trim())
             put("after", "end")
         }.toString()
-        withContext(Dispatchers.IO) { request("POST", "api/blocks/${java.net.URLEncoder.encode(blockId, "UTF-8")}/add", body) }
+        withContext(Dispatchers.IO) { request("POST", "api/blocks/${java.net.URLEncoder.encode(blockId, "UTF-8").replace("%3A", ":")}/add", body) }
     }
 
     /** Mixes the open program; the server adds songs between items where they are missing. */
