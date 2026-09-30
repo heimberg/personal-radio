@@ -136,6 +136,7 @@ Worker → **Settings → Variables and Secrets**, type *Secret* (or `npx wrangl
 | `ALLOWED_EMAIL` | yes | the email you allowed in Access |
 | `GEMINI_API_KEY` | yes | your Gemini API key |
 | `ACCESS_SERVICE_TOKEN_ID` | for the app | see step 8 |
+| `LISTENERS` | optional | further listeners with their own station, see step 11 |
 | `SPOTIFY_CLIENT_SECRET` | for music | see step 6 |
 | `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL` | no | an OpenAI-compatible endpoint; when all three are set it verifies facts as an independent second model |
 | `MISTRAL_API_KEY` | no | enables Mistral voices in addition to the Gemini voices |
@@ -181,6 +182,17 @@ From now on every push to `main` deploys the Worker, and every change to the app
 ### 10. Make it yours
 
 In **Einstellungen**: station name, host persona and voice, your location (for weather), interests, music taste, the day plan and the surprise level. Under **Redaktion** you can tune every agent; under **Verbrauch** you see what a day costs.
+
+### 11. A station for someone else (optional)
+
+Each further listener gets their own service token and their own station (program, feedback, voice, day plan, Spotify), produced with your provider keys; daily limits count per station.
+
+1. **Zero Trust → Access → Service Auth → Create Service Token**, e.g. `personal-radio-lea`. Copy Client ID and Client Secret.
+2. Add the token to the **Service Auth** policy of the Worker's Access application (the same policy as the app's token).
+3. Set the Worker secret `LISTENERS` to `<Client ID>=<name>` – for a child `<Client ID>=<name>:kids`. Several listeners are separated by `;`, e.g. `ab12.access=lea:kids; cd34.access=tom`. Then run the deploy workflow again (or save the secret in the dashboard).
+4. Install the APK on their phone and enter the Worker address with *their* Client ID and Secret. The app shows «noch nicht eingerichtet»: set up the station in the studio. Spotify needs their own account on their phone.
+
+A `:kids` station follows fixed rules for an 11-year-old in every script, research brief and agent (age-appropriate language, no violence, sexuality, drugs or horror, difficult news only gently), and never plays tracks Spotify marks as explicit. The rules are added in production only, so they cannot be edited away in the studio. Removing the entry from `LISTENERS` (or the token in Access) ends the access; the station's data stays until you delete it.
 
 ## Configuration
 

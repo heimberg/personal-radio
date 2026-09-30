@@ -107,8 +107,8 @@
     <string name="update_corrupt">Das Update ist unvollständig angekommen. Bitte nochmals versuchen.</string>
     <string name="blocks">Bausteine</string>
     <string name="blocks_hint">Antippen – kommt als Nächstes ins Programm.</string>
-    <string name="block_added">«%1$s» kommt als Nächstes.</string>
-    <string name="block_added_subject">«%1$s» über «%2$s» kommt als Nächstes.</string>
+    <string name="block_added">«%1$s» kommt ans Ende des Programms.</string>
+    <string name="block_added_subject">«%1$s» über «%2$s» kommt ans Ende des Programms.</string>
     <string name="block_add">Hinzufügen</string>
     <string name="block_ai_picks">KI wählt</string>
     <string name="block_subject_hint">%1$s (%2$s)</string>

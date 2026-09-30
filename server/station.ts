@@ -885,9 +885,11 @@ function followUpOf(row: TimelineRow): string | undefined {
 }
 
 /** Moves a new item right after [after] (the item that is playing), or to the start of the program. */
+/** Where a new block goes: after [after], at the start without it, or with [AT_END] behind everything open. */
+export const AT_END = 'end';
 async function placeAfter(deps: StationDeps, owner: string, id: string, after?: string) {
   const others = (await deps.store.openItems(owner)).map(item => item.id).filter(item => item !== id);
-  const at = after ? others.indexOf(after) + 1 : 0;
+  const at = after === AT_END ? others.length : after ? others.indexOf(after) + 1 : 0;
   await arrangeTimeline(deps, owner, [...others.slice(0, at), id, ...others.slice(at)]);
 }
 

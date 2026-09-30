@@ -298,6 +298,19 @@ test('the Android app authenticates with an Access service token and acts as the
     await (env.DB as any).raw.prepare(`INSERT INTO station_config (owner_id, config_json, updated_at) VALUES ('owner@example.test', ?, '2026-09-27')`)
       .run(JSON.stringify(defaultStationConfig()));
     assert.equal(((await (await station(app)).json()) as { config: { name: string } | null }).config?.name, 'Personal Radio'); // same owner as the browser login
+    // A further listener has their own token and their own station.
+    const listenerEnv = { ...env, LISTENERS: 'lea-app.access=lea:kids; bad entry' };
+    const lea = await sign({ type: 'app', common_name: 'lea-app.access' });
+    const leaStation = await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': lea } }), listenerEnv as never);
+    assert.equal(leaStation.status, 200);
+    assert.deepEqual(await leaStation.json(), { config: null });
+    const leaSaved = await worker.fetch(new Request(`${ORIGIN}/api/station`, { method: 'PUT', body: JSON.stringify({ ...defaultStationConfig(), name: 'Radio Lea' }),
+      headers: { 'Cf-Access-Jwt-Assertion': lea, Origin: ORIGIN, 'Content-Type': 'application/json' } }), listenerEnv as never);
+    assert.equal(leaSaved.status, 200);
+    assert.equal((env.DB as any).raw.prepare(`SELECT COUNT(*) AS n FROM station_config WHERE owner_id = 'listener:lea'`).get().n, 1);
+    // The owner still sees their own station; Lea's stored settings stay as she wrote them (the rules only apply in production).
+    assert.equal(((await (await worker.fetch(new Request(`${ORIGIN}/api/station`, { headers: { 'Cf-Access-Jwt-Assertion': app } }), listenerEnv as never)).json()) as { config: { name: string } }).config.name, 'Personal Radio');
+    assert.ok(!JSON.stringify(JSON.parse((env.DB as any).raw.prepare(`SELECT config_json FROM station_config WHERE owner_id = 'listener:lea'`).get().config_json)).includes('11 Jahren'));
     const foreign = await station(await sign({ type: 'app', common_name: 'other.access' }));
     assert.equal(foreign.status, 401);
     assert.deepEqual(await foreign.json(), { error: 'unauthorized', reason: 'service_token_not_allowed' });

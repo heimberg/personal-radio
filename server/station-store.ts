@@ -49,13 +49,17 @@ export function audioKeysOf(row: Pick<TimelineRow, 'audio_key' | 'script_json'>)
 
 export class StationStore {
   private db: D1Database;
-  constructor(db: D1Database) { this.db = db; }
+  /** How production sees the settings (a child's station adds its rules); the stored document stays as written. */
+  private view: (config: StationConfig) => StationConfig;
+  constructor(db: D1Database, view: (config: StationConfig) => StationConfig = config => config) { this.db = db; this.view = view; }
 
   async getConfig(owner: string): Promise<StationConfig | null> {
     const row = await this.db.prepare('SELECT config_json FROM station_config WHERE owner_id = ?').bind(owner).first<{ config_json: string }>();
     if (!row) return null;
     // A stored document that no longer validates is treated as missing rather than crashing production.
-    try { return parseStationConfig(JSON.parse(row.config_json)); } catch { return null; }
+    let config: StationConfig;
+    try { config = parseStationConfig(JSON.parse(row.config_json)); } catch { return null; }
+    return this.view(config);
   }
 
   async saveConfig(owner: string, config: StationConfig, now: Date) {

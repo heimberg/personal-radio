@@ -297,7 +297,7 @@ Adopted from [ai-radio-station](https://github.com/BetaHuhn/ai-radio-station) (M
 
 ## Security
 
-Public repository, private application. Cloudflare Access protects the Worker API. The Android app authenticates with an Access service token; the Worker accepts a JWT whose `common_name` equals `ACCESS_SERVICE_TOKEN_ID` as the owner. The app sends the token only to the configured origin; audio URLs that would leave it are rejected. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
+Public repository, private application. Cloudflare Access protects the Worker API. The Android app authenticates with an Access service token; the Worker accepts a JWT whose `common_name` equals `ACCESS_SERVICE_TOKEN_ID` as the owner. Further listeners (`LISTENERS`, `server/listeners.ts`) each have their own service token and act as their own owner ID (`listener:<name>`): every table and bucket key is already per owner, the cron and the queue serve every station, and a `:kids` station reads its settings through `forKids` (fixed child-safety rules in front of the host, every show and every agent, production only) and uses a Spotify catalog that skips explicit tracks. The app sends the token only to the configured origin; audio URLs that would leave it are rejected. Provider keys and the Spotify client secret for app-token search live only in Worker secrets. Log sanitized errors, not provider response bodies, secrets or full prompts. Define retention for audio in R2 (e.g. delete played segments after 7 days).
 
 ## Adopted from ai-radio-station
 

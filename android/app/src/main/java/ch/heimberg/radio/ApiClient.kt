@@ -159,10 +159,11 @@ class ApiClient(private val connection: Connection) {
     suspend fun blocks(): List<BlockView> = withContext(Dispatchers.IO) { TimelineJson.parseBlocks(request("GET", "api/blocks")) }
 
     /** Adds a block right after [after] (what is playing); [subject] is the one optional word. */
-    suspend fun addBlock(blockId: String, subject: String, after: String?) {
+    /** Adds a block at the end of the open program. */
+    suspend fun addBlock(blockId: String, subject: String) {
         val body = JSONObject().apply {
             if (subject.isNotBlank()) put("subject", subject.trim())
-            if (after != null) put("after", after)
+            put("after", "end")
         }.toString()
         withContext(Dispatchers.IO) { request("POST", "api/blocks/${java.net.URLEncoder.encode(blockId, "UTF-8")}/add", body) }
     }

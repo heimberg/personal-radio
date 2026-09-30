@@ -6,6 +6,8 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 ## Für Matthias
 
+- [ ] **Sender für die Tochter:** Service-Token anlegen, in die Access-Regel aufnehmen, `LISTENERS` setzen, App auf ihrem Handy einrichten (README, Schritt 11).
+
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
 - [ ] **Stimmen ausprobieren:** im Studio unter «Stimme» eine Stimme entwerfen («✨ Entwerfen») oder die eigene klonen («🎤 Meine Stimme»); auf Lachen, Pausen und Zwischenrufe in Dialogen hören.
 - [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
@@ -39,6 +41,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - Konfiguration serverseitig in D1, weil der Server ohne offenen Browser produziert.
 - Neuerscheinungen (29.09.2026): Die Moderation von «Neu von deinen Künstlern» nennt Künstler und Titel jeder Neuerscheinung; diese Spotify-Metadaten gehen dafür an die KI und die Sprachausgabe. Playlist-Titel bleiben weiterhin bei Spotify.
 - Kein Radiowecker (verworfen am 29.09.2026).
+- Mehrere Hörer (30.09.2026): jede weitere Person bekommt ein eigenes Access-Token und einen eigenen Sender (`LISTENERS`); ein Kinder-Sender (`:kids`) folgt festen Regeln für 11-Jährige und spielt keine Songs mit expliziten Texten.
 - Keine Sendeuhr mit festen Zeitfenstern pro Stunde: das Programm spielt frei (29.09.2026). Übergänge entstehen live kurz vor der Sendung; vorproduzierte Texte bleiben ohne Uhrzeit.
 - Hosting auf Cloudflare (Worker, D1, R2, Queues, Cron, Access); keine Graph- oder Vektordatenbank.
 - Details: [docs/architecture.md](docs/architecture.md).

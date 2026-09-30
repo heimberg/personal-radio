@@ -63,6 +63,9 @@ test('a weather block comes right after the playing item and is produced with da
   const second = (await scheduleShowNow(h.deps, 'o', BRIEF))!;
   const id = (await addBlock(h.deps, 'o', 'wetter', 'ignoriert', first))!;
   assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, id, second]);
+  // From the program, a new block goes behind everything open.
+  const last = (await addBlock(h.deps, 'o', 'wetter', undefined, 'end'))!;
+  assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, id, second, last]);
   assert.equal(toView((await h.store.getItem('o', id))!, null).showName, 'Wetter');
   assert.equal(await produceItem(h.deps, 'o', id), 'ready');
   assert.match(h.seen.direction!.instructions!, /Heute ist Montag, 28\. September 2026; der Beitrag läuft voraussichtlich am Morgen\. Das aktuelle Wetter steht in der Quelle «wetter»\./);

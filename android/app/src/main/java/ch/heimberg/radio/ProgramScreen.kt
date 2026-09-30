@@ -227,12 +227,12 @@ private fun meta(item: TimelineItem): String {
     return "${item.showName} · ${Labels.state(item.state)}$tracks$surprise"
 }
 
-/** The building blocks: one tap puts one next into the program. */
+/** The building blocks: one tap puts one at the end of the program. */
 @Composable
 private fun Blocks(blocks: List<BlockView>, actions: RadioActions) {
     if (blocks.isEmpty()) return
     Text("Einfügen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 8.dp))
-    Text("Antippen – kommt als Nächstes.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+    Text("Antippen – kommt ans Ende. Lange drücken auf einen Beitrag: vorziehen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(blocks, key = { it.id }) { block ->
             val look = Looks.ofBlock(block)
