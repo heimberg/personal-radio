@@ -7,6 +7,7 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 ## Für Matthias
 
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
+- [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
 - [ ] **Hinhören:** Live-Übergänge der Moderation, Jingle-Varianten, Nachrichten-Opener und Klangteppich unter kurzen Moderationen; was stört, lässt sich im Studio unter «Stationssound» einzeln abschalten.
 - [ ] **Ausprobieren:** Redaktionsteam für eine Musikstunde («Produktion → Redaktionsteam (Beta)») mit einer Standard-Stunde vergleichen; Musikblock mit eigenen Playlists; Überraschungsregler im Tagesplan.
 - [ ] **Feeds auswählen** (optional): RSS/Atom-Feeds eintragen und deren Nutzungsbedingungen prüfen.
@@ -26,14 +27,14 @@ Stand: 29.09.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - **Inhalte:** Web-Recherche mit Google-Suche oder Feeds; Kurzbeitrag, Dialog, Künstler-/Genre-/Themenstunde, Musikblock; Schlussredaktion, Qualitäts-Jury, Faktencheck; Wetter, Schlagzeilen, Datum; keine Uhrzeiten in vorproduzierten Texten.
 - **Bausteine und Tagesplan:** ein Tipp fügt einen Baustein ein; Tagesplan mit Zeitfenstern; Songs zwischen Beiträgen; 🎲 Überraschungen mit Regler; «Mehr dazu»; «Neu von deinen Künstlern».
 - **Redaktion:** alle Agenten konfigurierbar (Anweisungen, Freiheit, An/Aus, Stil-Vorlagen, Probeläufe), Qualitätsverlauf, Hinweise aus 👎-Gründen, Verbrauchsübersicht.
-- **Android-App (Compose):** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Jetzt · Gleich · Später», «Anders», Stimmung «Heute», Tagesplan in der App; Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound (Jingle-Varianten, Nachrichten-Opener, Klangteppich), Live-Übergänge der Moderation kurz vor der Sendung, In-App-Updates, Farbe und Symbol pro Inhaltsart.
+- **Android-App (Compose):** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Jetzt · Gleich · Später», «Anders», Stimmung «Heute», Tagesplan und Studio (mit Hörproben) nativ in der App; Media3-Wiedergabe, Sperrbildschirm, Bluetooth, Android Auto, Spotify-Übergabe, Archiv, Schlafmodus, Transkript, Benachrichtigungen, Stationssound (Jingle-Varianten, Nachrichten-Opener, Klangteppich), Live-Übergänge der Moderation kurz vor der Sendung, In-App-Updates, Farbe und Symbol pro Inhaltsart.
 - **Spotify:** KI wählt, Spotify sucht; Hörprofil (Top-Künstler, private Playlists) optional verbunden; an die KI gehen davon nur die Namen der Top-Künstler und der Neuerscheinungen.
 
 ## Architekturentscheidungen
 
 - KI-generierte Beiträge sind der Kern; jedes Programm hat einen gesprochenen Anteil.
 - Dirigent statt Mischpult: Der Server plant und produziert vor, das Gerät spielt eigene Sprache und Spotify strikt abwechselnd, ohne Sprache über Musik.
-- Die Android-App ist das Produkt zum Hören und Steuern des Programms; das Web-Studio (Tab «Studio» in der App) ist die Werkbank für Einstellungen. Kein Player und keine Programmansicht mehr im Web (29.09.2026).
+- Die Android-App ist das Produkt zum Hören und Steuern des Programms; das Studio ist nativ für die Alltagseinstellungen, das Web-Studio (über «Mehr») bleibt die Werkbank für Sendungen, Feeds und Redaktion (30.09.2026). Kein Player und keine Programmansicht mehr im Web (29.09.2026).
 - Konfiguration serverseitig in D1, weil der Server ohne offenen Browser produziert.
 - Neuerscheinungen (29.09.2026): Die Moderation von «Neu von deinen Künstlern» nennt Künstler und Titel jeder Neuerscheinung; diese Spotify-Metadaten gehen dafür an die KI und die Sprachausgabe. Playlist-Titel bleiben weiterhin bei Spotify.
 - Kein Radiowecker (verworfen am 29.09.2026).

@@ -91,3 +91,16 @@ export function hourKey(hour: number, voice: string, stationName: string): strin
   for (const char of `${voice}|${stationName}`) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619) >>> 0; }
   return `sounds/hour-${hash.toString(36)}-${hour}`;
 }
+
+/** What a voice says as a sample in the studio: the host introduces the station. */
+export function previewText(hostName: string, stationName: string): string {
+  const host = hostName.trim(), station = stationName.trim();
+  return `Hallo, ${host ? `hier ist ${host}` : 'schön, dass du da bist'}${station ? ` auf ${station}` : ''}. So klinge ich, wenn ich dir dein Programm präsentiere.`;
+}
+
+/** Bucket key of one voice sample; it changes with everything that is heard. */
+export function previewKey(voice: string, style: string, text: string): string {
+  let hash = 2166136261;
+  for (const char of `${voice}|${style}|${text}`) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619) >>> 0; }
+  return `sounds/preview-${hash.toString(36)}`;
+}

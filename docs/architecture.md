@@ -18,7 +18,7 @@ These two requirements override every other decision in this document:
 1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
 2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
 3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web studio. The Spotify Web Playback SDK is not part of the product.
-4. **Settings live in the web studio.** Shows, persona, voices, sources, day plan, music rules and the editorial team are forms in the web studio, used on a computer or in the app's «Studio» tab; YAML is optional for bulk edits. Arranging the program is native in the app. See [Division of work](#division-of-work-app-and-web-studio).
+4. **Everyday settings are native, the rest lives in the web studio.** Station and host, voice (with samples), place, interests, music and station sound are native in the app's «Studio» tab, and so is the day plan; shows, sources, the editorial team and usage are forms in the web studio, opened from the app or used on a computer; YAML is optional for bulk edits. Arranging the program is native in the app. See [Division of work](#division-of-work-app-and-web-studio).
 5. **Server-side configuration.** The backend stores configuration, sources, schedule, feedback, production state and memory in D1 so it can produce without the app being open. The device keeps UI preferences and a playback cache. Export and delete remain available.
 6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for.
@@ -31,7 +31,7 @@ Per show, `production: agents` hands a music hour to a team of registered agents
 
 ## Division of work: app and web studio
 
-Decided by the owner on 28.09.2026; on 29.09.2026 the browser player and the web program view were dropped, the web is the studio only.
+Decided by the owner on 28.09.2026; on 29.09.2026 the browser player and the web program view were dropped, the web is the studio only; on 30.09.2026 the everyday settings moved into the app (native «Studio»), the web studio keeps shows, feeds, the editorial team and usage.
 
 | | Android app (native, Jetpack Compose) | Web studio (Worker page, behind Access) |
 |---|---|---|

@@ -23,7 +23,7 @@ import type { MoodId, StationConfig } from '../src/domain/station.ts';
 import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
-import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from './sounds.ts';
+import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
 
 const identAudio: Array<Uint8Array | undefined> = [];
@@ -730,11 +730,28 @@ export default {
       if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
       const utcDay = new Date().toISOString().slice(0, 10);
       try {
-        for (const table of ['daily_requests', 'daily_usage', 'daily_feed_requests']) {
+        for (const table of ['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests']) {
           await env.DB.prepare(`DELETE FROM ${table} WHERE owner_id = ? AND utc_day = ?`).bind(owner, utcDay).run();
         }
       } catch { return json({ error: 'quota_reset_unavailable' }, 503); }
       return json({ reset: true, utcDay }, 200);
+    }
+    // A voice sample for the studio: the host introduces the station in the chosen voice and style; kept in the bucket.
+    if (url.pathname === '/api/voices/preview') {
+      if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      const voice = url.searchParams.get('voice') ?? '', style = (url.searchParams.get('style') ?? '').trim().slice(0, 300);
+      if (!/^[A-Za-z0-9_-]{1,100}$/.test(voice)) return json({ error: 'invalid_voice' }, 400);
+      const config = await new StationStore(env.DB).getConfig(owner);
+      const text = previewText(config?.host.name ?? '', config?.name ?? ''), key = previewKey(voice, style, text);
+      for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
+        const stored = await env.AUDIO.get(key + suffix);
+        if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
+      }
+      try {
+        const voiced = await pipelineFor(env).voice(owner, { title: 'Hörprobe', text, sourceIds: [] }, 'brief', voice, style || undefined);
+        await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+        return new Response(voiced.audio as BodyInit, { headers: { 'Content-Type': voiced.contentType, 'Content-Length': String(voiced.audio.byteLength), 'Cache-Control': 'private, max-age=86400' } });
+      } catch (error) { return json({ error: 'voice_failed' }, statusFor(error)); }
     }
     if (url.pathname === '/api/mistral-voices') {
       if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

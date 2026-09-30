@@ -143,6 +143,11 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.equal(hour.status, 200);
     assert.ok([...audio.objects.keys()].some(key => /^sounds\/hour-[a-z0-9]+-8\.mp3$/.test(key)));
     assert.equal((await call('/api/sounds/hour/8')).status, 200);
+    // Voice sample for the studio: spoken once per voice, style and names, then served from the bucket.
+    assert.equal((await call('/api/voices/preview?voice=bad%20id')).status, 400);
+    const sample = await call('/api/voices/preview?voice=voice-test&style=warm');
+    assert.equal(sample.status, 200); assert.equal(sample.headers.get('Content-Type'), 'audio/mpeg');
+    assert.ok([...audio.objects.keys()].some(key => /^sounds\/preview-[a-z0-9]+\.mp3$/.test(key)));
     // «Mehr dazu» queues a follow-up right after the item.
     const queued = sent.length;
     const deeper = await call(`/api/timeline/${items[0].id}/more`, { method: 'POST' });

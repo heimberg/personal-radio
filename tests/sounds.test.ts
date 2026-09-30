@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from '../server/sounds.ts';
+import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from '../server/sounds.ts';
 import { SpotifyCatalog } from '../server/music.ts';
 
 const header = (bytes: Uint8Array) => new TextDecoder().decode(bytes.slice(0, 4)) + new TextDecoder().decode(bytes.slice(8, 12));
@@ -18,6 +18,9 @@ test('the ident and the time signal are valid mono WAV files of a few seconds, n
   assert.equal(new Set(Array.from({ length: IDENT_VARIANTS }, (_, n) => identJingle(n).join(','))).size, IDENT_VARIANTS);
   assert.equal(hourText(1, 'Radio Melchnau'), 'Es ist ein Uhr. Du hörst Radio Melchnau.');
   assert.equal(hourText(15, ' '), 'Es ist 15 Uhr.');
+  assert.equal(previewText('Lea', 'Radio Melchnau'), 'Hallo, hier ist Lea auf Radio Melchnau. So klinge ich, wenn ich dir dein Programm präsentiere.');
+  assert.match(previewText('', ''), /^Hallo, schön, dass du da bist\. /);
+  assert.notEqual(previewKey('a', 'warm', 't'), previewKey('a', 'ruhig', 't'));
   assert.notEqual(hourKey(8, 'kerstin', 'Radio A'), hourKey(8, 'kerstin', 'Radio B'));
   assert.match(hourKey(8, 'v', 'n'), /^sounds\/hour-[a-z0-9]+-8$/);
 });

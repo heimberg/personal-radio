@@ -69,12 +69,13 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
         )
         if (result == SnackbarResult.ActionPerformed) state.detail = message.text
     }
-    // Back goes through the studio's pages, then to «Hören»; from there it leaves the app.
+    // Back goes through the web studio's pages back to the native studio, then to «Hören»; from there it leaves the app.
     BackHandler(enabled = state.tab != Tab.LISTEN) {
-        val web = if (state.tab == Tab.STUDIO) studio() else null
+        val web = if (state.tab == Tab.STUDIO && state.webStudioOpen) studio() else null
         when {
             state.tab == Tab.PROGRAM && state.dayPlanOpen -> actions.closeDayPlan()
             web != null && web.canGoBack() -> web.goBack()
+            web != null -> actions.closeWebStudio()
             else -> state.tab = Tab.LISTEN
         }
     }
@@ -113,7 +114,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
             Tab.LISTEN -> ListenScreen(state, actions, padding)
             Tab.PROGRAM -> if (state.dayPlanOpen) DayPlanScreen(state, actions, padding) else ProgramScreen(state, actions, padding)
             Tab.ARCHIVE -> ArchiveScreen(state, actions, padding)
-            Tab.STUDIO -> StudioScreen(studio(), version, actions, padding)
+            Tab.STUDIO -> StudioScreen(state, actions, studio, version, padding)
         }
     }
     Dialogs(state, actions)
