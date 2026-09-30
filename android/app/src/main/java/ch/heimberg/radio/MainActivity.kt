@@ -387,7 +387,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
     override fun addBlock(block: BlockView, subject: String) {
         window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         serverAction(
-            { api.addBlock(block.id, subject, state.currentItemId) },
+            { api.addBlock(block.id, subject) },
             if (subject.isBlank()) getString(R.string.block_added, block.name) else getString(R.string.block_added_subject, block.name, subject),
         )
     }
