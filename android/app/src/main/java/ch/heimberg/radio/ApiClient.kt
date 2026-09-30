@@ -8,6 +8,9 @@ import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
+import ch.heimberg.radio.core.Place
+import ch.heimberg.radio.core.StudioSettings
+import ch.heimberg.radio.core.VoiceOption
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -60,6 +63,32 @@ class ApiClient(private val connection: Connection) {
             request("PUT", "api/station", config.toString())
         }
     }
+
+    /** The studio's settings; null while the station is not set up. */
+    suspend fun studio(): StudioSettings? = withContext(Dispatchers.IO) { StudioSettings.parse(request("GET", "api/station")) }
+
+    /**
+     * Saves the studio: the current settings are read again and only the studio's fields replaced, so
+     * shows, feeds, agents and the day plan stay exactly as they are.
+     */
+    suspend fun saveStudio(settings: StudioSettings) {
+        withContext(Dispatchers.IO) {
+            val config = StudioSettings.parseConfig(request("GET", "api/station"))
+            request("PUT", "api/station", settings.mergeInto(config).toString())
+        }
+    }
+
+    suspend fun voices(): List<VoiceOption> = withContext(Dispatchers.IO) { StudioSettings.parseVoices(request("GET", "api/mistral-voices")) }
+
+    suspend fun places(name: String): List<Place> = withContext(Dispatchers.IO) {
+        StudioSettings.parsePlaces(request("GET", "api/places?name=" + java.net.URLEncoder.encode(name, "UTF-8")))
+    }
+
+    /** Where the voice sample for [voiceId] (spoken in [style]) is; the player sends the token itself. */
+    fun previewUrl(voiceId: String, style: String): String =
+        connection.resolve("api/voices/preview?voice=${java.net.URLEncoder.encode(voiceId, "UTF-8")}&style=${java.net.URLEncoder.encode(style, "UTF-8")}")
+
+    fun headers(): Map<String, String> = connection.headers()
 
     /** Configured show choices for the native "produce now" dialog. */
     suspend fun shows(): List<ShowOption> = withContext(Dispatchers.IO) {

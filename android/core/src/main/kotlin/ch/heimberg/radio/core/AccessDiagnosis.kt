@@ -20,6 +20,8 @@ object AccessDiagnosis {
             "access_not_configured" -> "Im Worker fehlen ACCESS_TEAM_DOMAIN, ACCESS_AUD oder ALLOWED_EMAIL."
             else -> "Der Worker hat die Anmeldung abgelehnt (${reason.find(body)?.groupValues?.get(1) ?: "ohne Grund"})."
         }
+        // A setting the Worker refused names the field and what it expects.
+        if (status == 400) detail.find(body)?.groupValues?.get(1)?.let { return "Nicht gespeichert – $it" }
         return when (status) {
             403 -> "Anfrage abgelehnt (Origin). Prüfe, ob die Adresse genau die des Workers ist."
             404 -> "Adresse gefunden, aber kein Radio-Server dahinter."
@@ -27,6 +29,8 @@ object AccessDiagnosis {
             else -> "Server antwortet mit Fehler $status."
         }
     }
+
+    private val detail = Regex("\"detail\"\\s*:\\s*\"([^\"]{1,300})\"")
 
     const val ACCESS_REFUSED = "Cloudflare Access lehnt das Token ab: Client-ID oder Client-Secret stimmt nicht, oder das Token fehlt in der Service-Auth-Regel der Access-Anwendung."
 }

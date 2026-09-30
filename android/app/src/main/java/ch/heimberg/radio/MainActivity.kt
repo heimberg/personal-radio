@@ -28,6 +28,7 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.ProgramClock
+import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import com.google.common.util.concurrent.ListenableFuture
@@ -57,6 +58,9 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private lateinit var spotify: SpotifyLink
     private lateinit var updater: AppUpdater
     private var studio: WebView? = null
+    /** The voice sample playing in the studio, and whether the radio was playing before it. */
+    private var sample: android.media.MediaPlayer? = null
+    private var resumeAfterSample = false
     /** Items taken out by a swipe; a second swipe signal does not send it twice. */
     private val removing = mutableSetOf<String>()
     private var lastMinute = -1L
@@ -154,6 +158,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
     }
 
     override fun onDestroy() {
+        stopSample()
         studio?.destroy()
         studio = null
         super.onDestroy()
@@ -513,6 +518,94 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
     override fun closeDayPlan() {
         state.dayPlanOpen = false
+    }
+
+    // ── Studio ────────────────────────────────────────────────────────────────────────────────
+
+    override fun loadStudio(force: Boolean) {
+        // Unsaved changes stay until they are saved or discarded.
+        if (!force && (state.studio != null || state.studioMissing)) return
+        lifecycleScope.launch {
+            runCatching { api.studio() }
+                .onSuccess { settings ->
+                    state.studio = settings
+                    state.studioMissing = settings == null
+                    state.studioDirty = false
+                }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+        if (state.voices.isEmpty()) lifecycleScope.launch { runCatching { api.voices() }.onSuccess { state.voices = it } }
+    }
+
+    override fun editStudio(settings: StudioSettings) {
+        if (settings == state.studio) return
+        state.studio = settings
+        state.studioDirty = true
+    }
+
+    override fun saveStudio() {
+        val settings = state.studio ?: return
+        state.studioSaving = true
+        lifecycleScope.launch {
+            val result = runCatching { api.saveStudio(settings) }
+            state.studioSaving = false
+            if (result.isSuccess) state.studioDirty = false
+            state.say(result.fold({ "Gespeichert. Gilt ab den nächsten Beiträgen." }, { it.message ?: getString(R.string.connection_failed) }))
+            if (result.isSuccess) changed()
+        }
+    }
+
+    override fun discardStudio() {
+        state.studioDirty = false
+        loadStudio(force = true)
+    }
+
+    override fun searchPlaces(name: String) {
+        if (name.trim().length < 2) return
+        lifecycleScope.launch {
+            runCatching { api.places(name.trim()) }
+                .onSuccess { state.places = it }
+                .onFailure { state.say("Die Ortssuche ist gerade nicht erreichbar.") }
+        }
+    }
+
+    override fun previewVoice(voiceId: String) {
+        val playing = state.previewing
+        stopSample()
+        if (playing == voiceId) return
+        val style = state.studio?.voiceStyle.orEmpty()
+        state.previewing = voiceId
+        // The radio pauses for the sample and goes on afterwards.
+        resumeAfterSample = controller?.isPlaying == true
+        controller?.pause()
+        sample = android.media.MediaPlayer().apply {
+            setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            setOnPreparedListener { it.start() }
+            setOnCompletionListener { stopSample() }
+            setOnErrorListener { _, _, _ -> state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample(); true }
+            runCatching {
+                setDataSource(this@MainActivity, android.net.Uri.parse(api.previewUrl(voiceId, style)), api.headers())
+                prepareAsync()
+            }.onFailure { state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample() }
+        }
+    }
+
+    private fun stopSample() {
+        sample?.let { runCatching { it.stop() }; it.release() }
+        sample = null
+        state.previewing = null
+        if (resumeAfterSample) controller?.play()
+        resumeAfterSample = false
+    }
+
+    override fun openWebStudio() {
+        state.webStudioOpen = true
+    }
+
+    override fun closeWebStudio() {
+        state.webStudioOpen = false
+        // What was changed on the web shows here too, unless there are unsaved changes in the app.
+        if (!state.studioDirty) loadStudio(force = true)
     }
 
     // ── Setup ─────────────────────────────────────────────────────────────────────────────────

@@ -59,9 +59,10 @@ test('private worker authenticates Access JWT, verifies evidence, enforces D1 da
     }), env as never);
     assert.equal(reset.status, 200);
     assert.deepEqual(await reset.json() as { reset: boolean; utcDay: string }, { reset: true, utcDay: new Date().toISOString().slice(0, 10) });
-    assert.equal(deletedQuotaRows.length, 3);
+    assert.equal(deletedQuotaRows.length, 4);
     assert.ok(deletedQuotaRows.every(row => row.values[0] === 'owner@example.test' && row.values[1] === new Date().toISOString().slice(0, 10)));
-    assert.deepEqual(deletedQuotaRows.map(row => ['daily_requests', 'daily_usage', 'daily_feed_requests'].find(table => row.sql.includes('DELETE FROM ' + table))), ['daily_requests', 'daily_usage', 'daily_feed_requests']);
+    const quotaTables = ['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests'];
+    assert.deepEqual(deletedQuotaRows.map(row => quotaTables.find(table => row.sql.includes(`DELETE FROM ${table} `))), quotaTables);
     const podcastWithoutGemini = makeRequest('request-key-no-gemini');
     const podcastBody = await podcastWithoutGemini.json() as Record<string, unknown>;
     podcastBody.mode = 'podcast';

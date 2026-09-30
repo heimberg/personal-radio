@@ -13,8 +13,11 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
 import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.Place
 import ch.heimberg.radio.core.ProgramSections
+import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
+import ch.heimberg.radio.core.VoiceOption
 import java.time.Instant
 
 enum class Tab(val label: String, val icon: Int) {
@@ -80,6 +83,19 @@ class RadioState {
     /** A window's start (true) or end (false) time being chosen. */
     var timeAsk by mutableStateOf<Pair<String, Boolean>?>(null)
     var blockPickFor by mutableStateOf<String?>(null)
+
+    // «Studio»: the native settings; the web studio opens for the rest.
+    var studio by mutableStateOf<StudioSettings?>(null)
+    var studioMissing by mutableStateOf(false)
+    var studioDirty by mutableStateOf(false)
+    var studioSaving by mutableStateOf(false)
+    var voices by mutableStateOf<List<VoiceOption>>(emptyList())
+    var places by mutableStateOf<List<Place>?>(null)
+    /** The voice whose sample is playing (or loading). */
+    var previewing by mutableStateOf<String?>(null)
+    var webStudioOpen by mutableStateOf(false)
+    /** Which studio card is open; one at a time keeps the page short. */
+    var studioCard by mutableStateOf<String?>(null)
 
     // Updates, messages and open dialogs.
     var update by mutableStateOf<AppBuild?>(null)
@@ -148,6 +164,17 @@ interface RadioActions {
     fun editDayPlan(plan: DayPlan)
     fun saveDayPlan()
     fun closeDayPlan()
+
+    /** «Studio»: loads the settings (once, or again with [force]), edits them locally, saves them. */
+    fun loadStudio(force: Boolean = false)
+    fun editStudio(settings: StudioSettings)
+    fun saveStudio()
+    fun discardStudio()
+    fun searchPlaces(name: String)
+    /** Plays the voice sample, or stops it when it is playing. */
+    fun previewVoice(voiceId: String)
+    fun openWebStudio()
+    fun closeWebStudio()
 
     fun connectSpotify()
     fun installUpdate()

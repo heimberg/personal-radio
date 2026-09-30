@@ -1,6 +1,6 @@
 # Personal Radio
 
-A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen and steer the program in a native Android app; settings live in its «Studio» tab, a web page served by the Worker.
+A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen and steer the program in a native Android app; everyday settings are native in its «Studio» tab (with voice samples); shows, feeds and the editorial team stay in the web studio served by the Worker.
 
 The station speaks German. Everything runs in your own Cloudflare and Google accounts; nothing is shared with other users.
 
