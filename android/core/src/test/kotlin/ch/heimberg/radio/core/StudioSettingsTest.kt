@@ -27,7 +27,7 @@ class StudioSettingsTest {
         assertEquals(2, settings.between)
         assertFalse(settings.announce)
         assertFalse(settings.hourChange)
-        assertTrue(settings.linker && settings.bed)
+        assertTrue(settings.linker && !settings.bed)
         assertNull(StudioSettings.parse("""{"config":null}"""))
         assertEquals(StudioSettings(), StudioSettings.parse("""{"config":{}}"""))
     }
@@ -47,7 +47,7 @@ class StudioSettingsTest {
 
     @Test fun savingReplacesOnlyTheStudioFields() {
         val config = StudioSettings.parseConfig(body)
-        val edited = StudioSettings.parse(body)!!.copy(name = " Radio Neu ", voiceId = null, place = null, bed = false, cohostName = "Jonas")
+        val edited = StudioSettings.parse(body)!!.copy(name = " Radio Neu ", voiceId = null, place = null, bed = true, cohostName = "Jonas")
             .addInterest("Vulkane")
         val merged = edited.mergeInto(config)
         assertEquals("Radio Neu", merged["name"]!!.jsonPrimitive.content)
@@ -60,7 +60,7 @@ class StudioSettingsTest {
         assertEquals(config["agents"], merged["agents"])
         assertEquals(config["profile"]!!.jsonObject["interestWeights"], merged["profile"]!!.jsonObject["interestWeights"])
         assertEquals("2", merged["profile"]!!.jsonObject["speechMinutes"]!!.jsonPrimitive.content)
-        assertEquals("false", (merged["sounds"] as JsonObject)["bed"]!!.jsonPrimitive.content)
+        assertEquals("true", (merged["sounds"] as JsonObject)["musicBed"]!!.jsonPrimitive.content)
         // Read back, the merged settings are the edited ones.
         assertEquals(edited.copy(name = "Radio Neu"), StudioSettings.of(merged))
     }

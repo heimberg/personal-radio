@@ -129,11 +129,11 @@ export type MoodId = typeof MOOD_IDS[number];
 export interface StationMood { id: MoodId; until: string }
 
 /**
- * The station's sound. [linker]: short live transitions spoken just before an item airs; [bed]: a soft music
- * bed under short moderations. Both are optional in stored configs and default to on.
+ * The station's sound. [linker]: short live transitions spoken just before an item airs (default on);
+ * [musicBed]: a soft music bed under short moderations (default off; the earlier key `bed` is ignored).
  */
-export interface StationSounds { ident: boolean; hourChange: boolean; linker?: boolean; bed?: boolean }
-export const stationSounds = (config: StationConfig): Required<StationSounds> => ({ ident: true, hourChange: true, linker: true, bed: true, ...config.sounds });
+export interface StationSounds { ident: boolean; hourChange: boolean; linker?: boolean; musicBed?: boolean }
+export const stationSounds = (config: StationConfig): Required<StationSounds> => ({ ident: true, hourChange: true, linker: true, musicBed: false, ...config.sounds });
 
 /** `archived`: produced but not heard before it left the program; it can still be played from the archive. */
 export type TimelineState = 'planned' | 'voicing' | 'ready' | 'played' | 'skipped' | 'archived' | 'failed' | 'expired';
@@ -395,9 +395,9 @@ export function parseStationConfig(raw: unknown): StationConfig {
     const s = record(c.sounds, 'sounds');
     if (typeof s.ident !== 'boolean') fail('sounds.ident', 'true oder false');
     if (typeof s.hourChange !== 'boolean') fail('sounds.hourChange', 'true oder false');
-    for (const key of ['linker', 'bed'] as const) if (s[key] !== undefined && typeof s[key] !== 'boolean') fail(`sounds.${key}`, 'true oder false');
+    for (const key of ['linker', 'musicBed'] as const) if (s[key] !== undefined && typeof s[key] !== 'boolean') fail(`sounds.${key}`, 'true oder false');
     sounds = { ident: s.ident as boolean, hourChange: s.hourChange as boolean,
-      ...(typeof s.linker === 'boolean' ? { linker: s.linker } : {}), ...(typeof s.bed === 'boolean' ? { bed: s.bed } : {}) };
+      ...(typeof s.linker === 'boolean' ? { linker: s.linker } : {}), ...(typeof s.musicBed === 'boolean' ? { musicBed: s.musicBed } : {}) };
   }
   return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}), ...(mood ? { mood } : {}) };
 }

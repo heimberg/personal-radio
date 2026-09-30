@@ -346,7 +346,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
     const script = JSON.parse(current.script_json ?? 'null') as Script;
     const format = script.turns ? 'podcast' : 'brief';
     // The show's own voice wins; otherwise the host persona speaks.
-    const voiced = await deps.pipeline.voice(owner, script, format, format === 'brief' ? show.voiceId ?? config.host.voiceId : undefined, config.host.voiceStyle, { bed: stationSounds(config).bed });
+    const voiced = await deps.pipeline.voice(owner, script, format, format === 'brief' ? show.voiceId ?? config.host.voiceId : undefined, config.host.voiceStyle, { bed: stationSounds(config).musicBed });
     const key = `segments/${row.id}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
     await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, audio_key: key, content_type: voiced.contentType, error: null }, deps.now());
@@ -527,7 +527,7 @@ function memorySteps(): DurableStepRunner & { clear(): Promise<void> } {
 async function voiceParts(deps: StationDeps, owner: string, config: StationConfig, voiceId: string | undefined, row: TimelineRow, pkg: HourPackage): Promise<ProduceOutcome> {
   for (const [index, part] of pkg.parts.entries()) {
     if (part.kind !== 'speech' || part.audioKey) continue;
-    const voiced = await deps.pipeline.voice(owner, { title: pkg.title, text: part.text, sourceIds: part.sourceIds.length ? part.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).bed });
+    const voiced = await deps.pipeline.voice(owner, { title: pkg.title, text: part.text, sourceIds: part.sourceIds.length ? part.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed });
     const key = `segments/${row.id}-${index}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
     await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     part.audioKey = key; part.contentType = voiced.contentType;
