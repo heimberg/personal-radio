@@ -14,7 +14,7 @@ object AccessDiagnosis {
             return if (login) ACCESS_REFUSED else "Weiterleitung statt Antwort – prüfe die Adresse (https://…workers.dev)."
         }
         if (status == 401) return when (reason.find(body)?.groupValues?.get(1)) {
-            "service_token_not_allowed" -> "Access hat das Token angenommen, der Worker nicht: ACCESS_SERVICE_TOKEN_ID im Worker muss genau diese Client-ID sein."
+            "service_token_not_allowed" -> "Access hat das Token angenommen, der Worker nicht: Die Client-ID muss im Worker in ACCESS_SERVICE_TOKEN_ID oder in LISTENERS stehen."
             "service_token_not_configured" -> "Im Worker fehlt ACCESS_SERVICE_TOKEN_ID (die Client-ID des Service-Tokens)."
             "no_access_token" -> "Die Anfrage kam ohne Access-Prüfung an: Liegt die Adresse hinter der Access-Anwendung?"
             "access_not_configured" -> "Im Worker fehlen ACCESS_TEAM_DOMAIN, ACCESS_AUD oder ALLOWED_EMAIL."

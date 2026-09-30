@@ -25,6 +25,7 @@ import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
+import { allOwners, forKids, isKids, parseListeners } from './listeners.ts';
 
 const identAudio: Array<Uint8Array | undefined> = [];
 let signalAudio: Uint8Array | undefined, newsAudio: Uint8Array | undefined;
@@ -51,6 +52,8 @@ interface Environment {
   ALLOWED_EMAIL: string;
   /** Client ID of the Access service token used by the Android app; its requests act as the owner. */
   ACCESS_SERVICE_TOKEN_ID?: string;
+  /** Further listeners, each with their own service token and station: `<client ID>=<name>[:kids]; …` (see server/listeners.ts). */
+  LISTENERS?: string;
   DAILY_TTS_CHARACTERS?: string;
   DAILY_GENERATIONS?: string;
   DAILY_FEED_REQUESTS?: string;
@@ -156,7 +159,8 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
   const after = url.searchParams.get('after'), next = url.searchParams.get('next') ?? '';
   if (!LINKER_ID.test(next) || after !== null && !LINKER_ID.test(after)) return json({ error: 'invalid_request' }, 400);
   try {
-    const config = await store.getConfig(owner), writer = musicFor(env).writer;
+    const stored = await store.getConfig(owner), writer = musicFor(env).writer;
+    const config = stored && isKids(owner, parseListeners(env.LISTENERS)) ? forKids(stored) : stored;
     if (!config || !stationSounds(config).linker || !writer) return quiet();
     const [nextRow, before] = await Promise.all([store.getItem(owner, next), after ? store.getItem(owner, after) : Promise.resolve(null)]);
     if (!nextRow) return quiet();
@@ -208,9 +212,12 @@ async function authenticate(request: Request, env: Environment): Promise<Auth> {
     // Service tokens carry no email; Access puts the token's client ID into common_name.
     const serviceToken = typeof payload.common_name === 'string' ? payload.common_name.trim() : '';
     if (!serviceToken) return refuse('no_identity');
+    if (env.ACCESS_SERVICE_TOKEN_ID?.trim() && serviceToken === env.ACCESS_SERVICE_TOKEN_ID.trim()) return { owner: env.ALLOWED_EMAIL.toLowerCase() };
+    // Further listeners each have their own token, and with it their own station.
+    const listener = parseListeners(env.LISTENERS).get(serviceToken);
+    if (listener) return { owner: listener.owner };
     if (!env.ACCESS_SERVICE_TOKEN_ID?.trim()) return refuse('service_token_not_configured');
-    if (serviceToken !== env.ACCESS_SERVICE_TOKEN_ID.trim()) return refuse('service_token_not_allowed');
-    return { owner: env.ALLOWED_EMAIL.toLowerCase() };
+    return refuse('service_token_not_allowed');
   } catch { return refuse('invalid_access_token'); }
 }
 
@@ -293,23 +300,26 @@ function pipelineFor(env: Environment): SegmentPipeline {
   return pipeline;
 }
 
-const musicCache = new WeakMap<object, { writer?: GeminiMusicWriter; catalog?: MusicCatalog }>();
+const musicCache = new WeakMap<object, { writer?: GeminiMusicWriter; catalog?: MusicCatalog; cleanCatalog?: MusicCatalog }>();
 function musicFor(env: Environment) {
   let music = musicCache.get(env.DB as object);
   if (!music) {
+    const spotify = env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET } : null;
     music = {
       ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }, metered(env)) } : {}),
-      ...(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
-        ? { catalog: new SpotifyCatalog({ clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET }) } : {}),
+      ...(spotify ? { catalog: new SpotifyCatalog(spotify), cleanCatalog: new SpotifyCatalog({ ...spotify, clean: true }) } : {}),
     };
     musicCache.set(env.DB as object, music);
   }
   return music;
 }
 
-function stationDeps(env: Environment): StationDeps {
+/** Production for one station; a child's station gets its rules and never an explicit track. */
+function stationDeps(env: Environment, owner: string): StationDeps {
+  const kids = isKids(owner, parseListeners(env.LISTENERS));
+  const catalog = kids ? musicFor(env).cleanCatalog : musicFor(env).catalog;
   return {
-    store: new StationStore(env.DB), pipeline: pipelineFor(env), audio: env.AUDIO,
+    store: new StationStore(env.DB, kids ? forKids : undefined), pipeline: pipelineFor(env), audio: env.AUDIO,
     fetchFeed: url => fetchFeed(url),
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
     reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
@@ -326,9 +336,9 @@ function stationDeps(env: Environment): StationDeps {
     ...(musicFor(env).writer ? { editor: new GeminiScriptEditor((system, input, label, temperature) => musicFor(env).writer!.askJson(system, input, label, temperature)) } : {}),
     ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
     agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
-    catalog: musicFor(env).catalog,
+    catalog,
     ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
-    ...(musicFor(env).catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(musicFor(env).catalog as SpotifyCatalog, listeningFor(env)) } : {}),
+    ...(catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(catalog, listeningFor(env)) } : {}),
   };
 }
 
@@ -392,7 +402,7 @@ async function listeningRoutes(request: Request, env: Environment, owner: string
 
 /** Plans the program and hands due items to the production queue. */
 async function refreshProgram(env: Environment, owner: string, requireListener: boolean) {
-  const result = await tick(stationDeps(env), owner, { requireListener });
+  const result = await tick(stationDeps(env, owner), owner, { requireListener });
   for (const itemId of result.due) await env.PRODUCTION.send({ owner, itemId });
   return result;
 }
@@ -523,7 +533,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (body.error) return body.error;
     const { subject, after } = (body.value ?? {}) as { subject?: unknown; after?: unknown };
     if ((subject !== undefined && typeof subject !== 'string') || (after !== undefined && typeof after !== 'string')) return json({ error: 'invalid_block' }, 400);
-    const itemId = await addBlock(stationDeps(env), owner, addBlockMatch[1], subject as string | undefined, after as string | undefined);
+    const itemId = await addBlock(stationDeps(env, owner), owner, addBlockMatch[1], subject as string | undefined, after as string | undefined);
     if (!itemId) return json({ error: 'unknown_block' }, 404);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
@@ -562,7 +572,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       if (error instanceof ConfigError) return json({ error: 'invalid_config', detail: error.message }, 400);
       throw error;
     }
-    const result = await trialAgent(stationDeps(env), owner, agent as TrialAgent, draft);
+    const result = await trialAgent(stationDeps(env, owner), owner, agent as TrialAgent, draft);
     return json(result, result.ok ? 200 : result.error === 'NO_ITEM' ? 404 : result.error === 'NOT_CONFIGURED' ? 409 : 502);
   }
   if (url.pathname === '/api/library') {
@@ -601,12 +611,12 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const order = (body.value as { order?: unknown } | undefined)?.order;
     if (!Array.isArray(order) || !order.every(id => typeof id === 'string')) return json({ error: 'invalid_order' }, 400);
     // A stale order (the program changed meanwhile) is refused, and the cockpit reloads.
-    return await arrangeTimeline(stationDeps(env), owner, order as string[]) ? json({ ok: true }, 200) : json({ error: 'stale_order' }, 409);
+    return await arrangeTimeline(stationDeps(env, owner), owner, order as string[]) ? json({ ok: true }, 200) : json({ error: 'stale_order' }, 409);
   }
   if (url.pathname === '/api/timeline/shuffle') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    const added = await shuffleTimeline(stationDeps(env), owner);
+    const added = await shuffleTimeline(stationDeps(env, owner), owner);
     if (!added) return json({ error: 'not_configured' }, 404);
     for (const itemId of added) await env.PRODUCTION.send({ owner, itemId });
     return json({ added: added.length }, 200);
@@ -624,7 +634,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       if (value.subject !== undefined && (typeof value.subject !== 'string' || value.subject.trim().length > 200)) return json({ error: 'invalid_subject' }, 400);
       subject = typeof value.subject === 'string' ? value.subject.trim() || undefined : undefined;
     }
-    const itemId = await scheduleShowNow(stationDeps(env), owner, produce[1], subject);
+    const itemId = await scheduleShowNow(stationDeps(env, owner), owner, produce[1], subject);
     if (!itemId) return json({ error: 'unknown_show' }, 404);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
@@ -640,7 +650,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (match[2] === 'swap') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    const itemId = await swapItem(stationDeps(env), owner, row.id);
+    const itemId = await swapItem(stationDeps(env, owner), owner, row.id);
     if (!itemId) return json({ error: 'not_swappable' }, 409);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
@@ -648,7 +658,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (match[2] === 'more') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    const itemId = await addFollowUp(stationDeps(env), owner, row.id);
+    const itemId = await addFollowUp(stationDeps(env, owner), owner, row.id);
     if (!itemId) return json({ error: 'not_deepenable' }, 409);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
@@ -665,12 +675,12 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (match[2] === 'delete') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    return await deleteItem(stationDeps(env), owner, row.id) ? json({ ok: true }, 200) : json({ error: 'not_deletable' }, 409);
+    return await deleteItem(stationDeps(env, owner), owner, row.id) ? json({ ok: true }, 200) : json({ error: 'not_deletable' }, 409);
   }
   if (match[2] === 'remove') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
-    return await removeItem(stationDeps(env), owner, row.id) ? json({ ok: true }, 200) : json({ error: 'not_open' }, 409);
+    return await removeItem(stationDeps(env, owner), owner, row.id) ? json({ ok: true }, 200) : json({ error: 'not_open' }, 409);
   }
   if (match[2] === 'audio') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
@@ -877,21 +887,24 @@ export default {
     }
   },
 
-  /** Cron: keep the single owner's program filled ahead of playback. */
+  /** Cron: keep every station's program filled ahead of playback (each only while its listener listens). */
   async scheduled(_controller: unknown, env: Environment, ctx: ExecutionContext) {
-    const owner = env.ALLOWED_EMAIL?.toLowerCase();
-    if (!owner) return;
+    const owners = allOwners(env.ALLOWED_EMAIL, parseListeners(env.LISTENERS));
+    if (!owners.length) return;
     ctx.waitUntil(pruneLinkers(env.AUDIO, new Date()).catch(() => { /* Cleanup is retried on the next run. */ }));
-    ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+    for (const owner of owners) {
+      ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+    }
   },
 
   /** Queue consumer: produce one timeline item per message. Retries are driven by the item's state, not the queue. */
   async queue(batch: QueueBatch, env: Environment) {
-    const owner = env.ALLOWED_EMAIL?.toLowerCase();
+    const owners = new Set(allOwners(env.ALLOWED_EMAIL, parseListeners(env.LISTENERS)));
     for (const message of batch.messages) {
       const body = message.body as Partial<ProductionMessage> | null;
-      if (owner && body?.owner === owner && typeof body.itemId === 'string') {
-        try { await produceItem(stationDeps(env), owner, body.itemId); }
+      const owner = body?.owner;
+      if (typeof owner === 'string' && owners.has(owner) && typeof body?.itemId === 'string') {
+        try { await produceItem(stationDeps(env, owner), owner, body.itemId); }
         catch (error) { console.error('segment production failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown'); }
       }
       message.ack();

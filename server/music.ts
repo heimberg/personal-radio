@@ -277,9 +277,12 @@ export class SpotifyCatalog implements MusicCatalog {
   private market: string;
   private fetcher: Fetch;
   private token?: { value: string; expiresAt: number };
-  constructor(config: { clientId: string; clientSecret: string; market?: string }, fetcher: Fetch = fetch) {
+  /** For a child's station: tracks Spotify marks as explicit are never chosen. */
+  private clean: boolean;
+  constructor(config: { clientId: string; clientSecret: string; market?: string; clean?: boolean }, fetcher: Fetch = fetch) {
     if (!config.clientId || !config.clientSecret) throw new Error('Spotify configuration incomplete');
     this.clientId = config.clientId; this.clientSecret = config.clientSecret; this.fetcher = (input, init) => fetcher(input, init);
+    this.clean = config.clean === true;
     this.market = /^[A-Z]{2}$/.test(config.market ?? '') ? config.market! : 'CH';
   }
 
@@ -307,9 +310,10 @@ export class SpotifyCatalog implements MusicCatalog {
         const retry = Number(response.headers.get('Retry-After'));
         throw new ProviderError('Spotify search', response.status, Number.isFinite(retry) && retry > 0 ? { retryAfterMs: retry * 1000 } : {});
       }
-      const body = await response.json() as { tracks?: { items?: Array<{ uri?: string; name?: string; duration_ms?: number; artists?: Array<{ name?: string }>; album?: { images?: unknown } }> } };
+      const body = await response.json() as { tracks?: { items?: Array<{ uri?: string; name?: string; duration_ms?: number; explicit?: boolean; artists?: Array<{ name?: string }>; album?: { images?: unknown } }> } };
       for (const item of body.tracks?.items ?? []) {
         if (typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
+        if (this.clean && item.explicit === true) continue;
         if (matchesPick({ name: item.name, artists: (item.artists ?? []).map(artist => artist.name ?? '') }, pick)) {
           const imageUrl = albumImage(item.album?.images);
           return { uri: item.uri, durationMs: Number(item.duration_ms) || 0, ...(imageUrl ? { imageUrl } : {}) };
@@ -361,10 +365,11 @@ export class SpotifyCatalog implements MusicCatalog {
     releases.sort((a, b) => b.date.localeCompare(a.date));
     const tracks: PlaylistTrack[] = [];
     for (const release of releases.slice(0, 20)) {
-      const body = await this.get<{ items?: Array<{ uri?: string; name?: string; duration_ms?: number; artists?: Array<{ name?: string }> }> }>(
+      const body = await this.get<{ items?: Array<{ uri?: string; name?: string; duration_ms?: number; explicit?: boolean; artists?: Array<{ name?: string }> }> }>(
         `https://api.spotify.com/v1/albums/${release.id}/tracks?${new URLSearchParams({ limit: '1', market: this.market })}`, 'Spotify album tracks');
       const item = body.items?.[0];
       if (!item || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
+      if (this.clean && item.explicit === true) continue;
       const artist = (item.artists ?? []).map(value => value.name ?? '').filter(Boolean).join(', ') || release.artist;
       tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0, ...(release.imageUrl ? { imageUrl: release.imageUrl } : {}) });
     }
@@ -388,8 +393,9 @@ export class SpotifyCatalog implements MusicCatalog {
         if (!response.ok) throw new ProviderError('Spotify playlist', response.status);
         const body = await response.json() as { next?: unknown; items?: Array<{ track?: unknown; item?: unknown }> };
         for (const entry of body.items ?? []) {
-          const item = (entry.item ?? entry.track) as { uri?: unknown; name?: unknown; duration_ms?: unknown; is_local?: unknown; artists?: Array<{ name?: unknown }>; album?: { images?: unknown } } | null;
+          const item = (entry.item ?? entry.track) as { uri?: unknown; name?: unknown; duration_ms?: unknown; is_local?: unknown; explicit?: unknown; artists?: Array<{ name?: unknown }>; album?: { images?: unknown } } | null;
           if (!item || item.is_local === true || typeof item.uri !== 'string' || !/^spotify:track:[A-Za-z0-9]+$/.test(item.uri) || typeof item.name !== 'string') continue;
+          if (this.clean && item.explicit === true) continue;
           const artist = (item.artists ?? []).map(value => typeof value.name === 'string' ? value.name : '').filter(Boolean).join(', ');
           const imageUrl = albumImage(item.album?.images);
           tracks.push({ uri: item.uri, title: item.name.slice(0, 200), artist: artist.slice(0, 200), durationMs: Number(item.duration_ms) || 0, ...(imageUrl ? { imageUrl } : {}) });
