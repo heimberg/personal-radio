@@ -160,7 +160,7 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
     if (!config || !stationSounds(config).linker || !writer) return quiet();
     const [nextRow, before] = await Promise.all([store.getItem(owner, next), after ? store.getItem(owner, after) : Promise.resolve(null)]);
     if (!nextRow) return quiet();
-    const now = new Date(), voice = `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}|${stationSounds(config).bed}`;
+    const now = new Date(), voice = `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}|${stationSounds(config).musicBed}`;
     const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice);
     for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
       const stored = await env.AUDIO.get(key + suffix);
@@ -171,7 +171,7 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
     const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music), facts, 'Gemini linker', 0.8));
     if (!text) return quiet();
     const voiced = await pipelineFor(env).voice(owner, { title: 'Übergang', text, sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle,
-      { reserve: false, bed: stationSounds(config).bed, lite: true });
+      { reserve: false, bed: stationSounds(config).musicBed, lite: true });
     await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     return audio(voiced.audio, voiced.contentType);
   } catch (error) {

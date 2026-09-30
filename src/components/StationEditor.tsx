@@ -244,7 +244,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
         <label className="check"><input type="checkbox" checked={stationSounds(draft).ident} onChange={event => change(next => { next.sounds = { ...stationSounds(next), ident: event.target.checked }; })} />Kurzer Jingle, wenn nach Musik wieder gesprochen wird</label>
         <label className="check"><input type="checkbox" checked={stationSounds(draft).hourChange} onChange={event => change(next => { next.sounds = { ...stationSounds(next), hourChange: event.target.checked }; })} />Zeitzeichen und Zeitansage zur vollen Stunde</label>
         <label className="check"><input type="checkbox" checked={stationSounds(draft).linker} onChange={event => change(next => { next.sounds = { ...stationSounds(next), linker: event.target.checked }; })} />Live-Übergänge: die Moderation verbindet die Beiträge kurz vor der Sendung</label>
-        <label className="check"><input type="checkbox" checked={stationSounds(draft).bed} onChange={event => change(next => { next.sounds = { ...stationSounds(next), bed: event.target.checked }; })} />Leiser Klangteppich unter kurzen Moderationen</label>
+        <label className="check"><input type="checkbox" checked={stationSounds(draft).musicBed} onChange={event => change(next => { next.sounds = { ...stationSounds(next), musicBed: event.target.checked }; })} />Leiser Klangteppich unter kurzen Moderationen</label>
       </fieldset>
     </Section>
 

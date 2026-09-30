@@ -60,7 +60,7 @@ data class StudioSettings(
     val ident: Boolean = true,
     val hourChange: Boolean = true,
     val linker: Boolean = true,
-    val bed: Boolean = true,
+    val bed: Boolean = false,
 ) {
     fun toggleTopic(topic: String): StudioSettings = copy(topics = if (topic in topics) topics - topic else topics + topic)
 
@@ -100,7 +100,7 @@ data class StudioSettings(
         }
         val sounds = config.obj("sounds").edit {
             put("ident", JsonPrimitive(ident)); put("hourChange", JsonPrimitive(hourChange))
-            put("linker", JsonPrimitive(linker)); put("bed", JsonPrimitive(bed))
+            put("linker", JsonPrimitive(linker)); put("musicBed", JsonPrimitive(bed))
         }
         return config.edit {
             put("name", JsonPrimitive(name.trim().take(60)))
@@ -144,7 +144,7 @@ data class StudioSettings(
                 between = music["between"]?.jsonPrimitive?.intOrNull ?: 1,
                 announce = music.flag("announce", true), taste = music.text("taste"),
                 ident = sounds.flag("ident", true), hourChange = sounds.flag("hourChange", true),
-                linker = sounds.flag("linker", true), bed = sounds.flag("bed", true),
+                linker = sounds.flag("linker", true), bed = sounds.flag("musicBed", false),
             )
         }
 

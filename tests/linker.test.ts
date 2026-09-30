@@ -43,10 +43,10 @@ test('the link text is short and clean; the station is named only after music or
   assert.equal(new TextDecoder().decode(silentWav().subarray(0, 4)), 'RIFF');
 });
 
-test('live transitions and the bed default to on and can be switched off', () => {
-  assert.deepEqual(stationSounds(config), { ident: true, hourChange: true, linker: true, bed: true });
-  const off = parseStationConfig({ ...config, sounds: { ident: true, hourChange: false, linker: false, bed: false } });
-  assert.deepEqual(stationSounds(off), { ident: true, hourChange: false, linker: false, bed: false });
-  assert.deepEqual(stationSounds(parseStationConfig({ ...config, sounds: { ident: false, hourChange: true } })), { ident: false, hourChange: true, linker: true, bed: true });
+test('live transitions default to on, the music bed to off; both can be switched', () => {
+  assert.deepEqual(stationSounds(config), { ident: true, hourChange: true, linker: true, musicBed: false });
+  const off = parseStationConfig({ ...config, sounds: { ident: true, hourChange: false, linker: false, musicBed: true } });
+  assert.deepEqual(stationSounds(off), { ident: true, hourChange: false, linker: false, musicBed: true });
+  assert.deepEqual(stationSounds(parseStationConfig({ ...config, sounds: { ident: false, hourChange: true, bed: true } })), { ident: false, hourChange: true, linker: true, musicBed: false });
   assert.throws(() => parseStationConfig({ ...config, sounds: { ident: true, hourChange: true, linker: 'ja' } }), /sounds\.linker/);
 });
