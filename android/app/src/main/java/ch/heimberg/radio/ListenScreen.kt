@@ -45,7 +45,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.TimelineItem
@@ -54,7 +53,7 @@ import java.time.format.DateTimeFormatter
 
 private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
-/** «Hören»: the player in full, what comes right after it with «Anders», and the building blocks. */
+/** «Hören»: the player in full and what comes right after it with «Anders»; the building blocks are in «Programm». */
 @Composable
 fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValues) {
     Column(
@@ -68,7 +67,6 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         Banners(state, actions)
         PlayerCard(state, actions)
         state.sections.next?.let { NextCard(it, state, actions) }
-        Blocks(state.blocks, actions)
     }
 }
 
@@ -311,33 +309,6 @@ private fun NextCard(item: TimelineItem, state: RadioState, actions: RadioAction
             Icon(painterResource(R.drawable.ic_dice), null, Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text("Anders")
-        }
-    }
-}
-
-/** The building blocks: one tap puts one next into the program. */
-@Composable
-private fun Blocks(blocks: List<BlockView>, actions: RadioActions) {
-    if (blocks.isEmpty()) return
-    Text("Einfügen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 18.dp))
-    Text("Antippen – kommt als Nächstes.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(blocks, key = { it.id }) { block ->
-            val look = Looks.ofBlock(block)
-            Column(
-                Modifier
-                    .width(148.dp)
-                    .height(132.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .kindTile(look.kind, RoundedCornerShape(18.dp))
-                    .clickable { actions.chooseBlock(block) }
-                    .padding(12.dp),
-            ) {
-                KindBadge(look.icon, look.kind)
-                Spacer(Modifier.height(8.dp))
-                Text(if (block.music) "${block.name} ♫" else block.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(block.description, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
         }
     }
 }

@@ -3,6 +3,7 @@ package ch.heimberg.radio
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.TimelineItem
@@ -48,7 +50,7 @@ import java.time.format.DateTimeFormatter
 private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
 /**
- * «Programm» as «Jetzt · Gleich · Später». Tap: hear it now (or its options); long press: options;
+ * «Programm»: the building blocks to insert, then «Jetzt · Gleich · Später». Tap: hear it now (or its options); long press: options;
  * swipe to the left: out of the program.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +60,7 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
     PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = actions::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
+            if (state.blocks.isNotEmpty()) item(key = "blocks") { Blocks(state.blocks, actions) }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
             if (state.open.isEmpty()) {
                 item(key = "empty") {
@@ -222,4 +225,31 @@ private fun meta(item: TimelineItem): String {
     val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · $it Songs" } ?: ""
     val surprise = if (item.surprise) " · 🎲" else ""
     return "${item.showName} · ${Labels.state(item.state)}$tracks$surprise"
+}
+
+/** The building blocks: one tap puts one next into the program. */
+@Composable
+private fun Blocks(blocks: List<BlockView>, actions: RadioActions) {
+    if (blocks.isEmpty()) return
+    Text("Einfügen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 8.dp))
+    Text("Antippen – kommt als Nächstes.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(blocks, key = { it.id }) { block ->
+            val look = Looks.ofBlock(block)
+            Column(
+                Modifier
+                    .width(148.dp)
+                    .height(132.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .kindTile(look.kind, RoundedCornerShape(18.dp))
+                    .clickable { actions.chooseBlock(block) }
+                    .padding(12.dp),
+            ) {
+                KindBadge(look.icon, look.kind)
+                Spacer(Modifier.height(8.dp))
+                Text(if (block.music) "${block.name} ♫" else block.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(block.description, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
