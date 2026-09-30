@@ -151,18 +151,29 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
             FilledTonalButton(onClick = { state.cloneOpen = true }) { Text("🎤 Meine Stimme") }
         }
         VoiceSearch(state, actions)
-        VoiceRow("Voreinstellung des Servers", selected = settings.voiceId == null, previewing = false, onPreview = null) { edit(settings.copy(voiceId = null)) }
+        // Which voice the list sets: the host's, or the co-host's in dialogs such as «Hintergrund».
+        val cohost = state.voiceForCohost
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !cohost, onClick = { state.voiceForCohost = false }, label = { Text("Moderation") })
+            FilterChip(selected = cohost, onClick = { state.voiceForCohost = true }, label = { Text("Zweite Stimme (Dialoge)") })
+        }
+        if (cohost) Text("In Dialogen spricht die Moderation mit ihrer Stimme, «${settings.cohostName.ifBlank { "die Co-Moderation" }}» mit dieser. Standardstimmen klingen im Dialog am natürlichsten.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        val current = if (cohost) settings.cohostVoiceId else settings.voiceId
+        val choose = { id: String? -> edit(if (cohost) settings.copy(cohostVoiceId = id) else settings.copy(voiceId = id)) }
+        VoiceRow("Voreinstellung des Servers", selected = current == null, previewing = false, onPreview = null) { choose(null) }
         if (state.voices.isEmpty()) Text("Stimmen werden geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         for ((group, label) in VoiceGroups.ORDER) {
             val voices = state.voices.filter { it.group == group }
             if (voices.isEmpty()) continue
             Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(top = 6.dp))
             for (voice in voices) {
+                // Dialogs use Gemini voices only; Mistral voices stay out of the second voice.
+                if (cohost && !voice.id.startsWith("gemini_")) continue
                 VoiceRow(
-                    voice.name, selected = voice.id == settings.voiceId, previewing = state.previewing == voice.id,
+                    voice.name, selected = voice.id == current, previewing = state.previewing == voice.id,
                     onPreview = { actions.previewVoice(voice.id) }, detail = voice.description,
                     onDelete = if (voice.own) ({ state.voiceDeleteAsk = voice }) else null,
-                ) { edit(settings.copy(voiceId = voice.id)) }
+                ) { choose(voice.id) }
             }
         }
     }

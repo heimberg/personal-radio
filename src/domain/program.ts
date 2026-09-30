@@ -28,6 +28,8 @@ export interface QualityScore { hook: number; clarity: number; facts: number; no
 /** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
 export interface HostPersona {
   name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string;
+  /** The co-host's voice in dialogs; without it a second default voice speaks. */
+  cohostVoiceId?: string;
   /** How the voice speaks (Gemini voices follow it): e.g. «energisch, warm, mit Tempowechseln». */
   voiceStyle?: string;
 }
@@ -50,7 +52,7 @@ export interface TextGenerator {
 export interface SpeechSynthesizer {
   /** [style] is a spoken-delivery instruction; voices that cannot follow it ignore it. */
   /** [options.lite]: a cheaper model for short, frequent speech, where the provider has one. */
-  synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string, options?: { lite?: boolean }): Promise<Uint8Array>;
+  synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string, options?: { lite?: boolean; voices?: Array<string | undefined> }): Promise<Uint8Array>;
 }
 
 export const defaultProfile: Profile = {

@@ -47,13 +47,14 @@ class StudioSettingsTest {
 
     @Test fun savingReplacesOnlyTheStudioFields() {
         val config = StudioSettings.parseConfig(body)
-        val edited = StudioSettings.parse(body)!!.copy(name = " Radio Neu ", voiceId = null, place = null, bed = true, cohostName = "Jonas")
+        val edited = StudioSettings.parse(body)!!.copy(name = " Radio Neu ", voiceId = null, place = null, bed = true, cohostName = "Jonas", cohostVoiceId = "gemini_Charon")
             .addInterest("Vulkane")
         val merged = edited.mergeInto(config)
         assertEquals("Radio Neu", merged["name"]!!.jsonPrimitive.content)
         val host = merged["host"]!!.jsonObject
         assertNull(host["voiceId"])
         assertEquals("Jonas", host["cohostName"]!!.jsonPrimitive.content)
+        assertEquals("gemini_Charon", host["cohostVoiceId"]!!.jsonPrimitive.content)
         assertNull(merged["location"])
         // Untouched parts of the settings come back unchanged, down to the learned weights.
         assertEquals(config["shows"], merged["shows"])

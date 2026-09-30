@@ -503,8 +503,11 @@ export function withoutVoiceTags(text: string): string {
   return text.replace(VOICE_TAG, ' ').replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?;:])/g, '$1').replace(/^ +| +$/gm, '');
 }
 
-/** Options per call: [lite] uses the cheaper model for short, frequent speech (prebuilt voices only). */
-export interface SpeechOptions { lite?: boolean }
+/**
+ * Options per call: [lite] uses the cheaper model for short, frequent speech (prebuilt voices only);
+ * [voices] are the station's voices for a dialog's two speakers.
+ */
+export interface SpeechOptions { lite?: boolean; voices?: Array<string | undefined> }
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -677,6 +680,11 @@ export class VoiceRouter implements SpeechSynthesizer {
   }
 }
 
+/**
+ * Two-voice dialogs. host-a speaks with the host's voice, host-b with the co-host's (defaults: Kore, Puck).
+ * Two prebuilt voices go in one conversational call; an own voice (`voice_…`) cannot, so then every turn
+ * is spoken on its own and the turns are joined with a short pause.
+ */
 export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private model: string;
@@ -688,27 +696,49 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
     this.voices = [config.voiceA || 'Kore', config.voiceB || 'Puck']; this.fetcher = fetcher;
     if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model) || this.voices.some(voice => !/^[A-Za-z0-9 _-]{1,40}$/.test(voice))) throw new Error('Gemini TTS configuration invalid');
   }
-  async synthesize(text: string, turns?: Script['turns']): Promise<Uint8Array> {
+
+  /** [options.voices]: the station's voices for host-a and host-b (`gemini_…`); others keep the defaults. */
+  async synthesize(text: string, turns?: Script['turns'], _voiceId?: string, _style?: string, options: SpeechOptions = {}): Promise<Uint8Array> {
     if (!turns?.length || !text.trim() || text.length > 12_000 || turns.length > 32) throw new Error('Gemini podcast input outside budget');
-    const speakers = ['host-a', 'host-b'] as const;
-    const response = await requestWithTransientRetry(this.fetcher, 'https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: this.model, input: [{ type: 'user_input', content: turns.map(turn => ({
-        type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', speaker: turn.speaker, style: turn.speaker === 'host-a' ? 'warm, curious radio host; clear standard German' : 'calm, engaging radio host; clear standard German' }],
-      })) }], response_format: { type: 'audio' }, generation_config: { speech_config: {
-        mode: 'conversational', speakers: speakers.map((speaker, index) => ({ speaker, voice: this.voices[index] })),
-      } } }),
+    const chosen = (index: number) => {
+      const id = options.voices?.[index];
+      const voice = id && isGeminiVoice(id) ? id.slice(GEMINI_VOICE_PREFIX.length) : '';
+      return /^[A-Za-z0-9_-]{2,160}$/.test(voice) ? voice : this.voices[index];
+    };
+    const voices = [chosen(0), chosen(1)] as const;
+    const style = (speaker: string) => speaker === 'host-a' ? 'warm, curious radio host; clear standard German' : 'calm, engaging radio host; clear standard German';
+    const request = (body: unknown) => requestWithTransientRetry(this.fetcher, `${GEMINI_API}/interactions`, {
+      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }, 120_000);
+    if (voices.some(voice => voice.startsWith('voice_') || voice.startsWith('voicekey_'))) {
+      const parts: Uint8Array[] = [];
+      for (const turn of turns) {
+        const response = await request({ model: this.model, input: [{ type: 'user_input', content: [{ type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', style: style(turn.speaker) }] }] }],
+          response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: voices[turn.speaker === 'host-b' ? 1 : 0] }] } });
+        if (!response.ok) throw await googleFailure('Gemini TTS', response);
+        parts.push(await interactionAudio(response));
+      }
+      return joinWav(parts, 0.35);
+    }
+    const speakers = ['host-a', 'host-b'] as const;
+    const response = await request({ model: this.model, input: [{ type: 'user_input', content: turns.map(turn => ({
+      type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', speaker: turn.speaker, style: style(turn.speaker) }],
+    })) }], response_format: { type: 'audio' }, generation_config: { speech_config: {
+      mode: 'conversational', speakers: speakers.map((speaker, index) => ({ speaker, voice: voices[index] })),
+    } } });
     if (!response.ok) throw await googleFailure('Gemini TTS', response);
-    let encoded: unknown;
-    try {
-      const result = await response.json() as { steps?: Array<{ type?: string; content?: Array<{ type?: string; data?: string }> }> };
-      encoded = result.steps?.flatMap(step => step.type === 'model_output' ? step.content ?? [] : []).filter(item => item.type === 'audio').at(-1)?.data;
-    } catch { throw new Error('Gemini returned invalid audio data'); }
-    if (typeof encoded !== 'string' || encoded.length < 16 || encoded.length > 24_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('Gemini returned invalid audio data');
-    const binary = atob(encoded);
-    const audio = Uint8Array.from(binary, character => character.charCodeAt(0));
-    if (audio.length < 44 || String.fromCharCode(...audio.slice(0, 4)) !== 'RIFF' || String.fromCharCode(...audio.slice(8, 12)) !== 'WAVE') throw new Error('Gemini returned invalid WAV data');
-    return audio;
+    return interactionAudio(response);
   }
+}
+
+/** Joins 16-bit mono WAVs of one sample rate with [pause] seconds of silence between them. */
+export function joinWav(parts: Uint8Array[], pause: number): Uint8Array {
+  const data = (wav: Uint8Array) => wav.subarray(44);
+  const rate = parts.length ? new DataView(parts[0].buffer, parts[0].byteOffset).getUint32(24, true) : 24_000;
+  const gap = new Uint8Array(Math.round(rate * pause) * 2);
+  const chunks = parts.flatMap((part, index) => index ? [gap, data(part)] : [data(part)]);
+  const pcm = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) { pcm.set(chunk, offset); offset += chunk.length; }
+  return pcmToWav(pcm, rate);
 }
