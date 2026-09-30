@@ -37,8 +37,9 @@ export const BLOCKS: readonly Block[] = [
     show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'strict', sourceMode: 'web',
       instructions: 'Erzähle eine konkrete, überraschende Entdeckung, nicht eine Übersicht.' } },
   { id: 'hintergrund', name: 'Hintergrund', description: 'Zwei Stimmen ordnen ein Thema ein', input: { kind: 'topic', label: 'Thema', example: 'z. B. Kernfusion' },
-    show: { ...spoken, format: 'podcast', targetMinutes: 5, verification: 'strict', sourceMode: 'web',
-      instructions: 'Ordne ein, erkläre Begriffe und zeige Zusammenhänge.' } },
+    // Explanatory dialogs are checked against their sources in the prompt ('light'): the strict quote check rejects nearly every one.
+    show: { ...spoken, format: 'podcast', targetMinutes: 5, verification: 'light', sourceMode: 'web',
+      instructions: 'Ordne ein, erkläre Begriffe und zeige Zusammenhänge. Bleib bei dem, was die Quellen belegen.' } },
   { id: 'kuenstler', name: 'Künstler-Stunde', description: 'Eine Stunde mit einer Band', input: { kind: 'artist', label: 'Künstler oder Band', example: 'z. B. Portishead' }, music: true,
     show: { ...spoken, format: 'artist_hour', targetMinutes: 60, tracks: 10, talkSeconds: 60, verification: 'light', sourceMode: 'web',
       instructions: 'Frühwerk und Einflüsse betonen, keine Chart-Statistiken.', production: 'standard' } },

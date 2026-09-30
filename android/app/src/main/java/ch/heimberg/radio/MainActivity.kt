@@ -398,7 +398,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
     override fun plan() = serverAction({ api.plan() }, getString(R.string.planned))
 
-    override fun retry() = serverAction({ api.retry() }, "Fehlschläge abgeräumt, wartende Beiträge neu gestartet.")
+    override fun retry() = serverAction({ api.retry() }, "Fehlgeschlagene Beiträge werden neu produziert.")
 
     override fun cleanup() = serverAction({ api.cleanup() }, "Fehlschläge aufgeräumt.")
 
