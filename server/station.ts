@@ -4,7 +4,7 @@ import type { HourFocus, ShowConfig, StationConfig, TextProvider, TimelineItemVi
 import type { Profile, QualityScore, Script, Source, TextGenerator } from '../src/domain/program.ts';
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
-import { ProviderError, withoutVoiceTags } from './providers.ts';
+import { ProviderError, TTS_PARALLEL, withoutVoiceTags } from './providers.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -536,15 +536,28 @@ function memorySteps(): DurableStepRunner & { clear(): Promise<void> } {
 
 /** Voices every spoken part that has no audio yet, storing progress after each, then marks the item ready. */
 async function voiceParts(deps: StationDeps, owner: string, config: StationConfig, voiceId: string | undefined, row: TimelineRow, pkg: HourPackage): Promise<ProduceOutcome> {
-  for (const [index, part] of pkg.parts.entries()) {
-    if (part.kind !== 'speech' || part.audioKey) continue;
-    const voiced = await deps.pipeline.voice(owner, { title: pkg.title, text: part.text, sourceIds: part.sourceIds.length ? part.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed });
-    const key = `segments/${row.id}-${index}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
-    await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
-    part.audioKey = key; part.contentType = voiced.contentType;
-    // The first key marks the row as holding audio, so retention and cleanup find it.
-    await deps.store.update(owner, row.id, { script_json: JSON.stringify(pkg), audio_key: row.audio_key ?? key }, deps.now());
-    row = { ...row, audio_key: row.audio_key ?? key };
+  const open = [...pkg.parts.entries()].filter(([, part]) => part.kind === 'speech' && !part.audioKey);
+  // A few parts at a time; progress is stored after each batch, so a retry voices only what is missing.
+  for (let start = 0; start < open.length; start += TTS_PARALLEL) {
+    const batch = open.slice(start, start + TTS_PARALLEL);
+    const settled = await Promise.allSettled(batch.map(async ([index, part]) => {
+      const speech = part as SpeechPart;
+      const audio = await deps.pipeline.voice(owner, { title: pkg.title, text: speech.text, sourceIds: speech.sourceIds.length ? speech.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed });
+      const key = `segments/${row.id}-${index}.${audio.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
+      await deps.audio.put(key, audio.audio, { httpMetadata: { contentType: audio.contentType } });
+      return { part: speech, key, contentType: audio.contentType };
+    }));
+    // What was voiced is kept even when another part of the batch failed; the failure then ends this round.
+    const voiced = settled.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+    for (const { part, key, contentType } of voiced) { part.audioKey = key; part.contentType = contentType; }
+    if (voiced.length) {
+      // The first key marks the row as holding audio, so retention and cleanup find it.
+      const first = voiced[0].key;
+      await deps.store.update(owner, row.id, { script_json: JSON.stringify(pkg), audio_key: row.audio_key ?? first }, deps.now());
+      row = { ...row, audio_key: row.audio_key ?? first };
+    }
+    const failed = settled.find(result => result.status === 'rejected');
+    if (failed) throw (failed as PromiseRejectedResult).reason;
   }
   await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, error: null }, deps.now());
   return 'ready';

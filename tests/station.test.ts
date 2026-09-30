@@ -384,7 +384,7 @@ test('an artist hour researches, resolves picks on Spotify, writes moderations a
   // Two parts were voiced before the failure; the retry voices only the rest.
   h.advance(11); failAt = 0;
   assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
-  assert.equal(voiceCalls, 5); // intro, Glory Box, (failed), Sour Times, outro
+  assert.equal(voiceCalls, 5); // first batch of three: two voiced and kept, one failed; the retry voices the last two
   const view = toView((await h.store.getItem(OWNER, id))!, parseStationConfig(station));
   assert.equal(view.title, 'Portishead'); assert.equal(view.artist, 'Portishead'); assert.equal(view.audioUrl, undefined);
   assert.equal(view.focus, 'artist'); assert.equal(view.subject, 'Portishead');
