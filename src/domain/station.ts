@@ -214,7 +214,7 @@ function id(value: unknown, path: string, seen: Set<string>): string {
   return value;
 }
 function voiceIdOf(value: unknown, path: string): string {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(value)) fail(path, 'ungültige Stimmen-ID');
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,170}$/.test(value)) fail(path, 'ungültige Stimmen-ID');
   return value;
 }
 function minutesOf(time: string) { const [h, m] = time.split(':').map(Number); return h * 60 + m; }

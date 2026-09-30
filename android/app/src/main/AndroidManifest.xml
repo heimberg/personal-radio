@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Only for cloning a voice in the studio, asked for when it is used. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- App Remote talks to the installed Spotify app. -->
     <queries>

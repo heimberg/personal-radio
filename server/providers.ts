@@ -76,7 +76,7 @@ export function showInstructions(direction: EditorialDirection | undefined): str
 }
 /** The owner-defined on-air persona. Dialogs map host-a to the host and host-b to the co-host. */
 /** Scripts are heard, not read: this keeps them lively enough for an expressive voice. */
-const SPOKEN = ' Schreibe fürs Ohr, wie gute Radiomoderation klingt: kurze und lange Sätze im Wechsel, direkte Ansprache, ein Aufhänger am Anfang, mal eine Frage, echte Neugier und Begeisterung, wo sie passt. Keine Aufzählungen, keine Floskeln, keine Überschriften.';
+const SPOKEN = ' Schreibe fürs Ohr, wie gute Radiomoderation klingt: kurze und lange Sätze im Wechsel, direkte Ansprache, ein Aufhänger am Anfang, mal eine Frage, echte Neugier und Begeisterung, wo sie passt. Keine Aufzählungen, keine Floskeln, keine Überschriften. Für die Stimme darfst du sparsam Regie einbauen, höchstens zwei bis drei Stellen pro Beitrag: Laute in spitzen Klammern (<laugh>, <sigh>, <breath>, <short pause>, <long pause>) und in Dialogen kurze Zwischenrufe der anderen Stimme in senkrechten Strichen (|mhm|, |oh|, |genau|). Nie mitten in Namen, Zahlen oder Zitaten, nie als Ersatz für Inhalt.';
 
 /** [spoken] adds the shared listening rules; the writer and dialog agents carry their own, editable copy. */
 export function personaPrompt(direction: EditorialDirection | undefined, mode: 'brief' | 'podcast', spoken = true): string {
@@ -493,22 +493,79 @@ export const GEMINI_VOICES: Array<{ name: string; character: string; gender: 'fe
 const GEMINI_VOICE_PREFIX = 'gemini_';
 export const isGeminiVoice = (voiceId?: string) => !!voiceId?.startsWith(GEMINI_VOICE_PREFIX);
 
-/** Single-speaker Gemini speech: expressive, and it follows a delivery instruction. */
+/**
+ * Voice tags for Gemini 3.8 TTS: vocal bursts in angle brackets (`<laugh>`, `<sigh>`, `<short pause>`)
+ * and backchannel in pipes (`|mhm|`). They are performance, not content: other voices, the transcript
+ * and the fact check get the text without them.
+ */
+const VOICE_TAG = /<\s*[a-z][a-z -]{1,24}\s*>|\|[^|\n]{1,24}\|/gi;
+export function withoutVoiceTags(text: string): string {
+  return text.replace(VOICE_TAG, ' ').replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?;:])/g, '$1').replace(/^ +| +$/gm, '');
+}
+
+/** Options per call: [lite] uses the cheaper model for short, frequent speech (prebuilt voices only). */
+export interface SpeechOptions { lite?: boolean }
+
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
+
+/** The audio of an interaction: the last audio block of the model output, as WAV. */
+async function interactionAudio(response: Response): Promise<Uint8Array> {
+  let block: { data?: string; mime_type?: string } | undefined;
+  try {
+    const result = await response.json() as { steps?: Array<{ type?: string; content?: Array<{ type?: string; data?: string; mime_type?: string }> }> };
+    block = result.steps?.flatMap(step => step.type === 'model_output' ? step.content ?? [] : []).filter(item => item.type === 'audio').at(-1);
+  } catch { throw new Error('Gemini returned invalid audio data'); }
+  const encoded = block?.data;
+  if (typeof encoded !== 'string' || encoded.length < 16 || encoded.length > 24_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('Gemini returned invalid audio data');
+  const binary = atob(encoded);
+  const audio = Uint8Array.from(binary, character => character.charCodeAt(0));
+  if (String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF') return audio;
+  return pcmToWav(audio, Number(/rate=(\d+)/.exec(block?.mime_type ?? '')?.[1]) || 24_000);
+}
+
+/**
+ * Single-speaker Gemini speech through the Interactions API: prebuilt voices (`gemini_Kore`), designed,
+ * library and cloned voices (`gemini_voice_…`), with the delivery as a style annotation.
+ */
 export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private model: string;
+  private liteModel: string;
   private fetcher: Fetch;
-  constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
+  constructor(config: { key: string; model?: string; liteModel?: string }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Gemini TTS configuration incomplete');
-    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts'; this.fetcher = fetcher;
-    if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model)) throw new Error('Gemini TTS configuration invalid');
+    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts'; this.liteModel = config.liteModel || 'gemini-3.8-flash-lite-tts'; this.fetcher = fetcher;
+    if (![this.model, this.liteModel].every(model => /^[a-zA-Z0-9.-]{1,100}$/.test(model))) throw new Error('Gemini TTS configuration invalid');
   }
-  async synthesize(text: string, _turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array> {
+  async synthesize(text: string, _turns?: Script['turns'], voiceId?: string, style?: string, options: SpeechOptions = {}): Promise<Uint8Array> {
     const voice = (voiceId ?? '').slice(GEMINI_VOICE_PREFIX.length);
-    if (!isGeminiVoice(voiceId) || !/^[A-Za-z]{2,30}$/.test(voice)) throw new Error('Gemini voice is not selected');
+    if (!isGeminiVoice(voiceId) || !/^[A-Za-z0-9_-]{2,160}$/.test(voice)) throw new Error('Gemini voice is not selected');
     if (!text.trim() || text.length > 8000) throw new Error('TTS text outside segment budget');
     const delivery = (style ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'wie eine lebendige Radiomoderation: warm, mit Tempowechseln und Betonung';
-    const response = await requestWithTransientRetry(this.fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, {
+    // Own voices were made with the full model; the lite model only speaks the prebuilt ones.
+    const custom = voice.startsWith('voice_') || voice.startsWith('voicekey_');
+    const model = options.lite && !custom ? this.liteModel : this.model;
+    const response = await requestWithTransientRetry(this.fetcher, `${GEMINI_API}/interactions`, {
+      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style: `${delivery}; Deutsch` }] }] }],
+        response_format: { type: 'audio' },
+        generation_config: { speech_config: [{ voice }] },
+      }),
+    }, 120_000);
+    if (response.ok) return interactionAudio(response);
+    // A prebuilt voice still works through generateContent if the Interactions API is unavailable.
+    if (!custom && (response.status === 404 || response.status === 400)) {
+      try { await response.body?.cancel(); } catch { /* Discarding the failed response is best effort. */ }
+      return this.legacy(withoutVoiceTags(text), voice, delivery, model);
+    }
+    throw await googleFailure('Gemini TTS', response);
+  }
+
+  private async legacy(text: string, voice: string, delivery: string, model: string): Promise<Uint8Array> {
+    if (!/^[A-Za-z]{2,30}$/.test(voice)) throw new Error('Gemini voice is not selected');
+    const response = await requestWithTransientRetry(this.fetcher, `${GEMINI_API}/models/${model}:generateContent`, {
       method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         // Director's notes and transcript are separated as in Google's TTS prompting guide; only the transcript is spoken.
@@ -527,8 +584,81 @@ export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
     const binary = atob(encoded);
     const audio = Uint8Array.from(binary, character => character.charCodeAt(0));
     if (String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF') return audio;
-    const rate = Number(/rate=(\d+)/.exec(part?.mimeType ?? '')?.[1]) || 24_000;
-    return pcmToWav(audio, rate);
+    return pcmToWav(audio, Number(/rate=(\d+)/.exec(part?.mimeType ?? '')?.[1]) || 24_000);
+  }
+}
+
+/** A voice to choose from: `id` as the station stores it (`gemini_…`). */
+export interface VoiceEntry { id: string; name: string; group: 'own' | 'library'; description?: string; gender?: string }
+
+/**
+ * The owner's voices at Google: the German voice library, and voices designed from a description or
+ * cloned from a recording (stored in the owner's Gemini project, 200 at most, kept for a year).
+ */
+export class GeminiVoiceCatalog {
+  private key: string;
+  private model: string;
+  private fetcher: Fetch;
+  constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
+    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts'; this.fetcher = fetcher;
+  }
+
+  private async call(path: string, init: RequestInit = {}): Promise<unknown> {
+    const response = await requestWithTransientRetry(this.fetcher, `${GEMINI_API}/${path}`, {
+      ...init, headers: { 'x-goog-api-key': this.key, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+    }, 60_000);
+    if (!response.ok) throw await googleFailure('Gemini voices', response);
+    return response.status === 204 ? {} : response.json().catch(() => ({}));
+  }
+
+  /** Own voices first, then German library voices matching [search]. */
+  async list(search = ''): Promise<VoiceEntry[]> {
+    const entry = (group: VoiceEntry['group']) => (value: unknown): VoiceEntry[] => {
+      const voice = value as { id?: unknown; display_name?: unknown; description?: unknown; gender?: unknown };
+      const id = typeof voice.id === 'string' ? voice.id : '';
+      if (!/^[A-Za-z0-9_-]{2,160}$/.test(id)) return [];
+      const name = typeof voice.display_name === 'string' && voice.display_name.trim() ? voice.display_name.trim().slice(0, 80) : id;
+      return [{ id: `${GEMINI_VOICE_PREFIX}${id}`, name, group,
+        ...(typeof voice.description === 'string' ? { description: voice.description.slice(0, 200) } : {}),
+        ...(typeof voice.gender === 'string' ? { gender: voice.gender.toLowerCase() } : {}) }];
+    };
+    const query = (params: Array<[string, string]>) => new URLSearchParams(params).toString();
+    const own = await Promise.all(['prompted', 'replicated'].map(type =>
+      this.call(`voices?${query([['type', type], ['page_size', '50']])}`).then(result => ((result as { voices?: unknown[] }).voices ?? []).flatMap(entry('own'))).catch(() => [])));
+    const library = await this.call(`voices?${query([['type', 'prebuilt'], ['language_code', 'de-DE'], ['language_code', 'de-CH'], ['page_size', '50'], ...(search.trim() ? [['search', search.trim().slice(0, 60)] as [string, string]] : [])])}`)
+      .then(result => ((result as { voices?: unknown[] }).voices ?? []).flatMap(entry('library'))).catch(() => []);
+    return [...own.flat(), ...library];
+  }
+
+  /** Designs a voice from a description; returns its station ID. */
+  async design(input: { name: string; description: string; gender?: 'female' | 'male' }): Promise<VoiceEntry> {
+    const result = await this.call('voices', { method: 'POST', body: JSON.stringify({ store: true, voice: {
+      model: this.model, type: 'prompted', display_name: input.name, language_code: 'de-DE', ...(input.gender ? { gender: input.gender } : {}),
+      prompted: { input: input.description },
+    } }) });
+    return this.created(result, input.name);
+  }
+
+  /** Clones a voice from a speech sample and the speaker's spoken consent (both WAV). */
+  async replicate(input: { name: string; source: string; consent: string }): Promise<VoiceEntry> {
+    const result = await this.call('voices', { method: 'POST', body: JSON.stringify({ store: true, voice: {
+      model: this.model, type: 'replicated', display_name: input.name,
+      replicated: { source_audio: { mime_type: 'audio/wav', data: input.source }, consent_audio: { mime_type: 'audio/wav', data: input.consent } },
+    } }) });
+    return this.created(result, input.name);
+  }
+
+  async remove(id: string): Promise<void> {
+    const voice = id.startsWith(GEMINI_VOICE_PREFIX) ? id.slice(GEMINI_VOICE_PREFIX.length) : id;
+    if (!/^voice_[A-Za-z0-9_-]{1,160}$/.test(voice)) throw new ProviderError('Gemini voices', 400);
+    await this.call(`voices/${voice}`, { method: 'DELETE' });
+  }
+
+  private created(result: unknown, name: string): VoiceEntry {
+    const value = result as { id?: unknown; voice?: { id?: unknown }; replicated_voice?: { id?: unknown }; prompted_voice?: { id?: unknown } };
+    const id = [value.id, value.voice?.id, value.replicated_voice?.id, value.prompted_voice?.id].find((item): item is string => typeof item === 'string' && /^voice_[A-Za-z0-9_-]{1,160}$/.test(item));
+    if (!id) throw new Error('Gemini returned no voice ID');
+    return { id: `${GEMINI_VOICE_PREFIX}${id}`, name, group: 'own' };
   }
 }
 
@@ -537,12 +667,13 @@ export class VoiceRouter implements SpeechSynthesizer {
   private mistral: SpeechSynthesizer;
   private gemini?: SpeechSynthesizer;
   constructor(mistral: SpeechSynthesizer, gemini?: SpeechSynthesizer) { this.mistral = mistral; this.gemini = gemini; }
-  async synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string): Promise<Uint8Array> {
+  async synthesize(text: string, turns?: Script['turns'], voiceId?: string, style?: string, options?: SpeechOptions): Promise<Uint8Array> {
     if (isGeminiVoice(voiceId)) {
       if (!this.gemini) throw new Error('Gemini voice selected, but GEMINI_API_KEY is missing');
-      return this.gemini.synthesize(text, turns, voiceId, style);
+      return this.gemini.synthesize(text, turns, voiceId, style, options);
     }
-    return this.mistral.synthesize(text, turns, voiceId, style);
+    // Mistral would read voice tags aloud.
+    return this.mistral.synthesize(withoutVoiceTags(text), turns, voiceId, style);
   }
 }
 

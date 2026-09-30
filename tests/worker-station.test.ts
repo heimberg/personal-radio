@@ -208,6 +208,11 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
+    if (url.includes('generativelanguage.googleapis.com/v1beta/voices')) {
+      calls.push(`voices ${init?.method ?? 'GET'}`);
+      if (init?.method === 'POST') return Response.json({ id: 'voice_designed1' });
+      return Response.json({ voices: new URL(url).searchParams.get('type') === 'prompted' ? [{ id: 'voice_designed1', display_name: 'Studio-Mira' }] : [] });
+    }
     if (url.includes('generativelanguage.googleapis.com')) {
       const body = JSON.parse(String(init?.body));
       const system = body.systemInstruction.parts[0].text as string;
@@ -260,6 +265,15 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.ok([...env.AUDIO.objects.keys()].some(key => key.startsWith(`linkers/${new Date().toISOString().slice(0, 10)}/${open[0].id}-${open[1].id}-`)));
     assert.equal((await call(`/${sounds.linkerUrl}?after=${open[0].id}&next=${open[1].id}`)).headers.get('Content-Type'), 'audio/mpeg');
     assert.deepEqual(calls, ['draft', 'tts']);
+    // Voices: own voices first, then the prebuilt ones; a designed voice comes back with its station ID.
+    const { voices } = await (await call('/api/voices')).json() as { voices: Array<{ id: string; group: string }> };
+    assert.deepEqual(voices[0], { id: 'gemini_voice_designed1', name: 'Studio-Mira', group: 'own' });
+    assert.ok(voices.some(voice => voice.id === 'gemini_Kore' && voice.group === 'standard'));
+    const designed = await call('/api/voices/design', { method: 'POST', body: JSON.stringify({ name: 'Mira', description: 'warme, ruhige Moderatorin' }) });
+    assert.deepEqual(await designed.json(), { voice: { id: 'gemini_voice_designed1', name: 'Mira', group: 'own' } });
+    assert.equal((await call('/api/voices/design', { method: 'POST', body: JSON.stringify({ name: 'Mira', description: 'kurz' }) })).status, 400);
+    assert.equal((await call('/api/voices/clone', { method: 'POST', body: JSON.stringify({ name: 'Ich' }) })).status, 400);
+    assert.equal((await call('/api/voices/gemini_voice_designed1', { method: 'DELETE' })).status, 200);
   } finally { globalThis.fetch = originalFetch; }
 });
 

@@ -189,7 +189,7 @@ export function StationEditor({ config: stored, onSave }: Props) {
 
   useEffect(() => { setDraft(complete(stored)); }, [stored]);
   useEffect(() => {
-    fetch(api('api/mistral-voices'), { credentials: 'same-origin' })
+    fetch(api('api/voices'), { credentials: 'same-origin' })
       .then(response => response.ok ? response.json() as Promise<{ voices?: Voice[] }> : { voices: [] })
       .then(result => setVoices(result.voices ?? []))
       .catch(() => setVoices([]));

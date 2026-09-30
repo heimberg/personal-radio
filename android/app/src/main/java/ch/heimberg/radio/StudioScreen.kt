@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.StudioSettings
+import ch.heimberg.radio.core.VoiceGroups
 
 /**
  * «Studio»: the station's everyday settings, native – station and host, the voice with a sample,
@@ -95,6 +97,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, v
             More(state, actions)
         }
     }
+    VoiceDialogs(state, actions)
 }
 
 @Composable
@@ -143,11 +146,23 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
     Card("stimme", "🗣️", "Stimme", voiceName, state) {
         Text("Antippen wählt die Stimme, ▶ spielt eine Hörprobe mit deinem Sendernamen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         Field("Sprechstil", settings.voiceStyle, hint = "Gemini-Stimmen folgen ihm, z. B. «warm, lebendig, mit hörbarem Lächeln».", lines = 2) { edit(settings.copy(voiceStyle = it.take(300))) }
-        VoiceRow("Standard", selected = settings.voiceId == null, previewing = false, onPreview = null) { edit(settings.copy(voiceId = null)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { state.designOpen = true }) { Text("✨ Entwerfen") }
+            FilledTonalButton(onClick = { state.cloneOpen = true }) { Text("🎤 Meine Stimme") }
+        }
+        VoiceSearch(state, actions)
+        VoiceRow("Voreinstellung des Servers", selected = settings.voiceId == null, previewing = false, onPreview = null) { edit(settings.copy(voiceId = null)) }
         if (state.voices.isEmpty()) Text("Stimmen werden geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-        for (voice in state.voices) {
-            VoiceRow(voice.name, selected = voice.id == settings.voiceId, previewing = state.previewing == voice.id, onPreview = { actions.previewVoice(voice.id) }) {
-                edit(settings.copy(voiceId = voice.id))
+        for ((group, label) in VoiceGroups.ORDER) {
+            val voices = state.voices.filter { it.group == group }
+            if (voices.isEmpty()) continue
+            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(top = 6.dp))
+            for (voice in voices) {
+                VoiceRow(
+                    voice.name, selected = voice.id == settings.voiceId, previewing = state.previewing == voice.id,
+                    onPreview = { actions.previewVoice(voice.id) }, detail = voice.description,
+                    onDelete = if (voice.own) ({ state.voiceDeleteAsk = voice }) else null,
+                ) { edit(settings.copy(voiceId = voice.id)) }
             }
         }
     }
@@ -218,14 +233,21 @@ private fun Toggle(title: String, detail: String?, checked: Boolean, onChange: (
 }
 
 @Composable
-private fun VoiceRow(name: String, selected: Boolean, previewing: Boolean, onPreview: (() -> Unit)?, onSelect: () -> Unit) {
+private fun VoiceRow(
+    name: String, selected: Boolean, previewing: Boolean, onPreview: (() -> Unit)?,
+    detail: String = "", onDelete: (() -> Unit)? = null, onSelect: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (selected) Nocturne.accentDark else Nocturne.surface)
             .clickable(onClick = onSelect).padding(start = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = onSelect)
-        Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        if (onDelete != null) IconButton(onClick = onDelete) { Text("✕", color = Nocturne.muted) }
         if (onPreview != null) {
             IconButton(onClick = onPreview) {
                 Icon(
@@ -368,4 +390,129 @@ fun studioWebView(context: Context, connection: Connection): WebView = WebView(c
         }
     }
     loadUrl(connection.baseUrl, connection.headers())
+}
+
+/** Searches Google's German voice library by a word, e.g. «warm» or «Erzähler». */
+@Composable
+private fun VoiceSearch(state: RadioState, actions: RadioActions) {
+    var query by remember { mutableStateOf(state.voiceSearch) }
+    OutlinedTextField(
+        value = query, onValueChange = { query = it.take(60) }, label = { Text("Bibliothek durchsuchen, z. B. warm") }, singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { actions.searchVoices(query) }),
+        trailingIcon = { TextButton(onClick = { actions.searchVoices(query) }) { Text("Suchen") } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VoiceDialogs(state: RadioState, actions: RadioActions) {
+    if (state.designOpen) DesignDialog(state, actions)
+    if (state.cloneOpen) CloneDialog(state, actions)
+    state.voiceDeleteAsk?.let { voice ->
+        AlertDialog(
+            onDismissRequest = { state.voiceDeleteAsk = null },
+            title = { Text("Stimme löschen?") },
+            text = { Text("«${voice.name}» wird bei Google gelöscht. Beiträge, die schon gesprochen sind, bleiben.") },
+            confirmButton = { TextButton(onClick = { actions.deleteVoice(voice) }) { Text("Löschen") } },
+            dismissButton = { TextButton(onClick = { state.voiceDeleteAsk = null }) { Text("Abbrechen") } },
+        )
+    }
+}
+
+/** A voice from a description: who speaks, how, with which accent. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DesignDialog(state: RadioState, actions: RadioActions) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!state.voiceBusy) actions.closeVoiceDialogs() },
+        title = { Text("Stimme entwerfen") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Beschreib die Stimme so konkret wie möglich: Alter, Klang, Tempo, Akzent, Haltung.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                OutlinedTextField(value = name, onValueChange = { name = it.take(60) }, label = { Text("Name, z. B. Mira") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = description, onValueChange = { description = it.take(600) }, minLines = 3,
+                    label = { Text("Beschreibung") }, placeholder = { Text("Warme Moderatorin Mitte 30, ruhiges Tempo, leichter Berner Einschlag, hörbares Lächeln") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((value, label) in listOf(null to "Offen", "female" to "Weiblich", "male" to "Männlich")) {
+                        FilterChip(selected = gender == value, onClick = { gender = value }, label = { Text(label) })
+                    }
+                }
+                if (state.voiceBusy) Text("Google entwirft die Stimme …", style = MaterialTheme.typography.bodySmall, color = Nocturne.accentLight)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { actions.designVoice(name, description, gender) }, enabled = !state.voiceBusy && name.isNotBlank() && description.trim().length >= 10) { Text("Entwerfen") }
+        },
+        dismissButton = { TextButton(onClick = actions::closeVoiceDialogs, enabled = !state.voiceBusy) { Text("Abbrechen") } },
+    )
+}
+
+/**
+ * Cloning your own voice in four steps: what happens, a speech sample (10–30 s), the consent sentence
+ * Google requires, a name. Both recordings go to Google only on «Erstellen».
+ */
+@Composable
+private fun CloneDialog(state: RadioState, actions: RadioActions) {
+    var name by remember { mutableStateOf("") }
+    val step = state.cloneStep
+    AlertDialog(
+        onDismissRequest = { if (!state.voiceBusy && !state.recording) actions.closeVoiceDialogs() },
+        title = { Text(listOf("Deine Stimme klonen", "1 · Sprachprobe", "2 · Einverständnis", "3 · Name")[step]) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (step) {
+                    0 -> {
+                        Text("Aus zwei kurzen Aufnahmen macht Google eine Stimme, die wie du klingt. Sie liegt in deinem Gemini-Projekt, gilt ein Jahr und lässt sich hier jederzeit löschen.", style = MaterialTheme.typography.bodyMedium)
+                        Text("Klone nur deine eigene Stimme oder eine, für die du die Erlaubnis hast. Google verlangt dafür einen gesprochenen Einverständnis-Satz.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                        Text("Tipp: ruhiger Raum, Handy etwa 20 cm vor dem Mund, natürlich sprechen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                    }
+                    1 -> {
+                        Text("Lies diesen Text in deinem Radio-Tonfall vor (10–30 Sekunden):", style = MaterialTheme.typography.bodyMedium)
+                        Quote(VoiceGroups.SAMPLE)
+                        RecordButton(state, done = state.sampleSeconds, needed = 10) { actions.toggleRecording(consent = false) }
+                    }
+                    2 -> {
+                        Text("Sprich jetzt genau diesen Satz:", style = MaterialTheme.typography.bodyMedium)
+                        Quote(VoiceGroups.CONSENT)
+                        RecordButton(state, done = state.consentSeconds, needed = 3) { actions.toggleRecording(consent = true) }
+                    }
+                    else -> {
+                        OutlinedTextField(value = name, onValueChange = { name = it.take(60) }, label = { Text("Name der Stimme") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        if (state.voiceBusy) Text("Google erstellt deine Stimme …", style = MaterialTheme.typography.bodySmall, color = Nocturne.accentLight)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val ready = when (step) { 0 -> true; 1 -> state.sampleSeconds >= 10; 2 -> state.consentSeconds >= 3; else -> name.isNotBlank() }
+            Button(
+                onClick = { if (step < 3) state.cloneStep = step + 1 else actions.cloneVoice(name) },
+                enabled = ready && !state.recording && !state.voiceBusy,
+            ) { Text(when (step) { 0 -> "Los"; 3 -> "Erstellen"; else -> "Weiter" }) }
+        },
+        dismissButton = { TextButton(onClick = actions::closeVoiceDialogs, enabled = !state.voiceBusy) { Text("Abbrechen") } },
+    )
+}
+
+@Composable
+private fun Quote(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Nocturne.surfaceHigh).padding(12.dp))
+}
+
+@Composable
+private fun RecordButton(state: RadioState, done: Int, needed: Int, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Button(onClick = onClick) { Text(if (state.recording) "⏹ Stopp (${state.recordedSeconds} s)" else if (done > 0) "🎤 Nochmals aufnehmen" else "🎤 Aufnehmen") }
+        Spacer(Modifier.width(12.dp))
+        if (!state.recording && done > 0) {
+            Text(if (done >= needed) "✓ $done s" else "$done s – zu kurz", style = MaterialTheme.typography.bodySmall, color = if (done >= needed) Nocturne.accentLight else Nocturne.danger)
+        }
+    }
 }

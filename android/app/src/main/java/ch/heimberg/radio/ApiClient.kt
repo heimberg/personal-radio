@@ -78,7 +78,26 @@ class ApiClient(private val connection: Connection) {
         }
     }
 
-    suspend fun voices(): List<VoiceOption> = withContext(Dispatchers.IO) { StudioSettings.parseVoices(request("GET", "api/mistral-voices")) }
+    /** Own voices, the prebuilt ones, German library voices matching [search], and Mistral's. */
+    suspend fun voices(search: String = ""): List<VoiceOption> = withContext(Dispatchers.IO) {
+        StudioSettings.parseVoices(request("GET", "api/voices" + if (search.isBlank()) "" else "?search=" + java.net.URLEncoder.encode(search.trim(), "UTF-8")))
+    }
+
+    /** Designs a voice from a description ([gender] "female", "male" or null). */
+    suspend fun designVoice(name: String, description: String, gender: String?): VoiceOption? = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("name", name).put("description", description)
+        if (gender != null) body.put("gender", gender)
+        StudioSettings.parseCreatedVoice(request("POST", "api/voices/design", body.toString()))
+    }
+
+    /** Clones a voice from a speech sample and the spoken consent, both WAV. */
+    suspend fun cloneVoice(name: String, sample: ByteArray, consent: ByteArray): VoiceOption? = withContext(Dispatchers.IO) {
+        val encode = { bytes: ByteArray -> android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP) }
+        val body = JSONObject().put("name", name).put("source", encode(sample)).put("consent", encode(consent))
+        StudioSettings.parseCreatedVoice(request("POST", "api/voices/clone", body.toString()))
+    }
+
+    suspend fun deleteVoice(id: String) { withContext(Dispatchers.IO) { request("DELETE", "api/voices/$id") } }
 
     suspend fun places(name: String): List<Place> = withContext(Dispatchers.IO) {
         StudioSettings.parsePlaces(request("GET", "api/places?name=" + java.net.URLEncoder.encode(name, "UTF-8")))

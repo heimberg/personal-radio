@@ -73,6 +73,10 @@ class StudioSettingsTest {
         val places = StudioSettings.parsePlaces("""{"places":[{"name":"Bern","region":"Bern","country":"Schweiz","latitude":46.948123,"longitude":7.447441},{"name":"kaputt"}]}""")
         assertEquals(listOf(Place("Bern", 46.9481, 7.4474, "Bern", "Schweiz")), places)
         assertEquals("Bern, Bern, Schweiz", places.single().label)
-        assertEquals(listOf(VoiceOption("gemini_Kore", "Kore · fest (Gemini)")), StudioSettings.parseVoices("""{"voices":[{"id":"gemini_Kore","name":"Kore · fest (Gemini)"},{"name":"ohne id"}]}"""))
+        val voices = StudioSettings.parseVoices("""{"voices":[{"id":"gemini_voice_a1","name":"Meine","group":"own"},{"id":"gemini_Kore","name":"Kore · bestimmt","group":"standard"},{"id":"gemini_Bernerin","name":"Bernerin","group":"library","description":"warm"},{"name":"ohne id"}]}""")
+        assertEquals(listOf(VoiceOption("gemini_voice_a1", "Meine", "own"), VoiceOption("gemini_Kore", "Kore · bestimmt"), VoiceOption("gemini_Bernerin", "Bernerin", "library", "warm")), voices)
+        assertTrue(voices.first().own)
+        assertEquals(VoiceOption("gemini_voice_n", "Mira", "own"), StudioSettings.parseCreatedVoice("""{"voice":{"id":"gemini_voice_n","name":"Mira","group":"own"}}"""))
+        assertNull(StudioSettings.parseCreatedVoice("""{"error":"voice_failed"}"""))
     }
 }

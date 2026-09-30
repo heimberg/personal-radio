@@ -96,6 +96,18 @@ class RadioState {
     var webStudioOpen by mutableStateOf(false)
     /** Which studio card is open; one at a time keeps the page short. */
     var studioCard by mutableStateOf<String?>(null)
+    var voiceSearch by mutableStateOf("")
+    // Own voices: designing one from a description, cloning one from two recordings.
+    var designOpen by mutableStateOf(false)
+    var cloneOpen by mutableStateOf(false)
+    /** 0 = what happens, 1 = speech sample, 2 = spoken consent, 3 = name. */
+    var cloneStep by mutableIntStateOf(0)
+    var recording by mutableStateOf(false)
+    var recordedSeconds by mutableIntStateOf(0)
+    var sampleSeconds by mutableIntStateOf(0)
+    var consentSeconds by mutableIntStateOf(0)
+    var voiceBusy by mutableStateOf(false)
+    var voiceDeleteAsk by mutableStateOf<VoiceOption?>(null)
 
     // Updates, messages and open dialogs.
     var update by mutableStateOf<AppBuild?>(null)
@@ -175,6 +187,15 @@ interface RadioActions {
     fun previewVoice(voiceId: String)
     fun openWebStudio()
     fun closeWebStudio()
+
+    /** Own voices: library search, a voice from a description, a cloned voice (two recordings), delete. */
+    fun searchVoices(query: String)
+    fun designVoice(name: String, description: String, gender: String?)
+    /** Starts or stops a recording: the speech sample, or with [consent] the spoken consent. */
+    fun toggleRecording(consent: Boolean)
+    fun cloneVoice(name: String)
+    fun deleteVoice(voice: VoiceOption)
+    fun closeVoiceDialogs()
 
     fun connectSpotify()
     fun installUpdate()
