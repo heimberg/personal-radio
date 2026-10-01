@@ -218,7 +218,8 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `GEMINI_TEXT_MODEL` | `gemini-3.8-flash` | writing, editing, checks |
 | `GEMINI_RESEARCH_MODEL` | text model | web research |
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-tts` | voices (Interactions API) |
-| `GEMINI_TTS_LITE_MODEL` | `gemini-3.8-flash-lite-tts` | live transitions and the hour announcement (prebuilt voices) |
+| `GEMINI_TTS_LITE_MODEL` | `gemini-3.8-flash-lite-tts` | live transitions and the hour announcement (prebuilt voices); takes over all speech when Google refuses `GEMINI_TTS_MODEL` for quota (429) |
+| `GEMINI_TTS_DAILY_REQUESTS` | `100` | requests a day Google allows `GEMINI_TTS_MODEL` on your tier (Tier 1: 100); only shown in the usage overview |
 | `GEMINI_VOICE_A`, `GEMINI_VOICE_B` | `Kore`, `Puck` | the two dialog voices |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral voices |
 | `SPOTIFY_MARKET` | `CH` | Spotify catalogue |

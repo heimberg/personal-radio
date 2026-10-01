@@ -76,6 +76,8 @@ interface Environment {
   GEMINI_TTS_MODEL?: string;
   /** The cheaper voice model for live transitions and the hour announcement. */
   GEMINI_TTS_LITE_MODEL?: string;
+  /** Requests a day Google allows GEMINI_TTS_MODEL on this key's tier (100 on Tier 1); only shown in the usage overview. */
+  GEMINI_TTS_DAILY_REQUESTS?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
   /** How the family tab names the owner (default «Papa»). */
@@ -427,7 +429,7 @@ function pipelineFor(env: Environment): SegmentPipeline {
       4,
       env.GEMINI_API_KEY ? {
         text: providers.geminiDialog!,
-        speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }, metered(env)),
+        speech: new GeminiPodcastSpeechSynthesizer({ key: env.GEMINI_API_KEY, model: env.GEMINI_TTS_MODEL, liteModel: env.GEMINI_TTS_LITE_MODEL, voiceA: env.GEMINI_VOICE_A, voiceB: env.GEMINI_VOICE_B }, metered(env)),
       } : undefined,
     );
     pipelines.set(env.DB as object, pipeline);
@@ -701,7 +703,8 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const now = new Date(), since = new Date(now.getTime() - 30 * 86_400_000);
     const [counts, quality, changes, usage, config] = await Promise.all([
       store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
-      usageSummary(env.DB, owner, now, 14, { generations: Math.max(1, Number(env.DAILY_GENERATIONS) || 24), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) }),
+      usageSummary(env.DB, owner, now, 14, { generations: Math.max(1, Number(env.DAILY_GENERATIONS) || 24), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
+        env.GEMINI_API_KEY ? { model: env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts', liteModel: env.GEMINI_TTS_LITE_MODEL || 'gemini-3.8-flash-lite-tts', dailyRequests: Math.max(1, Number(env.GEMINI_TTS_DAILY_REQUESTS) || 100) } : undefined),
       store.getConfig(owner),
     ]);
     return json({

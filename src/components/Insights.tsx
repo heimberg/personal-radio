@@ -9,6 +9,7 @@ export interface Insights {
   usage: {
     days: Array<{ day: string; generations: number; ttsCharacters: number; models: Array<{ provider: string; model: string; calls: number; inputTokens: number; outputTokens: number }> }>;
     limits: { generations: number; ttsCharacters: number };
+    speech?: { model: string; liteModel: string; dailyRequests: number };
   };
   timezone: string;
 }
@@ -114,19 +115,25 @@ const number = (value: number) => value.toLocaleString('de-CH');
 
 /** Calls, tokens, productions and speech characters per day (UTC), against the daily limits. */
 export function UsageOverview({ insights }: { insights: Insights }) {
-  const { days, limits } = insights.usage;
+  const { days, limits, speech } = insights.usage;
   if (!days.length) return <p className="muted">Noch keine Nutzung in den letzten 14 Tagen.</p>;
   const today = days[0];
   const calls = (day: typeof today) => day.models.reduce((sum, model) => sum + model.calls, 0);
+  const speechCalls = (day: typeof today, model: string) => day.models.find(entry => entry.provider === 'gemini' && entry.model === model)?.calls ?? 0;
+  const refused = (day: typeof today, model: string) => speechCalls(day, `${model}:abgelehnt`);
   const tokens = (day: typeof today) => day.models.reduce((sum, model) => sum + model.inputTokens + model.outputTokens, 0);
   return <div className="usage">
     <div className="usage-tiles">
       <div><strong>{today.generations}<small> / {limits.generations}</small></strong><span>Produktionen</span></div>
       <div><strong>{number(today.ttsCharacters)}<small> / {number(limits.ttsCharacters)}</small></strong><span>Sprachzeichen</span></div>
+      {speech && <div><strong>{speechCalls(today, speech.model)}<small> / {speech.dailyRequests}</small></strong><span>Sprachanfragen{speechCalls(today, speech.liteModel) ? ` · ${speechCalls(today, speech.liteModel)} lite` : ''}</span></div>}
       <div><strong>{calls(today)}</strong><span>KI-Aufrufe</span></div>
       <div><strong>{number(tokens(today))}</strong><span>Tokens</span></div>
     </div>
     <p className="muted small">{today.day === new Date().toISOString().slice(0, 10) ? 'Heute' : shortDay(today.day)} (UTC). Bei Erreichen der Tageslimite pausiert die Produktion bis Mitternacht UTC.</p>
+    {speech && <p className={refused(today, speech.model) ? 'problem small' : 'muted small'}>
+      {refused(today, speech.model) ? `Google hat heute ${refused(today, speech.model)} Sprachanfragen abgelehnt (Kontingent aufgebraucht); sie gingen ans Lite-Modell. ` : ''}
+      Sprachanfragen zählt Google pro Tag bis Mitternacht Pazifikzeit (9 Uhr bei uns); nur erfolgreiche zählen hier.</p>}
     <details className="more"><summary>Nach Modell</summary>
       <table className="usage-table"><thead><tr><th>Modell</th><th>Aufrufe</th><th>Tokens ein</th><th>Tokens aus</th></tr></thead>
         <tbody>{today.models.map(model => <tr key={`${model.provider}/${model.model}`}><td>{model.provider} · {model.model}</td><td>{model.calls}</td><td>{number(model.inputTokens)}</td><td>{number(model.outputTokens)}</td></tr>)}</tbody>

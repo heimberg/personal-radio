@@ -203,7 +203,11 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
     notes: cleared ? [] : ['Beiträge waren dem Hörer zuletzt oft zu lang: straffen.'],
     quality: [{ showId: 'entdecken', showName: 'Entdeckungen', overall: 3.2, createdAt: '2026-09-20T08:00:00Z' }, { showId: 'entdecken', showName: 'Entdeckungen', overall: 4.2, createdAt: '2026-09-25T08:00:00Z' }],
     changes: [{ at: '2026-09-22T08:00:00Z', agents: ['Schlussredaktion'] }],
-    usage: { days: [{ day: '2026-09-29', generations: 5, ttsCharacters: 4200, models: [{ provider: 'gemini', model: 'gemini-test', calls: 17, inputTokens: 12000, outputTokens: 3000 }] }], limits: { generations: 24, ttsCharacters: 12000 } },
+    usage: { days: [{ day: '2026-09-29', generations: 5, ttsCharacters: 4200, models: [{ provider: 'gemini', model: 'gemini-test', calls: 17, inputTokens: 12000, outputTokens: 3000 },
+      { provider: 'gemini', model: 'gemini-3.8-flash-tts', calls: 100, inputTokens: 0, outputTokens: 0 },
+      { provider: 'gemini', model: 'gemini-3.8-flash-tts:abgelehnt', calls: 4, inputTokens: 0, outputTokens: 0 },
+      { provider: 'gemini', model: 'gemini-3.8-flash-lite-tts', calls: 4, inputTokens: 0, outputTokens: 0 }] }],
+      limits: { generations: 24, ttsCharacters: 12000 }, speech: { model: 'gemini-3.8-flash-tts', liteModel: 'gemini-3.8-flash-lite-tts', dailyRequests: 100 } },
     timezone: 'Europe/Zurich',
   }) }));
   await page.route('**/api/insights/reasons', route => { cleared = true; return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
@@ -212,6 +216,8 @@ test('Redaktion: agents are edited as cards, switched off, reset and tried on th
   await openArea(page, 'Verbrauch');
   await expect(page.getByText('KI-Aufrufe')).toBeVisible();
   await expect(page.locator('.usage-tiles')).toContainText(/15.000/);
+  await expect(page.locator('.usage-tiles')).toContainText('100 / 100Sprachanfragen · 4 lite');
+  await expect(page.locator('.usage .problem')).toContainText('4 Sprachanfragen abgelehnt');
   await page.getByRole('button', { name: '← Alle Einstellungen' }).click();
   await expect(page.getByRole('button', { name: 'Redaktion: Standard' })).toBeVisible();
   await openArea(page, 'Redaktion');
