@@ -1,6 +1,7 @@
 package ch.heimberg.radio
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,12 +34,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.FamilyMember
 import ch.heimberg.radio.core.FamilyMessage
 import ch.heimberg.radio.core.ago
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -78,7 +82,9 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
                     Text("Noch keine Nachrichten. Schreib die erste!", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 20.dp))
                 }
             }
-            items(family.messages, key = { "message-${it.id}" }) { MessageRow(it, it.from == family.me) }
+            items(family.messages, key = { "message-${it.id}" }) { message ->
+                MessageRow(message, message.from == family.me, family.members.firstOrNull { it.key == message.from }, actions)
+            }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -90,6 +96,27 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         }
     }
     state.greetFor?.let { member -> GreetDialog(member, state, actions) }
+    if (state.avatarMenuOpen) AvatarMenu(family?.self, state, actions)
+}
+
+/** One's own profile picture: from the gallery, a new photo, or none. */
+@Composable
+private fun AvatarMenu(self: FamilyMember?, state: RadioState, actions: RadioActions) {
+    AlertDialog(
+        onDismissRequest = { state.avatarMenuOpen = false },
+        title = { Text("Profilbild") },
+        text = {
+            Column {
+                Text("Alle in der Familie sehen es. Es bleibt auf deinem Radio-Server.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                Spacer(Modifier.size(8.dp))
+                TextButton(onClick = actions::chooseAvatar) { Text("🖼  Foto auswählen") }
+                TextButton(onClick = actions::takeAvatar) { Text("📷  Foto aufnehmen") }
+                if (self?.avatarUrl != null) TextButton(onClick = actions::removeAvatar) { Text("✕  Entfernen", color = Nocturne.danger) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { state.avatarMenuOpen = false }) { Text("Abbrechen") } },
+        containerColor = Nocturne.surface,
+    )
 }
 
 @Composable
@@ -103,12 +130,13 @@ private fun MemberRow(member: FamilyMember, family: Family, actions: RadioAction
             .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(if (member.me) Nocturne.accent else Nocturne.surfaceHigh), contentAlignment = Alignment.Center) {
-            Text(member.initial, style = MaterialTheme.typography.titleMedium, color = if (member.me) Nocturne.bg else Nocturne.text)
-        }
+        // One's own picture: a tap changes it.
+        Avatar(member, 44.dp, actions, Modifier.then(if (member.me) Modifier.clickable { state.avatarMenuOpen = true } else Modifier))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(member.name + if (member.me) " (du)" else "", style = MaterialTheme.typography.titleSmall)
+            if (member.me && state.avatarBusy) Text("Profilbild wird gespeichert …", style = MaterialTheme.typography.bodySmall, color = Nocturne.faint)
+            else if (member.me && member.avatarUrl == null) Text("Tippe auf den Kreis für ein Profilbild", style = MaterialTheme.typography.bodySmall, color = Nocturne.faint)
             Text(member.status(Instant.now()), style = MaterialTheme.typography.bodySmall, color = if (member.nowPlaying != null) Nocturne.accentLight else Nocturne.muted,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
@@ -121,10 +149,27 @@ private fun MemberRow(member: FamilyMember, family: Family, actions: RadioAction
     }
 }
 
-/** One chat message: own ones on the right; shares and greetings with their icon. */
+/** A member's profile picture, or the first letter of their name on a round badge. */
 @Composable
-private fun MessageRow(message: FamilyMessage, mine: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+fun Avatar(member: FamilyMember, extent: Dp, actions: RadioActions, modifier: Modifier = Modifier) {
+    Box(modifier.size(extent).clip(CircleShape).background(if (member.me) Nocturne.accent else Nocturne.surfaceHigh), contentAlignment = Alignment.Center) {
+        Text(member.initial, style = if (extent >= 40.dp) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelMedium,
+            color = if (member.me) Nocturne.bg else Nocturne.text)
+        member.avatarUrl?.let { url ->
+            AsyncImage(model = actions.workerImage(url), contentDescription = member.name, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        }
+    }
+}
+
+/** One chat message: own ones on the right; others' with their picture; shares and greetings with their icon. */
+@Composable
+private fun MessageRow(message: FamilyMessage, mine: Boolean, sender: FamilyMember?, actions: RadioActions) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom) {
+        if (!mine && sender != null) {
+            Avatar(sender, 28.dp, actions)
+            Spacer(Modifier.width(6.dp))
+        }
         Column(
             Modifier
                 .widthIn(max = 300.dp)

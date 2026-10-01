@@ -230,6 +230,10 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
 - **Sharing** (`POST /api/family/share`): copies a produced item (script, sources, every audio object under a new key) into the recipient's program, right behind the item that plays next there. It is marked with `sharedBy`, and nothing is produced again. A chat message records it.
 - **Listening along** (`POST /api/family/listen`): the same copy, of what another member hears now. «What they hear» is reported by the app once per item (`POST /api/family/presence`) and lasts as long as the item.
 - **Greetings** (`POST /api/family/greet`) are read in the recipient's next live transition: the linker adds them to its facts, skips the cache and marks them aired. Without live transitions they stay in the chat.
+- **Profile pictures:**
+  - `PUT`/`DELETE /api/family/avatar` stores or removes a member's own picture in R2 (`avatars/<member key>`); only JPEG or PNG is accepted, about 300 KB at most, and the app sends a 256-px square.
+  - The version is kept in `family_avatars` (migration 0012), and `GET /api/family/avatar/<key>?v=…` serves the picture with a long cache.
+  - Pictures never go to an AI.
 - **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
 
 ### New releases, «Mehr dazu», station sound

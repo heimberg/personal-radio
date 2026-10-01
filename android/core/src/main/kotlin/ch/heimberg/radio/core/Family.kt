@@ -37,6 +37,8 @@ data class FamilyMember(
     val me: Boolean = false,
     val nowPlaying: String? = null,
     val lastSeen: String? = null,
+    /** The profile picture (relative, versioned), when the member set one. */
+    val avatarUrl: String? = null,
 ) {
     /** «hört gerade «…»», else when last active; nothing for oneself. */
     fun status(now: Instant): String {

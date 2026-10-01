@@ -28,6 +28,7 @@ The product for listening: native playback of the server-produced program, lock-
 - **Tabs:** «Hören» (the player in full and the «Gleich» card), «Programm» (the building blocks: a tap adds one at the end; then «Jetzt · Gleich · Später»), «Archiv», «Familie» (only with other listeners) and «Studio», with a navigation bar at the bottom.
 - **Familie:**
   - Each member with «hört gerade …» or when they were last active, plus «💌 Gruss» and «🎧 Auch hören».
+  - A tap on one's own circle sets a profile picture: Android's photo picker or the camera app, no permission needed. The middle square goes up at 256 px. Pictures show for the members and next to their chat messages.
   - Below, the family chat; the tab refreshes every ten seconds while it is open.
   - Produced items are shared from their menu («🎧 Teilen mit …») in «Programm» or «Archiv».
   - New messages show a badge on the tab and a notification.
