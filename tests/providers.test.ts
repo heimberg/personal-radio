@@ -366,3 +366,28 @@ test('mapLimited runs a few calls at once and keeps the order', async () => {
   assert.deepEqual(results, [0, 1, 2, 3, 4]);
   assert.equal(most, 3);
 });
+
+test('spent TTS quota (429) moves speech once to the lite model: prebuilt and own voices, dialogs; never when lite is the main model', async () => {
+  const pcm = btoa(String.fromCharCode(...new Uint8Array(4800).fill(1)));
+  const models: string[] = [];
+  const quota = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const model = JSON.parse(String(init?.body)).model;
+    models.push(model);
+    if (model === 'gemini-3.8-flash-tts') return Response.json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'quota' } }, { status: 429 });
+    return Response.json({ steps: [{ type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/l16;rate=24000', data: pcm }] }] });
+  };
+  const single = new GeminiSpeechSynthesizer({ key: 'g' }, quota);
+  await single.synthesize('Hallo.', undefined, 'gemini_Puck');
+  await single.synthesize('Hallo.', undefined, 'gemini_voice_mine');
+  assert.deepEqual(models, ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts']);
+
+  models.length = 0;
+  const dialog = new GeminiPodcastSpeechSynthesizer({ key: 'g' }, quota);
+  await dialog.synthesize('A B', [{ speaker: 'host-a', text: 'A' }, { speaker: 'host-b', text: 'B' }]);
+  assert.deepEqual(models, ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts']);
+
+  models.length = 0;
+  const same = new GeminiSpeechSynthesizer({ key: 'g', liteModel: 'gemini-3.8-flash-tts' }, quota);
+  await assert.rejects(same.synthesize('Hallo.', undefined, 'gemini_voice_mine'), /429/);
+  assert.deepEqual(models, ['gemini-3.8-flash-tts']);
+});

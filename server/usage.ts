@@ -6,7 +6,15 @@ type Fetch = typeof fetch;
 
 export interface ModelUsage { provider: string; model: string; calls: number; inputTokens: number; outputTokens: number }
 export interface UsageDay { day: string; generations: number; ttsCharacters: number; models: ModelUsage[] }
-export interface UsageSummary { days: UsageDay[]; limits: { generations: number; ttsCharacters: number } }
+export interface UsageSummary {
+  days: UsageDay[];
+  limits: { generations: number; ttsCharacters: number };
+  /** The Gemini speech models and how many requests a day Google allows the main one (its quota, not ours). */
+  speech?: { model: string; liteModel: string; dailyRequests: number };
+}
+
+/** Calls the provider refused for quota (429) are counted apart, under the model with this suffix. */
+export const REFUSED = ':abgelehnt';
 
 const utcDay = (date: Date) => date.toISOString().slice(0, 10);
 const safe = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,100}$/.test(value) ? value : 'unbekannt';
@@ -16,7 +24,12 @@ export function classify(url: string, body: unknown, askHost?: string): { provid
   let parsed: URL;
   try { parsed = new URL(url); } catch { return undefined; }
   const model = () => { try { return safe((JSON.parse(String(body)) as { model?: unknown }).model); } catch { return 'unbekannt'; } };
-  if (parsed.hostname === 'generativelanguage.googleapis.com') return { provider: 'gemini', model: safe(parsed.pathname.match(/\/models\/([^:/]+)/)?.[1]) };
+  if (parsed.hostname === 'generativelanguage.googleapis.com') {
+    // Speech through the Interactions API names its model in the body; voice management has none.
+    if (parsed.pathname.endsWith('/interactions')) return { provider: 'gemini', model: model() };
+    if (/\/voices(\/|$)/.test(parsed.pathname)) return { provider: 'gemini', model: 'voices' };
+    return { provider: 'gemini', model: safe(parsed.pathname.match(/\/models\/([^:/]+)/)?.[1]) };
+  }
   if (parsed.hostname === 'api.mistral.ai') return { provider: 'mistral', model: model() };
   if (askHost && parsed.hostname === askHost) return { provider: 'ask', model: model() };
   return undefined;
@@ -37,6 +50,7 @@ export function meteredFetch(db: D1Database, options: { askHost?: string; now?: 
     const response = await base(input, init);
     const target = classify(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, init?.body, options.askHost);
     if (!target) return response;
+    if (response.status === 429) target.model += REFUSED;
     try {
       let tokens = { input: 0, output: 0 };
       if (response.ok && response.headers.get('Content-Type')?.includes('json')) tokens = tokensOf(await response.clone().json());
@@ -50,7 +64,7 @@ export function meteredFetch(db: D1Database, options: { askHost?: string; now?: 
 }
 
 /** The last [days] UTC days, newest first; days without any use are left out. */
-export async function usageSummary(db: D1Database, owner: string, now: Date, days: number, limits: UsageSummary['limits']): Promise<UsageSummary> {
+export async function usageSummary(db: D1Database, owner: string, now: Date, days: number, limits: UsageSummary['limits'], speech?: UsageSummary['speech']): Promise<UsageSummary> {
   const since = utcDay(new Date(now.getTime() - (days - 1) * 86_400_000));
   const [generations, characters, models] = await Promise.all([
     db.prepare('SELECT utc_day, requests FROM daily_requests WHERE owner_id = ? AND utc_day >= ?').bind(owner, since).all<{ utc_day: string; requests: number }>(),
@@ -63,5 +77,5 @@ export async function usageSummary(db: D1Database, owner: string, now: Date, day
   for (const row of generations.results) day(row.utc_day).generations = Number(row.requests);
   for (const row of characters.results) day(row.utc_day).ttsCharacters = Number(row.characters);
   for (const row of models.results) day(row.utc_day).models.push({ provider: row.provider, model: row.model, calls: Number(row.calls), inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens) });
-  return { days: [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day)), limits };
+  return { days: [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day)), limits, ...(speech ? { speech } : {}) };
 }

@@ -29,3 +29,21 @@ test('provider calls and tokens are counted per day and model; other requests pa
   assert.equal(classify('https://example.org/x', undefined), undefined);
   assert.deepEqual(tokensOf(null), { input: 0, output: 0 });
 });
+
+test('speech counts under the model named in the request; quota refusals apart; voice management as «voices»', async () => {
+  const db = sqliteD1(), now = new Date('2026-09-29T08:00:00Z');
+  let status = 200;
+  const counted = meteredFetch(db, { now: () => now }, async () => new Response('{}', { status, headers: { 'Content-Type': 'application/json' } }));
+  const speak = (model: string) => counted('https://generativelanguage.googleapis.com/v1beta/interactions', { method: 'POST', body: JSON.stringify({ model }) });
+  await speak('gemini-3.8-flash-tts');
+  status = 429; await speak('gemini-3.8-flash-tts');
+  status = 200; await speak('gemini-3.8-flash-lite-tts');
+  await counted('https://generativelanguage.googleapis.com/v1beta/voices/abc');
+  const speech = { model: 'gemini-3.8-flash-tts', liteModel: 'gemini-3.8-flash-lite-tts', dailyRequests: 100 };
+  const summary = await usageSummary(db, 'o', now, 14, { generations: 24, ttsCharacters: 12000 }, speech);
+  assert.deepEqual(summary.speech, speech);
+  assert.deepEqual(summary.days[0].models.map(model => [model.model, model.calls]), [
+    ['gemini-3.8-flash-lite-tts', 1], ['gemini-3.8-flash-tts', 1], ['gemini-3.8-flash-tts:abgelehnt', 1], ['voices', 1],
+  ]);
+  assert.equal((await usageSummary(db, 'o', now, 14, { generations: 24, ttsCharacters: 12000 })).speech, undefined);
+});

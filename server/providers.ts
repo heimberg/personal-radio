@@ -534,6 +534,21 @@ async function interactionAudio(response: Response): Promise<Uint8Array> {
 }
 
 /**
+ * One Interactions API speech request. When Google refuses it for quota (429) – the full TTS model allows
+ * only so many requests a day on low tiers – it goes once more to [lite], which has its own quota and also
+ * speaks own voices: a little plainer, but the program does not fall silent.
+ */
+async function speakInteraction(fetcher: Fetch, key: string, body: Record<string, unknown>, model: string, lite?: string): Promise<Response> {
+  const send = (chosen: string) => requestWithTransientRetry(fetcher, `${GEMINI_API}/interactions`, {
+    method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: chosen, ...body }),
+  }, 120_000);
+  const response = await send(model);
+  if (response.status !== 429 || !lite || lite === model) return response;
+  try { await response.body?.cancel(); } catch { /* Discarding the refused response is best effort. */ }
+  return send(lite);
+}
+
+/**
  * Single-speaker Gemini speech through the Interactions API: prebuilt voices (`gemini_Kore`), designed,
  * library and cloned voices (`gemini_voice_…`), with the delivery as a style annotation.
  */
@@ -552,18 +567,14 @@ export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
     if (!isGeminiVoice(voiceId) || !/^[A-Za-z0-9_-]{2,160}$/.test(voice)) throw new Error('Gemini voice is not selected');
     if (!text.trim() || text.length > 8000) throw new Error('TTS text outside segment budget');
     const delivery = (style ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'wie eine lebendige Radiomoderation: warm, mit Tempowechseln und Betonung';
-    // Own voices were made with the full model; the lite model only speaks the prebuilt ones.
+    // Own voices were made with the full model and keep it for short speech; lite takes them only when its quota is spent.
     const custom = voice.startsWith('voice_') || voice.startsWith('voicekey_');
     const model = options.lite && !custom ? this.liteModel : this.model;
-    const response = await requestWithTransientRetry(this.fetcher, `${GEMINI_API}/interactions`, {
-      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style: `${delivery}; Deutsch` }] }] }],
-        response_format: { type: 'audio' },
-        generation_config: { speech_config: [{ voice }] },
-      }),
-    }, 120_000);
+    const response = await speakInteraction(this.fetcher, this.key, {
+      input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style: `${delivery}; Deutsch` }] }] }],
+      response_format: { type: 'audio' },
+      generation_config: { speech_config: [{ voice }] },
+    }, model, this.liteModel);
     if (response.ok) return interactionAudio(response);
     // A prebuilt voice still works through generateContent if the Interactions API is unavailable.
     if (!custom && (response.status === 404 || response.status === 400)) {
@@ -713,13 +724,14 @@ export async function mapLimited<T, R>(items: readonly T[], limit: number, work:
 export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
   private key: string;
   private model: string;
+  private liteModel: string;
   private voices: [string, string];
   private fetcher: Fetch;
-  constructor(config: { key: string; model?: string; voiceA?: string; voiceB?: string }, fetcher: Fetch = fetch) {
+  constructor(config: { key: string; model?: string; liteModel?: string; voiceA?: string; voiceB?: string }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Gemini TTS configuration incomplete');
-    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts';
+    this.key = config.key; this.model = config.model || 'gemini-3.8-flash-tts'; this.liteModel = config.liteModel || 'gemini-3.8-flash-lite-tts';
     this.voices = [config.voiceA || 'Kore', config.voiceB || 'Puck']; this.fetcher = fetcher;
-    if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model) || this.voices.some(voice => !/^[A-Za-z0-9 _-]{1,40}$/.test(voice))) throw new Error('Gemini TTS configuration invalid');
+    if (![this.model, this.liteModel].every(model => /^[a-zA-Z0-9.-]{1,100}$/.test(model)) || this.voices.some(voice => !/^[A-Za-z0-9 _-]{1,40}$/.test(voice))) throw new Error('Gemini TTS configuration invalid');
   }
 
   /** [options.voices]: the station's voices for host-a and host-b (`gemini_…`); others keep the defaults. */
@@ -732,13 +744,11 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
     };
     const voices = [chosen(0), chosen(1)] as const;
     const style = (speaker: string) => speaker === 'host-a' ? 'warm, curious radio host; clear standard German' : 'calm, engaging radio host; clear standard German';
-    const request = (body: unknown) => requestWithTransientRetry(this.fetcher, `${GEMINI_API}/interactions`, {
-      method: 'POST', headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    }, 120_000);
+    const request = (body: Record<string, unknown>) => speakInteraction(this.fetcher, this.key, body, this.model, this.liteModel);
     if (voices.some(voice => voice.startsWith('voice_') || voice.startsWith('voicekey_'))) {
       // A few turns at a time: much faster than one after another, gentle enough for the rate limit.
       const parts = await mapLimited(turns, TTS_PARALLEL, async turn => {
-        const response = await request({ model: this.model, input: [{ type: 'user_input', content: [{ type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', style: style(turn.speaker) }] }] }],
+        const response = await request({ input: [{ type: 'user_input', content: [{ type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', style: style(turn.speaker) }] }] }],
           response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: voices[turn.speaker === 'host-b' ? 1 : 0] }] } });
         if (!response.ok) throw await googleFailure('Gemini TTS', response);
         return interactionAudio(response);
@@ -747,7 +757,7 @@ export class GeminiPodcastSpeechSynthesizer implements SpeechSynthesizer {
       return joinSpeech(parts, 0.35);
     }
     const speakers = ['host-a', 'host-b'] as const;
-    const response = await request({ model: this.model, input: [{ type: 'user_input', content: turns.map(turn => ({
+    const response = await request({ input: [{ type: 'user_input', content: turns.map(turn => ({
       type: 'text', text: turn.text, annotations: [{ type: 'speech_metadata', speaker: turn.speaker, style: style(turn.speaker) }],
     })) }], response_format: { type: 'audio' }, generation_config: { speech_config: {
       mode: 'conversational', speakers: speakers.map((speaker, index) => ({ speaker, voice: voices[index] })),
