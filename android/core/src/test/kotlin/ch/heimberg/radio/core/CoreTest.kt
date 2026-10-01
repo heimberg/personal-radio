@@ -375,7 +375,7 @@ class SeriesTest {
     @Test fun seriesErrorsSayWhatToDo() {
         assertTrue(AccessDiagnosis.message(409, null, """{"error":"gemini_not_configured"}""").contains("GEMINI_API_KEY"))
         assertTrue(AccessDiagnosis.message(502, null, """{"error":"series_outline_failed"}""").contains("nochmals"))
-        assertEquals("Die Stimme hat nicht gesprochen: Gemini TTS 400: Voice is not ready",
+        assertEquals("Google meldet zur Stimme: Gemini TTS 400: Voice is not ready",
             AccessDiagnosis.message(502, null, """{"error":"voice_failed","detail":"Gemini TTS 400: Voice is not ready"}"""))
     }
 }
