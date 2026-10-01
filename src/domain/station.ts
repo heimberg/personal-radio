@@ -170,6 +170,8 @@ export interface TimelineItemView {
   focus?: HourFocus;
   subject?: string;
   artist?: string;
+  /** An episode of a series: which one, of how many, and whether the series is a story. */
+  series?: { id: string; episode: number; total: number; kind: 'wissen' | 'geschichte' };
 }
 
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */

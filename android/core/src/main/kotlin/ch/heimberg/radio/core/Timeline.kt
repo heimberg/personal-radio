@@ -25,6 +25,8 @@ data class TimelineItem(
     val artist: String? = null,
     /** 🎲 A surprise the planner mixed in; it can be swapped for another one. */
     val surprise: Boolean = false,
+    /** An episode of a series: which one of how many. */
+    val series: SeriesRef? = null,
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }
@@ -56,6 +58,34 @@ data class TimelinePart(
 
 @Serializable
 data class SourceRef(val title: String, val url: String)
+
+/** Where an episode belongs; [kind] is `wissen` or `geschichte`. */
+@Serializable
+data class SeriesRef(val id: String, val episode: Int, val total: Int, val kind: String = "wissen")
+
+/** `GET /api/series`: a series with its episode titles and how many are already in the program. */
+@Serializable
+data class SeriesInfo(
+    val id: String,
+    val title: String,
+    val subject: String = "",
+    val kind: String = "wissen",
+    val state: String = "active",
+    val episodes: List<String> = emptyList(),
+    val scheduled: Int = 0,
+) {
+    val active: Boolean get() = state == "active"
+    val story: Boolean get() = kind == "geschichte"
+    /** «Folge 2 von 5», or how it ended. */
+    val progress: String get() = when (state) {
+        "done" -> "Alle ${episodes.size} Folgen gehört"
+        "stopped" -> "Beendet nach Folge ${scheduled.coerceAtLeast(1)}"
+        else -> "Folge ${scheduled.coerceAtLeast(1)} von ${episodes.size}"
+    }
+}
+
+@Serializable
+data class SeriesList(val series: List<SeriesInfo> = emptyList())
 
 @Serializable
 data class SpotifySetup(val clientId: String)
@@ -129,6 +159,7 @@ data class Library(val items: List<TimelineItem>, val retentionDays: Int = 7)
 object TimelineJson {
     private val json = Json { ignoreUnknownKeys = true }
     fun parseBlocks(body: String): List<BlockView> = json.decodeFromString(BlockList.serializer(), body).blocks
+    fun parseSeries(body: String): List<SeriesInfo> = json.decodeFromString(SeriesList.serializer(), body).series
     fun parseTranscript(body: String): Transcript = json.decodeFromString(Transcript.serializer(), body)
     fun parseLibrary(body: String): Library = json.decodeFromString(Library.serializer(), body)
     fun encodeItem(item: TimelineItem): String = json.encodeToString(TimelineItem.serializer(), item)

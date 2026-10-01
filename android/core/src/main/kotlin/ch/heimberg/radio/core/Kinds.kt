@@ -23,6 +23,7 @@ object Looks {
         "ueberraschung" to Look(Kind.SURPRISE, "🎲"), "zufallsfund" to Look(Kind.SURPRISE, "🧭"), "heute-vor" to Look(Kind.SURPRISE, "📜"),
         "um-die-ecke" to Look(Kind.SURPRISE, "📍"), "wort-des-tages" to Look(Kind.SURPRISE, "🔤"), "frage-des-tages" to Look(Kind.SURPRISE, "❓"),
         "musik-wildcard" to Look(Kind.SURPRISE, "🌍"), "ueberraschungsstunde" to Look(Kind.SURPRISE, "🎭"),
+        "serie" to Look(Kind.DISCOVER, "📚"), "geschichte" to Look(Kind.DISCOVER, "📖"),
     )
     private val SPOKEN = Look(Kind.DISCOVER, "🗞️")
     private val MUSIC = Look(Kind.MUSIC, "🎵")
@@ -30,6 +31,7 @@ object Looks {
     /** A program item: songs and blocks by their ID, the owner's own shows by whether they bring music. */
     fun of(item: TimelineItem): Look = when {
         item.showId == "_musik" -> BLOCKS.getValue("song")
+        item.showId.startsWith("_series:") -> BLOCKS.getValue(if (item.series?.kind == "geschichte") "geschichte" else "serie")
         item.surprise && !item.showId.startsWith("_block:") -> Look(Kind.SURPRISE, "🎲")
         item.showId.startsWith("_block:") -> BLOCKS[item.showId.removePrefix("_block:")] ?: if (item.hasMusic) MUSIC else SPOKEN
         item.hasMusic -> MUSIC

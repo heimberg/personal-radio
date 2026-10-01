@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, shuffleTimeline, showNameOf, swapItem, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -526,6 +526,17 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     return json({ blocks: config ? blockViews(config) : [] }, 200);
   }
   // Clients may encode the colon of an own show's block id ("show%3A<id>").
+  // Series: the running and recent ones, and ending one.
+  if (url.pathname === '/api/series') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json({ series: (await store.listSeries(owner)).map(seriesView) }, 200);
+  }
+  const stopMatch = url.pathname.match(/^\/api\/series\/([A-Za-z0-9-]{1,64})\/stop$/);
+  if (stopMatch) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    return await stopSeries(stationDeps(env, owner), owner, stopMatch[1]) ? json({ stopped: stopMatch[1] }, 200) : json({ error: 'not_found' }, 404);
+  }
   const addBlockMatch = url.pathname.replace(/%3A/gi, ':').match(/^\/api\/blocks\/(song|[a-z0-9-]{1,40}|show:[a-z0-9-]{1,40})\/add$/);
   if (addBlockMatch) {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
@@ -534,7 +545,14 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (body.error) return body.error;
     const { subject, after } = (body.value ?? {}) as { subject?: unknown; after?: unknown };
     if ((subject !== undefined && typeof subject !== 'string') || (after !== undefined && typeof after !== 'string')) return json({ error: 'invalid_block' }, 400);
-    const itemId = await addBlock(stationDeps(env, owner), owner, addBlockMatch[1], subject as string | undefined, after as string | undefined);
+    let itemId: string | null;
+    try { itemId = await addBlock(stationDeps(env, owner), owner, addBlockMatch[1], subject as string | undefined, after as string | undefined); }
+    catch (error) {
+      // Starting a series plans it first; that call can fail like a production.
+      if (error instanceof SeriesError) return json({ error: error.code === 'NOT_CONFIGURED' ? 'gemini_not_configured' : 'series_outline_failed' }, error.code === 'NOT_CONFIGURED' ? 409 : 502);
+      if (error instanceof PipelineError || error instanceof ProviderError) return json({ error: 'series_failed' }, error instanceof ProviderError && error.status === 429 ? 429 : statusFor(error));
+      throw error;
+    }
     if (!itemId) return json({ error: 'unknown_block' }, 404);
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);

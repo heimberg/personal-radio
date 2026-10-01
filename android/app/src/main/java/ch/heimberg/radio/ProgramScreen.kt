@@ -2,8 +2,8 @@ package ch.heimberg.radio
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -33,6 +34,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.TimelineItem
 import java.time.Instant
 import java.time.ZoneId
@@ -61,6 +67,11 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
             if (state.blocks.isNotEmpty()) item(key = "blocks") { Blocks(state.blocks, actions) }
+            val running = state.series.filter { it.active }
+            if (running.isNotEmpty()) {
+                section("Serien")
+                items(running, key = { "series-${it.id}" }) { SeriesRow(it, actions) }
+            }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
             if (state.open.isEmpty()) {
                 item(key = "empty") {
@@ -128,6 +139,42 @@ private fun Failures(state: RadioState, actions: RadioActions) {
             TextButton(onClick = actions::retry) { Text("Erneut versuchen") }
             TextButton(onClick = actions::cleanup) { Text("Aufräumen") }
         }
+    }
+}
+
+/** A running series: its title, how far it is and the next episode; «Beenden» asks first. */
+@Composable
+private fun SeriesRow(series: SeriesInfo, actions: RadioActions) {
+    var confirm by remember { mutableStateOf(false) }
+    val look = Looks.ofBlock(BlockView(id = if (series.story) "geschichte" else "serie", name = series.title, description = ""))
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Nocturne.surface)
+            .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(3.dp).height(40.dp).background(Nocturne.kind(look.kind), RoundedCornerShape(2.dp)))
+        Spacer(Modifier.width(10.dp))
+        Text(look.icon, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(series.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val current = series.episodes.getOrNull((series.scheduled - 1).coerceAtLeast(0))
+            Text(series.progress + (current?.let { " · «$it»" } ?: ""), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = { confirm = true }) { Text("Beenden") }
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("«${series.title}» beenden?") },
+            text = { Text("Es kommen keine weiteren Folgen, und die nächste geplante Folge verschwindet aus dem Programm. Gehörte Folgen bleiben im Archiv.") },
+            confirmButton = { TextButton(onClick = { confirm = false; actions.stopSeries(series) }) { Text("Beenden") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Weiterhören") } },
+        )
     }
 }
 

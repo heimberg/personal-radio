@@ -22,6 +22,10 @@ object AccessDiagnosis {
         }
         // A setting the Worker refused names the field and what it expects.
         if (status == 400) detail.find(body)?.groupValues?.get(1)?.let { return "Nicht gespeichert – $it" }
+        when (error.find(body)?.groupValues?.get(1)) {
+            "gemini_not_configured" -> return "Im Worker fehlt GEMINI_API_KEY: dafür braucht es Gemini."
+            "series_outline_failed", "series_failed" -> return "Die Serie konnte nicht geplant werden – bitte nochmals versuchen."
+        }
         // The Worker answers 404 with a reason when something is gone; only a bare 404 means a wrong address.
         if (status == 404) error.find(body)?.groupValues?.get(1)?.let { return gone(it) }
         return when (status) {

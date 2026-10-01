@@ -8,6 +8,7 @@ The product for listening: native playback of the server-produced program, lock-
 - **Program sync:** every minute (and whenever the program runs out) the app fetches `GET /api/timeline` and makes its playlist after the current item follow the server order: new items are added, moved, removed or rearranged in the app; the item that is playing is never interrupted. If the program had run out while listening, playback continues automatically. If nothing is planned, the app asks the server to plan.
 - **Offline buffer:** segments are cached on the device (up to 300 MB) and the next four are downloaded ahead, so short network losses do not interrupt listening.
 - **Feedback:** a segment that plays to its end is reported as complete; skipping reports the share heard; 👍/👎 in the app are strong signals. After 👎 on a spoken item the app asks for an optional reason (too long, boring, wrong tone, known already, wrong; `POST /api/timeline/{id}/reason`); repeated reasons become notes for the writer, the editor and the jury.
+- **Series:** the blocks «Wissensserie» 📚 and «Fortsetzungsgeschichte» 📖 start a series in five episodes. «Programm» lists running series with their progress and «Beenden» (it asks first). Episodes appear as «Titel · Folge 2/5»; the next one is added once the one before was heard.
 - **«Mehr dazu»:** the ⊕ button next to 👎/👍 orders a researched, checked follow-up that plays right after the current item (`POST /api/timeline/{id}/more`).
 - **«Anders» and surprises (🎲):** the «Gleich» card under the player has «Anders»: the next item gives way to something different at the same place (`POST /api/timeline/{id}/swap`) – a surprise for another surprise of a different kind, any other item for a surprise. Items the planner mixed in carry a die; the options of any item offer the same.
 - **Station sound:** before a spoken item that follows music the app plays a short ident jingle (one of four variants, fixed per item); before news the news opener instead. Before every spoken item it plays the host's live transition (`GET /api/linker?after=&next=`): the player loads it shortly before it airs (it is never prefetched), and the Worker writes and voices it then, so it knows what really ran before; the HTTP read timeout is 30 s for that. At the first change of item in the first 20 minutes of a new hour it plays the time signal and the host's spoken hour (`GET /api/sounds/…`, announced in `GET /api/timeline` → `sounds`). Both can be switched off in the settings.
@@ -62,7 +63,7 @@ The app follows «Nocturne Spektrum»: the Nocturne ground (dark blue-grey, Inte
 | Kind | Colour | Examples |
 | --- | --- | --- |
 | Aktuell | `#D08A2A` | Morgenbriefing ☕, Schlagzeilen 📰 |
-| Wissen | `#2BA57A` | Entdeckung 🔭, Hintergrund 🎙️, Vertiefung 🔍 |
+| Wissen | `#2BA57A` | Entdeckung 🔭, Hintergrund 🎙️, Vertiefung 🔍, Wissensserie 📚, Fortsetzungsgeschichte 📖 |
 | Wetter | `#5B95F5` | Wetter ☀️ |
 | Musik | `#D06BD8` | Song 🎶, music hours, Musikblock 🎵, Neu ✨ |
 | Überraschung | `#F0704F` | 🎲 and the surprise blocks |

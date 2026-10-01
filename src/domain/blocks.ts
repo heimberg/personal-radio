@@ -2,6 +2,7 @@
 // short word (a topic, an artist). Each block is a show template; nothing needs writing or configuring.
 import { DEFAULT_TRIGGERS, HOUR_FOCUS, SONG_MINUTES, bringsOwnMusic } from './station.ts';
 import type { ShowConfig, ShowFormat, StationConfig } from './station.ts';
+import { SERIES_BLOCKS } from './series.ts';
 
 export type BlockInput = 'topic' | 'artist' | 'genre' | 'theme';
 
@@ -152,6 +153,7 @@ export function blockViews(config: StationConfig): BlockView[] {
   return [
     ...BLOCKS.filter(block => !block.hidden).map(({ show, hidden: _hidden, surprise: _surprise, ...block }) => ({ ...block, minutes: show.targetMinutes, music: !!block.music, own: false })),
     { id: SURPRISE_ID, name: 'Überraschung', description: 'Etwas, das du nicht erwartest', minutes: 2, music: false, own: false },
+    ...SERIES_BLOCKS.map(({ kind: _kind, ...block }) => ({ ...block, minutes: 6, music: false, own: false })),
     { id: 'song', name: 'Song', description: 'Ein Song nach deinem Geschmack', minutes: SONG_MINUTES, music: true, own: false },
     ...config.shows.filter(show => show.enabled).map(show => {
       const focus = HOUR_FOCUS[show.format];

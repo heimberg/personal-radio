@@ -15,6 +15,7 @@ import ch.heimberg.radio.core.Look
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.Place
 import ch.heimberg.radio.core.ProgramSections
+import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.VoiceOption
@@ -63,6 +64,8 @@ class RadioState {
     var starts by mutableStateOf<Map<String, Instant>>(emptyMap())
     var failures by mutableStateOf(FailureSummary())
     var blocks by mutableStateOf<List<BlockView>>(emptyList())
+    /** Running series (and recently ended ones), shown in «Programm». */
+    var series by mutableStateOf<List<SeriesInfo>>(emptyList())
     var loaded by mutableStateOf(false)
     var refreshing by mutableStateOf(false)
     var connectionError by mutableStateOf<String?>(null)
@@ -162,6 +165,7 @@ interface RadioActions {
     fun shift(item: TimelineItem, offset: Int)
     fun chooseBlock(block: BlockView)
     fun addBlock(block: BlockView, subject: String)
+    fun stopSeries(series: SeriesInfo)
     fun shuffle()
     fun addSong()
     fun plan()

@@ -15,6 +15,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - A final desk rewrites each script for radio, connects it to the item before, and a quality jury scores it (★) and sends weak scripts back once.
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
+- Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
 - Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.
 - Voices: 30 prebuilt Gemini voices, Google's German voice library, a voice designed from a description, or your own voice cloned in the app (with Google's spoken consent); lively delivery with vocal tags (`<laugh>`, `|mhm|`).
