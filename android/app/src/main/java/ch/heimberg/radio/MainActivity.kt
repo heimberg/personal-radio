@@ -706,15 +706,26 @@ class MainActivity : AppCompatActivity(), RadioActions {
         // The radio pauses for the sample and goes on afterwards.
         resumeAfterSample = controller?.isPlaying == true
         controller?.pause()
-        sample = android.media.MediaPlayer().apply {
-            setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            setOnPreparedListener { it.start() }
-            setOnCompletionListener { stopSample() }
-            setOnErrorListener { _, _, _ -> state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample(); true }
-            runCatching {
-                setDataSource(this@MainActivity, android.net.Uri.parse(api.previewUrl(voiceId, style)), api.headers())
-                prepareAsync()
-            }.onFailure { state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample() }
+        // The sample is fetched first (a new voice can take a while), so a refusal shows its reason.
+        lifecycleScope.launch {
+            val file = java.io.File(cacheDir, "voice-sample")
+            val loaded = withContext(Dispatchers.IO) { runCatching { api.download(api.previewPath(voiceId, style), file) } }
+            if (state.previewing != voiceId) return@launch
+            loaded.exceptionOrNull()?.let { error ->
+                state.say(error.message ?: "Die Hörprobe ist gerade nicht verfügbar.")
+                stopSample()
+                return@launch
+            }
+            sample = android.media.MediaPlayer().apply {
+                setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { stopSample() }
+                setOnErrorListener { _, _, _ -> state.say("Die Hörprobe lässt sich nicht abspielen."); stopSample(); true }
+                runCatching {
+                    setDataSource(file.path)
+                    prepareAsync()
+                }.onFailure { state.say("Die Hörprobe lässt sich nicht abspielen."); stopSample() }
+            }
         }
     }
 

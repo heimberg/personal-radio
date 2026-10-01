@@ -106,8 +106,10 @@ class ApiClient(private val connection: Connection) {
     }
 
     /** Where the voice sample for [voiceId] (spoken in [style]) is; the player sends the token itself. */
-    fun previewUrl(voiceId: String, style: String): String =
-        connection.resolve("api/voices/preview?voice=${java.net.URLEncoder.encode(voiceId, "UTF-8")}&style=${java.net.URLEncoder.encode(style, "UTF-8")}")
+    fun previewUrl(voiceId: String, style: String): String = connection.resolve(previewPath(voiceId, style))
+
+    fun previewPath(voiceId: String, style: String): String =
+        "api/voices/preview?voice=${java.net.URLEncoder.encode(voiceId, "UTF-8")}&style=${java.net.URLEncoder.encode(style, "UTF-8")}"
 
     fun headers(): Map<String, String> = connection.headers()
 

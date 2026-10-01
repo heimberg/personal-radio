@@ -599,7 +599,9 @@ export class GeminiSpeechSynthesizer implements SpeechSynthesizer {
 }
 
 /** A voice to choose from: `id` as the station stores it (`gemini_…`). */
-export interface VoiceEntry { id: string; name: string; group: 'own' | 'library'; description?: string; gender?: string }
+export interface VoiceEntry { id: string; name: string; group: 'own' | 'library'; description?: string; gender?: string;
+  /** A designed voice comes with a short sample Google generated: base64 audio and its type. */
+  sample?: { data: string; mimeType: string } }
 
 /**
  * The owner's voices at Google: the German voice library, and voices designed from a description or
@@ -665,10 +667,14 @@ export class GeminiVoiceCatalog {
   }
 
   private created(result: unknown, name: string): VoiceEntry {
-    const value = result as { id?: unknown; voice?: { id?: unknown }; replicated_voice?: { id?: unknown }; prompted_voice?: { id?: unknown } };
+    type Audio = { data?: unknown; mime_type?: unknown };
+    const value = result as { id?: unknown; sample_audio?: Audio; voice?: { id?: unknown; sample_audio?: Audio }; replicated_voice?: { id?: unknown }; prompted_voice?: { id?: unknown } };
     const id = [value.id, value.voice?.id, value.replicated_voice?.id, value.prompted_voice?.id].find((item): item is string => typeof item === 'string' && /^voice_[A-Za-z0-9_-]{1,160}$/.test(item));
     if (!id) throw new Error('Gemini returned no voice ID');
-    return { id: `${GEMINI_VOICE_PREFIX}${id}`, name, group: 'own' };
+    const audio = value.sample_audio ?? value.voice?.sample_audio;
+    const sample = typeof audio?.data === 'string' && audio.data.length > 100 && audio.data.length < 8_000_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(audio.data)
+      ? { data: audio.data, mimeType: typeof audio.mime_type === 'string' && /^audio\/[A-Za-z0-9.+-]{1,30}(;\s?[A-Za-z0-9=.+-]{1,40}){0,4}$/.test(audio.mime_type) ? audio.mime_type : 'audio/wav' } : undefined;
+    return { id: `${GEMINI_VOICE_PREFIX}${id}`, name, group: 'own', ...(sample ? { sample } : {}) };
   }
 }
 

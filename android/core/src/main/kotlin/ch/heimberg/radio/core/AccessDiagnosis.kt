@@ -25,6 +25,7 @@ object AccessDiagnosis {
         when (error.find(body)?.groupValues?.get(1)) {
             "gemini_not_configured" -> return "Im Worker fehlt GEMINI_API_KEY: dafür braucht es Gemini."
             "series_outline_failed", "series_failed" -> return "Die Serie konnte nicht geplant werden – bitte nochmals versuchen."
+            "voice_failed" -> return "Die Stimme hat nicht gesprochen" + (detail.find(body)?.groupValues?.get(1)?.let { ": $it" } ?: ".")
         }
         // The Worker answers 404 with a reason when something is gone; only a bare 404 means a wrong address.
         if (status == 404) error.find(body)?.groupValues?.get(1)?.let { return gone(it) }
