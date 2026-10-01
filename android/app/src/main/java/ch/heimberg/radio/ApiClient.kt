@@ -9,6 +9,7 @@ import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
 import ch.heimberg.radio.core.Place
+import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.VoiceOption
 import ch.heimberg.radio.core.Timeline
@@ -172,6 +173,12 @@ class ApiClient(private val connection: Connection) {
     }
 
     /** Mixes the open program; the server adds songs between items where they are missing. */
+    /** Running and recent series. */
+    suspend fun series(): List<SeriesInfo> = withContext(Dispatchers.IO) { TimelineJson.parseSeries(request("GET", "api/series")) }
+
+    /** Ends a series: no further episodes, the open one leaves the program. */
+    suspend fun stopSeries(id: String) { withContext(Dispatchers.IO) { request("POST", "api/series/${java.net.URLEncoder.encode(id, "UTF-8")}/stop") } }
+
     suspend fun shuffle() { withContext(Dispatchers.IO) { request("POST", "api/timeline/shuffle") } }
 
     /** Picks one song and appends it to the program. */

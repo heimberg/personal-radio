@@ -45,6 +45,8 @@ export interface EditorialDirection {
   agents?: ResolvedAgents;
   /** What the owner repeatedly criticised in recent items (from 👎 reasons), for writer, editor and jury. */
   listenerNotes?: string[];
+  /** A chapter of an invented story (series): written from its plan, not from news sources. */
+  story?: boolean;
 }
 export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;

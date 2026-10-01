@@ -28,6 +28,7 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.ProgramClock
+import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
@@ -392,6 +393,8 @@ class MainActivity : AppCompatActivity(), RadioActions {
         )
     }
 
+    override fun stopSeries(series: SeriesInfo) = serverAction({ api.stopSeries(series.id) }, "«${series.title}» ist beendet.")
+
     override fun shuffle() = serverAction({ api.shuffle() }, "Programm gemischt.")
 
     override fun addSong() = serverAction({ api.addSong() }, "Ein Song wird ausgewählt und hinten angehängt.")
@@ -424,10 +427,16 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private suspend fun changed() {
         sync()
         refreshTimeline()
+        loadSeries()
     }
 
     private suspend fun loadBlocks() {
         runCatching { api.blocks() }.getOrNull()?.let { state.blocks = it }
+        loadSeries()
+    }
+
+    private suspend fun loadSeries() {
+        runCatching { api.series() }.getOrNull()?.let { state.series = it }
     }
 
     private suspend fun refreshTimeline() {

@@ -353,3 +353,27 @@ class LooksTest {
         assertEquals(0xFFD06BD8.toInt(), Kind.MUSIC.argb.toInt())
     }
 }
+
+class SeriesTest {
+    @Test fun episodesShowTheirSeriesAndProgress() {
+        val item = TimelineJson.parse("""{"items":[{"id":"e1","seq":1,"showId":"_series:s1","showName":"Die Drachen-Saga · Folge 2/5","plannedAt":"2026-10-01T08:00:00Z","state":"ready","estimatedMinutes":6,"series":{"id":"s1","episode":2,"total":5,"kind":"geschichte"}}]}""").single()
+        assertEquals(SeriesRef("s1", 2, 5, "geschichte"), item.series)
+        assertEquals("📖", Looks.of(item).icon)
+        assertEquals("📚", Looks.of(item.copy(series = item.series!!.copy(kind = "wissen"))).icon)
+        val list = TimelineJson.parseSeries("""{"series":[{"id":"s1","title":"Die Drachen-Saga","kind":"geschichte","state":"active","episodes":["A","B","C"],"scheduled":2},{"id":"s2","title":"Mond","state":"done","episodes":["A","B","C"],"scheduled":3},{"id":"s3","title":"Netz","state":"stopped","episodes":["A","B"],"scheduled":1}]}""")
+        assertEquals(listOf("Folge 2 von 3", "Alle 3 Folgen gehört", "Beendet nach Folge 1"), list.map { it.progress })
+        assertTrue(list[0].active && list[0].story)
+        assertFalse(list[1].active)
+    }
+
+    @Test fun seriesAreNotDayPlanBlocks() {
+        assertEquals(null, DayPlan.scheduleId(BlockView("serie", "Wissensserie", "")))
+        assertEquals(null, DayPlan.scheduleId(BlockView("geschichte", "Fortsetzungsgeschichte", "")))
+        assertEquals("_block:hintergrund", DayPlan.scheduleId(BlockView("hintergrund", "Hintergrund", "")))
+    }
+
+    @Test fun seriesErrorsSayWhatToDo() {
+        assertTrue(AccessDiagnosis.message(409, null, """{"error":"gemini_not_configured"}""").contains("GEMINI_API_KEY"))
+        assertTrue(AccessDiagnosis.message(502, null, """{"error":"series_outline_failed"}""").contains("nochmals"))
+    }
+}

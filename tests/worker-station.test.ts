@@ -195,6 +195,12 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     await Promise.all(pending);
     assert.equal(sent.length, 10 + 10);
 
+    // Series: listed (none yet); ending an unknown one is refused; starting one needs Gemini for the plan.
+    assert.deepEqual(await (await call('/api/series')).json(), { series: [] });
+    assert.equal((await call('/api/series/unknown/stop', { method: 'POST' })).status, 404);
+    const series = await call('/api/blocks/serie/add', { method: 'POST', body: JSON.stringify({ subject: 'Mond' }) });
+    assert.equal(series.status, 409); assert.deepEqual(await series.json(), { error: 'gemini_not_configured' });
+
     // An own show as a block: the app encodes the colon of "show:<id>" in the path.
     const own = await call('/api/blocks/show%3Akurz/add', { method: 'POST', body: JSON.stringify({ after: 'end' }) });
     assert.equal(own.status, 200);

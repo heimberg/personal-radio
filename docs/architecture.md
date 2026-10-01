@@ -210,6 +210,18 @@ Settings → Redaktion lists every editorial agent (`src/domain/agents.ts`): res
 - **Usage.** Requests to Gemini, Mistral and ASK go through a counting fetch (`server/usage.ts`) that records calls and the tokens the providers report per UTC day and model (`model_usage`). Settings → Verbrauch shows them next to the daily productions and speech characters and their limits.
 - **More trials.** The music desk proposes the next songs (nothing is searched or planned); the music hour is moderated anew from the last hour's songs and sources.
 
+### Series
+
+A series tells one subject over several episodes (`src/domain/series.ts`, table `series`, migration 0010). The palette offers two entries that take one word: **Wissensserie** (`serie`) and **Fortsetzungsgeschichte** (`geschichte`).
+
+- **Start.** `POST /api/blocks/{serie|geschichte}/add` plans the series in one model call (counted like a production): a title and five episodes, each with a title and one sentence. A child's station adds its rules to that plan. The first episode goes to the end of the program.
+- **Episodes** are timeline items with the show ID `_series:<id>`; their `research_json` says which episode of how many, so the program shows «Titel · Folge 2/5» without a lookup.
+  - A knowledge episode is a dialog: research for its step, then the usual final edit, jury and a `light` fact check. Without dialog voices the host tells it alone.
+  - A story chapter is written from the plan, which is its one source `serie` (not listed as a source). It is checked with `off`, because it is fiction: the writer gets a story prompt instead of the news prompt (`EditorialDirection.story`).
+  - Every episode after the first opens with «Was bisher geschah» from short recaps of the episodes before, kept with the series. Every episode but the last ends with a look ahead.
+- **Next episode.** While someone listens, the planner adds the next episode right behind the coming item once the previous one left the program heard (played, skipped or archived). An episode removed or expired unheard comes again; a failed one waits for its retry. After the last episode the series is `done`.
+- **Ending.** `GET /api/series` lists the series; `POST /api/series/{id}/stop` ends one and takes its open episode out of the program. In the app, «Programm» lists running series with «Beenden». Series are not offered in the day plan.
+
 ### New releases, «Mehr dazu», station sound
 
 - **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). The moderation announces each release by artist and title as new (the owner's decision, 29.09.2026: these release names go to the AI and to speech synthesis); release dates and other metadata stay on the Worker.

@@ -5,6 +5,9 @@ import type { Profile, QualityScore, Script, Source, TextGenerator } from '../sr
 import { learnedWeights, rankCandidates } from '../src/domain/recommendation.ts';
 import type { FeedItem } from './feed.ts';
 import { ProviderError, TTS_PARALLEL, withoutVoiceTags } from './providers.ts';
+import { KIDS_RULES } from './listeners.ts';
+import { MAX_EPISODES, MIN_EPISODES, OUTLINE_SOURCE_ID, SERIES_EPISODES, SERIES_PREFIX, episodeRefOf, episodeShow, outlinePrompt, parseOutline, recapOf, seriesBlock } from '../src/domain/series.ts';
+import type { EpisodeRef, Series, SeriesKind } from '../src/domain/series.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -166,6 +169,7 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const lastSeen = options.requireListener ? await deps.store.lastSeen(owner) : now;
   const listening = !!lastSeen && now.getTime() - lastSeen.getTime() <= ACTIVE_LISTENER_HOURS * 3_600_000;
   if (listening && await deps.store.recentFailures(owner, minutes(now, -60)) < 3) {
+    await advanceSeries(deps, owner);
     const recent = await deps.store.recentItems(owner, 4);
     planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id), deps.random);
     for (const item of planned) await deps.store.insertItem(owner, item, now);
@@ -262,12 +266,23 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
   // A building block added from the app is produced with its template.
   const block = blockOf(row.show_id);
-  const configured = config.shows.find(item => item.id === row.show_id) ?? (block ? blockShow(block, config, requestedHourSubject(row) ?? wildcardTaste(block.id, deps)) : undefined);
+  let configured = config.shows.find(item => item.id === row.show_id) ?? (block ? blockShow(block, config, requestedHourSubject(row) ?? wildcardTaste(block.id, deps)) : undefined);
+  // An episode of a series is produced from the series: its step (knowledge) or its chapter (story).
+  const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
+  let seriesSources: Source[] = [];
+  if (row.show_id.startsWith(SERIES_PREFIX)) {
+    const series = episode ? await deps.store.getSeries(owner, episode.series) : null;
+    if (!series || !episode || !series.episodes[episode.episode]) return fail('SERIES_REMOVED');
+    const built = episodeShow(series, episode.episode, now, kidsRules(config));
+    // Without the dialog voices a knowledge episode is told by the host alone.
+    configured = built.show.format === 'podcast' && !deps.podcastAvailable ? { ...built.show, format: 'brief' } : built.show;
+    seriesSources = built.sources;
+  }
   if (!configured && row.show_id !== MUSIC_SHOW_ID) return fail('SHOW_REMOVED');
   try {
     // Tools (switched on per show, or as placeholders like {wetter}) are filled in once per production;
     // weather and headlines also become sources, so the writer can cite them.
-    let show = configured, toolSources: Source[] = [];
+    let show = configured, toolSources: Source[] = [...seriesSources];
     if (configured) {
       // Items are produced ahead: date and time of day are those of the expected air time, and the
       // speech never names a clock time (the live time signal in the app does that).
@@ -332,7 +347,8 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       // Tool results are evidence too; a show can live on them alone (a weather report).
       sources = [...toolSources, ...sources];
       if (!sources.length) return fail('NO_SOURCES');
-      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents, listenerNotes: await notesFor(deps, owner, now) };
+      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents,
+        listenerNotes: await notesFor(deps, owner, now), ...(episode?.kind === 'geschichte' ? { story: true } : {}) };
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
       const context = await stationContext(deps, owner, config, row, now);
@@ -347,9 +363,13 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
         await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
       }
       if (script.quality) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: script.quality.overall, at: now });
+      // The research record keeps what the item already carries (a requested subject, its series).
+      const kept = (() => { try { return JSON.parse(row.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
+      const research = { ...kept, ...(queries.length ? { queries } : {}) };
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
-        research_json: queries.length ? JSON.stringify({ queries }) : null };
+        research_json: Object.keys(research).length ? JSON.stringify(research) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
+      if (episode) await rememberEpisode(deps, owner, episode, script);
       current = { ...current, ...patch };
     }
     const script = JSON.parse(current.script_json ?? 'null') as Script;
@@ -837,6 +857,8 @@ export async function addBlock(deps: StationDeps, owner: string, blockId: string
   const config = await deps.store.getConfig(owner);
   if (!config) return null;
   if (blockId === SURPRISE_ID) return addSurprise(deps, owner, config, after);
+  const series = seriesBlock(blockId);
+  if (series) return (await startSeries(deps, owner, config, series.kind, subject ?? '')).itemId;
   if (blockId === 'song') {
     const song = await scheduleShowNow(deps, owner, MUSIC_SHOW_ID);
     if (song) await placeAfter(deps, owner, song, after);
@@ -868,6 +890,95 @@ async function addSurprise(deps: StationDeps, owner: string, config: StationConf
   await placeAfter(deps, owner, id, after);
   return id;
 }
+
+/** A child's station carries its rules in the host's instructions; series take them over. */
+const kidsRules = (config: StationConfig) => config.host.instructions.includes(KIDS_RULES) ? KIDS_RULES : '';
+
+/** Thrown when a series cannot be planned (no model configured, or no usable outline). */
+export class SeriesError extends Error {
+  readonly code: 'NOT_CONFIGURED' | 'NO_OUTLINE';
+  constructor(code: SeriesError['code']) { super(code); this.code = code; }
+}
+
+/**
+ * Starts a series: plans its episodes (one model call, counted like a production) and puts the first
+ * episode into the program. Without a subject the planner picks one from the listener's interests.
+ */
+export async function startSeries(deps: StationDeps, owner: string, config: StationConfig, kind: SeriesKind, subject: string,
+  episodes = SERIES_EPISODES): Promise<{ seriesId: string; itemId: string }> {
+  if (!deps.agentModel) throw new SeriesError('NOT_CONFIGURED');
+  const count = Math.min(MAX_EPISODES, Math.max(MIN_EPISODES, Math.round(episodes)));
+  await deps.reserveGeneration(owner);
+  const topic = subject.trim().slice(0, 200);
+  let outline: { title: string; episodes: Series['episodes'] };
+  try {
+    outline = parseOutline(await deps.agentModel.askJson(outlinePrompt(kind, count, kidsRules(config)),
+      { thema: topic || 'Wähle selbst ein Thema, das zu den Interessen passt.', interessen: [...config.profile.topics, ...config.profile.interests].slice(0, 30) },
+      'Gemini series outline', kind === 'geschichte' ? 0.9 : 0.6), count);
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    throw new SeriesError('NO_OUTLINE');
+  }
+  const now = deps.now();
+  const series: Series = { id: (deps.newId ?? (() => crypto.randomUUID()))(), title: outline.title, subject: topic || outline.title, kind,
+    episodes: outline.episodes, recaps: [], scheduled: 0, state: 'active', createdAt: now.toISOString() };
+  await deps.store.insertSeries(owner, series, now);
+  const itemId = await scheduleEpisode(deps, owner, series, 0, AT_END);
+  return { seriesId: series.id, itemId };
+}
+
+/** Puts episode [index] into the program: after [after], or soon (behind the next item) without it. */
+async function scheduleEpisode(deps: StationDeps, owner: string, series: Series, index: number, after?: string): Promise<string> {
+  const now = deps.now(), last = await deps.store.lastItem(owner);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: `${SERIES_PREFIX}${series.id}`, plannedAt: now.toISOString(), estimatedMinutes: 6 }, now);
+  const ref: EpisodeRef = { series: series.id, episode: index, total: series.episodes.length, seriesTitle: series.title, kind: series.kind };
+  await deps.store.update(owner, id, { research_json: JSON.stringify(ref) }, now);
+  await deps.store.updateSeries(owner, series.id, { scheduled: Math.max(series.scheduled, index + 1) }, now);
+  // Soon, but with time to produce: behind the item that plays next.
+  const open = (await deps.store.openItems(owner)).filter(item => item.id !== id);
+  await placeAfter(deps, owner, id, after ?? open[Math.min(1, open.length - 1)]?.id);
+  return id;
+}
+
+/** What an episode said, kept for the «previously on» of the next ones. */
+async function rememberEpisode(deps: StationDeps, owner: string, episode: EpisodeRef, script: Script) {
+  const series = await deps.store.getSeries(owner, episode.series);
+  if (!series) return;
+  const recaps = [...series.recaps];
+  while (recaps.length < episode.episode) recaps.push('');
+  recaps[episode.episode] = recapOf(script.title, script.text);
+  await deps.store.updateSeries(owner, series.id, { recaps }, deps.now());
+}
+
+/**
+ * The next episode joins the program once the one before has left it heard (played, skipped or archived).
+ * An episode that left unheard (removed, expired) comes again; a failed one waits for its retry.
+ */
+async function advanceSeries(deps: StationDeps, owner: string) {
+  for (const series of (await deps.store.listSeries(owner)).filter(item => item.state === 'active')) {
+    const latest = await deps.store.latestOfShow(owner, `${SERIES_PREFIX}${series.id}`);
+    if (latest && ['planned', 'voicing', 'ready', 'failed'].includes(latest.state)) continue;
+    const ref = latest ? episodeRefOf(latest.research_json) : null;
+    const index = !latest || !ref ? series.scheduled : latest.state === 'expired' ? ref.episode : ref.episode + 1;
+    if (index >= series.episodes.length) { await deps.store.updateSeries(owner, series.id, { state: 'done' }, deps.now()); continue; }
+    await scheduleEpisode(deps, owner, series, index);
+  }
+}
+
+/** Ends a series: no further episodes, and the open one leaves the program. */
+export async function stopSeries(deps: StationDeps, owner: string, id: string): Promise<boolean> {
+  const series = await deps.store.getSeries(owner, id);
+  if (!series) return false;
+  await deps.store.updateSeries(owner, id, { state: 'stopped' }, deps.now());
+  for (const item of await deps.store.openItems(owner)) if (item.show_id === `${SERIES_PREFIX}${id}`) await removeItem(deps, owner, item.id);
+  return true;
+}
+
+/** The series for the app: running ones first, with their episode titles and how far they are. */
+export interface SeriesView { id: string; title: string; subject: string; kind: SeriesKind; state: Series['state']; episodes: string[]; scheduled: number }
+export const seriesView = (series: Series): SeriesView => ({ id: series.id, title: series.title, subject: series.subject, kind: series.kind,
+  state: series.state, episodes: series.episodes.map(episode => episode.title), scheduled: series.scheduled });
 
 /**
  * «Anders»: an open item gives way to something different at the same place – a surprise for another
@@ -986,9 +1097,13 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   let queries: string[] = [];
   let team: TimelineItemView['team'];
   try { ({ queries = [], team } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team'] }); } catch { /* Research details are optional. */ }
+  const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
+  // The plan of a story is how it is written, not a source to list.
+  sources = sources.filter(source => source.id !== OUTLINE_SOURCE_ID);
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
-    showName: showNameOf(row.show_id, config),
+    showName: episode ? `${episode.seriesTitle} · Folge ${episode.episode + 1}/${episode.total}` : showNameOf(row.show_id, config),
+    ...(episode ? { series: { id: episode.series, episode: episode.episode + 1, total: episode.total, kind: episode.kind } } : {}),
     ...(isSurprise(row.show_id) ? { surprise: true } : {}),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
@@ -1029,7 +1144,7 @@ export function transcriptView(row: TimelineRow, config: StationConfig | null): 
     ...(script.quality ? { quality: script.quality } : {}),
     title: script.title ?? config?.shows.find(show => show.id === row.show_id)?.name ?? blockOf(row.show_id)?.name ?? row.show_id,
     lines: lines.filter(line => line.text?.trim()),
-    sources: sources.map(source => ({ title: source.title, url: source.url })),
+    sources: sources.filter(source => source.id !== OUTLINE_SOURCE_ID).map(source => ({ title: source.title, url: source.url })),
   };
 }
 

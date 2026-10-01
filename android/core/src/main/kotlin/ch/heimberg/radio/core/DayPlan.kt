@@ -105,8 +105,11 @@ data class DayPlan(val slots: List<ScheduleSlot>, val surprise: Int = 25) {
         }
 
         /** The block ID a palette block (`GET /api/blocks`) has in the day plan; songs and «Überraschung» are not a window's block. */
+        /** Series are started once from «Programm», not put into time slots. */
+        private val SERIES_BLOCKS = setOf("serie", "geschichte")
+
         fun scheduleId(block: BlockView): String? = when {
-            block.id == "song" || block.id == "ueberraschung" -> null
+            block.id == "song" || block.id == "ueberraschung" || block.id in SERIES_BLOCKS -> null
             block.id.startsWith("show:") -> block.id.removePrefix("show:")
             else -> BLOCK_PREFIX + block.id
         }
