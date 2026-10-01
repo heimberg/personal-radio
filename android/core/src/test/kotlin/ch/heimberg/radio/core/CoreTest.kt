@@ -380,7 +380,7 @@ class SeriesTest {
 
 class FamilyTest {
     private val body = """{"me":"tom","members":[
-        {"key":"owner","name":"Papa","nowPlaying":"Kernfusion erklärt","lastSeen":"2026-10-01T07:55:00Z"},
+        {"key":"owner","name":"Papa","nowPlaying":"Kernfusion erklärt","lastSeen":"2026-10-01T07:55:00Z","avatarUrl":"api/family/avatar/owner?v=17"},
         {"key":"lea","name":"Lea","kids":true,"lastSeen":"2026-09-28T20:00:00Z"},
         {"key":"tom","name":"Tom","me":true}],
       "messages":[{"id":1,"from":"owner","fromName":"Papa","kind":"text","text":"Hallo!","at":"2026-10-01T07:58:00Z"},
@@ -392,6 +392,8 @@ class FamilyTest {
         val family = Family.parse(body)
         val now = java.time.Instant.parse("2026-10-01T08:00:00Z")
         assertEquals(listOf("Papa", "Lea"), family.others.map { it.name })
+        assertEquals(listOf("api/family/avatar/owner?v=17", null, null), family.members.map { it.avatarUrl })
+        assertEquals("P", family.members[0].initial)
         assertEquals("hört gerade «Kernfusion erklärt»", family.members[0].status(now))
         assertEquals("zuletzt aktiv vor 2 Tagen", family.members[1].status(now))
         assertEquals("noch nie zugehört", family.members[2].status(now))

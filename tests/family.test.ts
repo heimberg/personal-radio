@@ -13,14 +13,16 @@ const ORIGIN = 'https://private.example';
 const NOW = new Date('2026-10-01T08:00:00Z');
 
 function memoryBucket() {
-  const objects = new Map<string, Uint8Array>();
+  const objects = new Map<string, Uint8Array>(), types = new Map<string, string>();
   return {
     objects,
-    put: async (key: string, value: Uint8Array) => { objects.set(key, value); },
+    put: async (key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }) => {
+      objects.set(key, value); types.set(key, options?.httpMetadata?.contentType ?? 'audio/mpeg');
+    },
     delete: async (key: string) => { objects.delete(key); },
     get: async (key: string) => {
       const value = objects.get(key);
-      return value ? { body: new Blob([value as Uint8Array<ArrayBuffer>]).stream(), size: value.length, httpEtag: '"e"', httpMetadata: { contentType: 'audio/mpeg' } } : null;
+      return value ? { body: new Blob([value as Uint8Array<ArrayBuffer>]).stream(), size: value.length, httpEtag: '"e"', httpMetadata: { contentType: types.get(key) } } : null;
     },
   };
 }
@@ -131,6 +133,25 @@ test('family through the Worker: chat with unread count, sharing with audio, lis
     assert.equal((await new FamilyStore(db).pendingGreeting('listener:lea', new Date()))?.text, 'Schlaf gut, Lea!');
     assert.equal((await get('lea')).messages.at(-1).kind, 'greeting');
     assert.equal((await call('owner', '/api/family/greet', { to: 'lea', text: '' })).status, 400);
+    // Profile pictures: each member sets their own; the whole family sees it under a versioned URL.
+    const jpeg = new Uint8Array(300).map((_, index) => [0xff, 0xd8, 0xff][index] ?? index % 251);
+    const send = (who: keyof typeof tokens, method: string, body?: unknown) => worker.fetch(new Request(`${ORIGIN}/api/family/avatar`, { method,
+      ...(body ? { body: JSON.stringify(body) } : {}), headers: { 'Cf-Access-Jwt-Assertion': tokens[who], Origin: ORIGIN, 'Content-Type': 'application/json' } }), env as never);
+    const set = await send('lea', 'PUT', { image: Buffer.from(jpeg).toString('base64') });
+    assert.equal(set.status, 200);
+    const avatarUrl = ((await set.json()) as { avatarUrl: string }).avatarUrl;
+    assert.match(avatarUrl, /^api\/family\/avatar\/lea\?v=\d+$/);
+    assert.equal((await get('owner')).members.find((member: any) => member.key === 'lea').avatarUrl, avatarUrl);
+    assert.equal((await get('owner')).members.find((member: any) => member.key === 'owner').avatarUrl, undefined);
+    const picture = await call('owner', `/${avatarUrl}`);
+    assert.equal(picture.status, 200); assert.equal(picture.headers.get('Content-Type'), 'image/jpeg');
+    assert.deepEqual([...new Uint8Array(await picture.arrayBuffer())], [...jpeg]);
+    assert.equal((await send('lea', 'PUT', { image: Buffer.from(new Uint8Array(300).fill(65)).toString('base64') })).status, 400); // not an image
+    assert.equal((await call('owner', '/api/family/avatar/tom')).status, 404);
+    assert.equal((await send('lea', 'DELETE')).status, 200);
+    assert.equal((await get('owner')).members.find((member: any) => member.key === 'lea').avatarUrl, undefined);
+    assert.equal((await call('owner', '/api/family/avatar/lea')).status, 404);
+
     assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/family/messages`, { method: 'POST', body: '{"text":"x"}',
       headers: { 'Cf-Access-Jwt-Assertion': tokens.owner, 'Content-Type': 'application/json' } }), env as never)).status, 403); // no Origin
   } finally { globalThis.fetch = originalFetch; }

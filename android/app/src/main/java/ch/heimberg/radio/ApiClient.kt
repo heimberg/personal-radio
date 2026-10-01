@@ -111,6 +111,9 @@ class ApiClient(private val connection: Connection) {
 
     fun headers(): Map<String, String> = connection.headers()
 
+    /** An address on the Worker (e.g. a profile picture), for loading it with [headers]. */
+    fun resolve(path: String): String = connection.resolve(path)
+
     /** Configured show choices for the native "produce now" dialog. */
     suspend fun shows(): List<ShowOption> = withContext(Dispatchers.IO) {
         val shows = JSONObject(request("GET", "api/station")).getJSONObject("config").getJSONArray("shows")
@@ -209,6 +212,11 @@ class ApiClient(private val connection: Connection) {
 
     /** A greeting the host reads in [to]'s next live transition. */
     suspend fun greet(to: String, text: String) { withContext(Dispatchers.IO) { request("POST", "api/family/greet", JSONObject().put("to", to).put("text", text).toString()) } }
+
+    /** My profile picture: a small JPEG, base64. */
+    suspend fun setAvatar(image: String) { withContext(Dispatchers.IO) { request("PUT", "api/family/avatar", JSONObject().put("image", image).toString()) } }
+
+    suspend fun removeAvatar() { withContext(Dispatchers.IO) { request("DELETE", "api/family/avatar") } }
 
     /** What I hear now, for «hört gerade» in the family. */
     suspend fun presence(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/family/presence", JSONObject().put("itemId", itemId).toString()) } }

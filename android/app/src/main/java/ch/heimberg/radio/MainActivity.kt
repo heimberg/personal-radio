@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -34,12 +35,15 @@ import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.TimelineJson
 import ch.heimberg.radio.core.VoiceOption
+import coil.request.ImageRequest
 import com.google.common.util.concurrent.ListenableFuture
 import com.spotify.sdk.android.auth.AuthorizationClient
 import com.spotify.sdk.android.auth.AuthorizationRequest
 import com.spotify.sdk.android.auth.AuthorizationResponse
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -78,6 +82,13 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private var lastMinute = -1L
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // Profile picture: Android's photo picker and the camera app; neither needs a permission.
+    private val avatarPicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) uploadAvatar { AvatarImage.fromUri(contentResolver, uri) }
+    }
+    private val avatarCamera = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) uploadAvatar { bitmap }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -439,6 +450,38 @@ class MainActivity : AppCompatActivity(), RadioActions {
             loadFamily()
         }
     }
+
+    override fun chooseAvatar() {
+        state.avatarMenuOpen = false
+        avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
+    override fun takeAvatar() {
+        state.avatarMenuOpen = false
+        runCatching { avatarCamera.launch(null) }.onFailure { state.say("Keine Kamera-App gefunden.") }
+    }
+
+    override fun removeAvatar() {
+        state.avatarMenuOpen = false
+        lifecycleScope.launch {
+            state.say(runCatching { api.removeAvatar() }.fold({ "Profilbild entfernt." }, { it.message ?: getString(R.string.connection_failed) }))
+            loadFamily()
+        }
+    }
+
+    private fun uploadAvatar(read: () -> android.graphics.Bitmap?) {
+        state.avatarBusy = true
+        lifecycleScope.launch {
+            val image = withContext(Dispatchers.Default) { read()?.let(AvatarImage::encode) }
+            val result = if (image == null) Result.failure(IllegalStateException("Das Bild konnte nicht gelesen werden.")) else runCatching { api.setAvatar(image) }
+            state.say(result.fold({ "Profilbild gespeichert." }, { it.message ?: getString(R.string.connection_failed) }))
+            state.avatarBusy = false
+            loadFamily()
+        }
+    }
+
+    override fun workerImage(path: String): Any = ImageRequest.Builder(this).data(api.resolve(path))
+        .apply { api.headers().forEach { (name, value) -> addHeader(name, value) } }.build()
 
     override fun stopSeries(series: SeriesInfo) = serverAction({ api.stopSeries(series.id) }, "«${series.title}» ist beendet.")
 

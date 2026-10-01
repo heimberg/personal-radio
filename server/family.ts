@@ -79,6 +79,18 @@ export class FamilyStore {
     return row ? { itemId: row.item_id, title: row.title } : null;
   }
 
+  /** Profile picture versions by owner ID (only members who have one). */
+  async avatars(): Promise<Map<string, string>> {
+    return new Map((await this.db.prepare('SELECT owner_id, version FROM family_avatars').all<{ owner_id: string; version: string }>()).results
+      .map(row => [row.owner_id, row.version]));
+  }
+
+  async setAvatar(owner: string, version: string | null) {
+    if (version === null) await this.db.prepare('DELETE FROM family_avatars WHERE owner_id = ?').bind(owner).run();
+    else await this.db.prepare(`INSERT INTO family_avatars (owner_id, version) VALUES (?, ?) ON CONFLICT(owner_id) DO UPDATE SET version = excluded.version`)
+      .bind(owner, version).run();
+  }
+
   async addGreeting(sender: string, recipient: string, text: string, now: Date) {
     await this.db.prepare('INSERT INTO family_greetings (sender, recipient, text, created_at) VALUES (?, ?, ?, ?)').bind(sender, recipient, text, now.toISOString()).run();
   }
@@ -101,6 +113,17 @@ export function messageLine(message: FamilyMessage, members: Member[]): string {
   if (message.kind === 'greeting') return `${name(message.sender)} grüsst ${name(message.recipient)}: «${message.text}»`;
   return `${name(message.sender)}: ${message.text}`;
 }
+
+/** A profile picture as the app sends it: a small JPEG or PNG, base64. Null when it is anything else. */
+export function avatarImage(value: unknown): { bytes: Uint8Array; contentType: string } | null {
+  if (typeof value !== 'string' || value.length < 100 || value.length > 400_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  const bytes = Uint8Array.from(atob(value), char => char.charCodeAt(0));
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { bytes, contentType: 'image/jpeg' };
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return { bytes, contentType: 'image/png' };
+  return null;
+}
+
+export const avatarKey = (member: Member) => `avatars/${member.key}`;
 
 /** Something to copy: produced, with its audio still kept. */
 const SHAREABLE = ['ready', 'played', 'skipped', 'archived'];

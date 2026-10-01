@@ -26,7 +26,7 @@ import { meteredFetch, usageSummary } from './usage.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
 import { allOwners, forKids, isKids, parseListeners } from './listeners.ts';
-import { FamilyStore, copyItem, familyMembers, mayCopyInto, messageLine } from './family.ts';
+import { FamilyStore, avatarImage, avatarKey, copyItem, familyMembers, mayCopyInto, messageLine } from './family.ts';
 import type { AudioObjects, Member } from './family.ts';
 
 const identAudio: Array<Uint8Array | undefined> = [];
@@ -214,14 +214,44 @@ async function familyRoutes(request: Request, env: Environment, owner: string, u
   if (!me) return json({ error: 'not_found' }, 404);
   const family = new FamilyStore(env.DB), store = new StationStore(env.DB), now = new Date();
   const nameOf = (id: string | null) => members.find(member => member.owner === id);
+  // Profile pictures: anyone in the family sees them; each member sets or removes only their own.
+  const avatarMatch = url.pathname.match(/^\/api\/family\/avatar\/([a-z0-9._-]{1,40})$/);
+  if (avatarMatch) {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const member = members.find(item => item.key === avatarMatch[1]);
+    const object = member ? await env.AUDIO.get(avatarKey(member)) : null;
+    if (!object) return json({ error: 'not_found' }, 404);
+    // The URL carries the version, so the picture can be cached until it changes.
+    return new Response(object.body, { headers: { 'Content-Type': (object as { httpMetadata?: { contentType?: string } }).httpMetadata?.contentType ?? 'image/jpeg',
+      'Content-Length': String(object.size), 'Cache-Control': 'private, max-age=31536000, immutable' } });
+  }
+  if (url.pathname === '/api/family/avatar') {
+    if (request.method !== 'PUT' && request.method !== 'DELETE') return json({ error: 'method_not_allowed' }, 405);
+    if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+    if (request.method === 'DELETE') {
+      await env.AUDIO.delete(avatarKey(me));
+      await family.setAvatar(owner, null);
+      return json({ removed: true }, 200);
+    }
+    const body = await readJson(request, 420_000);
+    if (body.error) return body.error;
+    const image = avatarImage((body.value as { image?: unknown } | undefined)?.image);
+    if (!image) return json({ error: 'invalid_image', detail: 'Bild als JPEG oder PNG, höchstens etwa 300 KB' }, 400);
+    await env.AUDIO.put(avatarKey(me), image.bytes, { httpMetadata: { contentType: image.contentType } });
+    const version = String(now.getTime());
+    await family.setAvatar(owner, version);
+    return json({ avatarUrl: `api/family/avatar/${me.key}?v=${version}` }, 200);
+  }
   if (url.pathname === '/api/family') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
-    const messages = await family.messages();
+    const [messages, avatars] = await Promise.all([family.messages(), family.avatars()]);
     return json({
       me: me.key,
       members: await Promise.all(members.map(async member => {
         const [playing, seen] = await Promise.all([family.presence(member.owner, now), store.lastSeen(member.owner)]);
+        const avatar = avatars.get(member.owner);
         return { key: member.key, name: member.name, kids: member.kids, me: member.key === me.key,
+          ...(avatar ? { avatarUrl: `api/family/avatar/${member.key}?v=${avatar}` } : {}),
           ...(playing ? { nowPlaying: playing.title } : {}), ...(seen ? { lastSeen: seen.toISOString() } : {}) };
       })),
       messages: messages.map(message => ({ id: message.id, from: nameOf(message.sender)?.key ?? '', fromName: nameOf(message.sender)?.name ?? 'Unbekannt',

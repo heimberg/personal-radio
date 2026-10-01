@@ -88,6 +88,9 @@ class RadioState {
     var familySending by mutableStateOf(false)
     /** The member a greeting is being written for. */
     var greetFor by mutableStateOf<FamilyMember?>(null)
+    /** The choices for one's own profile picture; uploading it. */
+    var avatarMenuOpen by mutableStateOf(false)
+    var avatarBusy by mutableStateOf(false)
 
     // «Heute» and the day plan.
     var mood by mutableStateOf<String?>(null)
@@ -185,6 +188,12 @@ interface RadioActions {
     fun greet(member: FamilyMember, text: String)
     fun listenAlong(member: FamilyMember)
     fun share(item: TimelineItem, member: FamilyMember)
+    /** Profile picture: from the gallery, from the camera, or none. */
+    fun chooseAvatar()
+    fun takeAvatar()
+    fun removeAvatar()
+    /** A picture on the Worker (a profile picture), as Coil loads it: with the connection's headers. */
+    fun workerImage(path: String): Any
     fun shuffle()
     fun addSong()
     fun plan()

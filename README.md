@@ -201,7 +201,7 @@ Each further listener gets their own service token and their own station (progra
 - «Auch hören», which puts what another member hears into your own program;
 - greetings the host reads in the other person's next live transition (and that also appear in the chat).
 
-New messages show a badge and a notification. A child's station only takes what the owner shares, and a child cannot listen along to other stations. The family sees member names only; set `OWNER_NAME` to change yours.
+Everyone can set a profile picture (a tap on one's own circle: from the gallery or the camera; the app sends a 256-px square). New messages show a badge and a notification. A child's station only takes what the owner shares, and a child cannot listen along to other stations. The family sees member names only; set `OWNER_NAME` to change yours.
 
 A `:kids` station follows fixed rules for an 11-year-old in every script, research brief and agent (age-appropriate language, no violence, sexuality, drugs or horror, difficult news only gently), and never plays tracks Spotify marks as explicit. The rules are added in production only, so they cannot be edited away in the studio. Removing the entry from `LISTENERS` (or the token in Access) ends the access; the station's data stays until you delete it.
 
