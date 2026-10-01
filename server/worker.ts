@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { SegmentPipeline, PipelineError, type CharacterBudgetStore } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, GEMINI_VOICES, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, GEMINI_VOICES, MistralSpeechSynthesizer, ProviderError, VoiceRouter, pcmToWav } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
 import type { TextGenerator } from '../src/domain/program.ts';
@@ -315,6 +315,9 @@ async function familyRoutes(request: Request, env: Environment, owner: string, u
     default: return json({ error: 'not_found' }, 404);
   }
 }
+
+/** Where Google's sample of an own voice is kept. */
+const voiceSampleKey = (voiceId: string) => `sounds/voice-sample-${voiceId}`;
 
 const pipelines = new WeakMap<object, SegmentPipeline>();
 
@@ -918,7 +921,14 @@ export default {
         const voiced = await pipelineFor(env).voice(owner, { title: 'Hörprobe', text, sourceIds: [] }, 'brief', voice, style || undefined);
         await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
         return new Response(voiced.audio as BodyInit, { headers: { 'Content-Type': voiced.contentType, 'Content-Length': String(voiced.audio.byteLength), 'Cache-Control': 'private, max-age=86400' } });
-      } catch (error) { return json({ error: 'voice_failed' }, statusFor(error)); }
+      } catch (error) {
+        // A designed voice still has Google's sample; otherwise the reason goes back to the studio.
+        const fallback = await env.AUDIO.get(voiceSampleKey(voice));
+        if (fallback) return new Response(fallback.body, { headers: { 'Content-Type': (fallback as { httpMetadata?: { contentType?: string } }).httpMetadata?.contentType ?? 'audio/wav',
+          'Content-Length': String(fallback.size), 'Cache-Control': 'no-store', 'X-Voice-Sample': 'google' } });
+        console.error('voice preview failed', error instanceof Error ? error.message.slice(0, 200) : 'unknown');
+        return json({ error: 'voice_failed', detail: (error instanceof Error ? error.message : 'unbekannt').replace(/\s+/g, ' ').slice(0, 200) }, statusFor(error));
+      }
     }
     // All voices for the studio: the prebuilt Gemini voices, own (designed or cloned) and German library voices, then Mistral.
     if (url.pathname === '/api/voices') {
@@ -961,7 +971,16 @@ export default {
         const voice = action === 'design'
           ? await catalog.design({ name, description: String(input.description).trim().slice(0, 600), ...(input.gender ? { gender: input.gender as 'female' | 'male' } : {}) })
           : await catalog.replicate({ name, source: input.source as string, consent: input.consent as string });
-        return json({ voice }, 200);
+        // Google's own sample of a new voice is kept: the studio plays it when a sample of ours cannot be made.
+        const { sample, ...listed } = voice;
+        if (sample) {
+          const bytes = Uint8Array.from(atob(sample.data), char => char.charCodeAt(0));
+          // Raw PCM (audio/L16) becomes a WAV file, so every player can play it.
+          const raw = /L16|pcm/i.test(sample.mimeType) && String.fromCharCode(...bytes.subarray(0, 4)) !== 'RIFF';
+          await env.AUDIO.put(voiceSampleKey(voice.id), raw ? pcmToWav(bytes, Number(/rate=(\d+)/.exec(sample.mimeType)?.[1]) || 24_000) : bytes,
+            { httpMetadata: { contentType: raw ? 'audio/wav' : sample.mimeType.split(';')[0] } });
+        }
+        return json({ voice: listed }, 200);
       } catch (error) { return json({ error: 'voice_failed', detail: error instanceof Error ? error.message.slice(0, 200) : undefined }, statusFor(error)); }
     }
     if (url.pathname === '/api/mistral-voices') {

@@ -66,10 +66,10 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
         val message = state.message ?: return@LaunchedEffect
         val long = message.text.length > LONG_MESSAGE
         val result = snackbar.showSnackbar(
-            message.text, actionLabel = if (long) "Details" else null,
-            duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short,
+            message.text, actionLabel = message.action ?: if (long) "Details" else null,
+            duration = if (long && message.action == null) SnackbarDuration.Long else SnackbarDuration.Short,
         )
-        if (result == SnackbarResult.ActionPerformed) state.detail = message.text
+        if (result == SnackbarResult.ActionPerformed) message.onAction?.invoke() ?: run { state.detail = message.text }
     }
     // Back goes through the web studio's pages back to the native studio, then to «Hören»; from there it leaves the app.
     BackHandler(enabled = state.tab != Tab.LISTEN) {

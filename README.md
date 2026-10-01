@@ -25,7 +25,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
 - Music plays in the Spotify app (App Remote); the app hands over between speech and songs.
 - Tabs Hören, Programm, Archiv, Studio – and «Familie» when more people listen (chat, sharing, greetings on air) – with a mini player; the program as «Jetzt · Gleich · Später».
-- «Anders» swaps the next item for something different; swipe to remove, long press to move or play next.
+- «Anders» swaps the next item for something different; swipe to remove (with «Rückgängig» for a few seconds), long press to move or play next.
 - 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, archive, sleep timer, transcript with sources.
 - In-app updates from your own Worker.
 

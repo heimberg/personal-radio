@@ -48,6 +48,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/** How long «Rückgängig» can bring back an item taken out of the program (the snackbar shows about four seconds). */
+private const val UNDO_MS = 5_000L
+
 /**
  * The app's one screen: «Hören», «Programm», «Archiv» and «Studio» in Compose. This activity connects
  * them to the playback service (Media3) and the private Worker; the screens only read [state].
@@ -362,13 +365,24 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
     override fun remove(item: TimelineItem) {
         if (!removing.add(item.id)) return
-        // The row leaves right away; the next refresh brings it back if the server refused.
+        // The row leaves right away, but the server only takes it out after a few seconds without
+        // «Rückgängig»: until then it keeps its place and its audio.
+        val before = state.open
         state.open = state.open.filter { it.id != item.id }
-        lifecycleScope.launch {
+        renderTimes()
+        val pending = lifecycleScope.launch {
+            delay(UNDO_MS)
             val result = runCatching { api.remove(item.id) }
-            state.say(result.fold({ "«${item.displayTitle}» ist aus dem Programm." }, { it.message ?: getString(R.string.connection_failed) }))
+            result.exceptionOrNull()?.let { state.say(it.message ?: getString(R.string.connection_failed)) }
             removing.remove(item.id)
             changed()
+        }
+        state.say("«${item.displayTitle}» ist aus dem Programm.", "Rückgängig") {
+            pending.cancel()
+            removing.remove(item.id)
+            state.open = before
+            renderTimes()
+            lifecycleScope.launch { changed() }
         }
     }
 
@@ -692,15 +706,26 @@ class MainActivity : AppCompatActivity(), RadioActions {
         // The radio pauses for the sample and goes on afterwards.
         resumeAfterSample = controller?.isPlaying == true
         controller?.pause()
-        sample = android.media.MediaPlayer().apply {
-            setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            setOnPreparedListener { it.start() }
-            setOnCompletionListener { stopSample() }
-            setOnErrorListener { _, _, _ -> state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample(); true }
-            runCatching {
-                setDataSource(this@MainActivity, android.net.Uri.parse(api.previewUrl(voiceId, style)), api.headers())
-                prepareAsync()
-            }.onFailure { state.say("Die Hörprobe ist gerade nicht verfügbar."); stopSample() }
+        // The sample is fetched first (a new voice can take a while), so a refusal shows its reason.
+        lifecycleScope.launch {
+            val file = java.io.File(cacheDir, "voice-sample")
+            val loaded = withContext(Dispatchers.IO) { runCatching { api.download(api.previewPath(voiceId, style), file) } }
+            if (state.previewing != voiceId) return@launch
+            loaded.exceptionOrNull()?.let { error ->
+                state.say(error.message ?: "Die Hörprobe ist gerade nicht verfügbar.")
+                stopSample()
+                return@launch
+            }
+            sample = android.media.MediaPlayer().apply {
+                setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { stopSample() }
+                setOnErrorListener { _, _, _ -> state.say("Die Hörprobe lässt sich nicht abspielen."); stopSample(); true }
+                runCatching {
+                    setDataSource(file.path)
+                    prepareAsync()
+                }.onFailure { state.say("Die Hörprobe lässt sich nicht abspielen."); stopSample() }
+            }
         }
     }
 

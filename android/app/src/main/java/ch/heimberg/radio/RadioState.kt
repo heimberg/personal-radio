@@ -41,7 +41,7 @@ enum class Phase(val icon: String, val label: String) {
 }
 
 /** A short message for the snackbar; the counter lets the same text show twice. */
-data class Message(val text: String, val id: Int)
+data class Message(val text: String, val id: Int, val action: String? = null, val onAction: (() -> Unit)? = null)
 
 /** Everything the screens show. The activity writes it; Compose redraws what changed. */
 class RadioState {
@@ -160,6 +160,11 @@ class RadioState {
     fun say(text: String) {
         if (text.isBlank()) return
         message = Message(text, ++messages)
+    }
+
+    /** A message with one action, e.g. «Rückgängig». */
+    fun say(text: String, action: String, onAction: () -> Unit) {
+        message = Message(text, ++messages, action, onAction)
     }
 }
 

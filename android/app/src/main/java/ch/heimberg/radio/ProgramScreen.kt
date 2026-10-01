@@ -96,7 +96,7 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             if (state.open.size > 1) {
                 item(key = "hint") {
                     Text(
-                        "Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen",
+                        "Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen (rückgängig machbar)",
                         style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(20.dp),
                     )
                 }

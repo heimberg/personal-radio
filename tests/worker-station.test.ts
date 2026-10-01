@@ -221,9 +221,11 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     if (url.endsWith('/cdn-cgi/access/certs')) return Response.json({ keys: [jwk] });
     if (url.includes('generativelanguage.googleapis.com/v1beta/voices')) {
       calls.push(`voices ${init?.method ?? 'GET'}`);
-      if (init?.method === 'POST') return Response.json({ id: 'voice_designed1' });
+      if (init?.method === 'POST') return Response.json({ id: 'voice_designed1', sample_audio: { data: Buffer.from(new Uint8Array(480).fill(1)).toString('base64'), mime_type: 'audio/L16;codec=pcm;rate=24000' } });
       return Response.json({ voices: new URL(url).searchParams.get('type') === 'prompted' ? [{ id: 'voice_designed1', display_name: 'Studio-Mira' }] : [] });
     }
+    // Speaking with the new own voice fails at Google (e.g. not ready yet).
+    if (url.endsWith('/v1beta/interactions')) { calls.push('interaction'); return Response.json({ error: { message: 'Voice voice_designed1 is not ready' } }, { status: 400 }); }
     if (url.includes('generativelanguage.googleapis.com')) {
       const body = JSON.parse(String(init?.body));
       const system = body.systemInstruction.parts[0].text as string;
@@ -282,6 +284,14 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.ok(voices.some(voice => voice.id === 'gemini_Kore' && voice.group === 'standard'));
     const designed = await call('/api/voices/design', { method: 'POST', body: JSON.stringify({ name: 'Mira', description: 'warme, ruhige Moderatorin' }) });
     assert.deepEqual(await designed.json(), { voice: { id: 'gemini_voice_designed1', name: 'Mira', group: 'own' } });
+    // Google's sample of the new voice is kept and plays when a sample of ours cannot be made.
+    const sample = await call('/api/voices/preview?voice=gemini_voice_designed1');
+    assert.equal(sample.status, 200); assert.equal(sample.headers.get('X-Voice-Sample'), 'google'); assert.equal(sample.headers.get('Content-Type'), 'audio/wav');
+    assert.equal(new TextDecoder().decode((await sample.arrayBuffer()).slice(0, 4)), 'RIFF');
+    // Without such a sample the studio learns why.
+    const failed = await call('/api/voices/preview?voice=gemini_voice_other1');
+    assert.equal(failed.status, 502);
+    assert.match(((await failed.json()) as { detail: string }).detail, /not ready/);
     assert.equal((await call('/api/voices/design', { method: 'POST', body: JSON.stringify({ name: 'Mira', description: 'kurz' }) })).status, 400);
     assert.equal((await call('/api/voices/clone', { method: 'POST', body: JSON.stringify({ name: 'Ich' }) })).status, 400);
     assert.equal((await call('/api/voices/gemini_voice_designed1', { method: 'DELETE' })).status, 200);
