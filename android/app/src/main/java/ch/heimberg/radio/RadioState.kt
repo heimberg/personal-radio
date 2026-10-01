@@ -9,6 +9,8 @@ import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FailureSummary
+import ch.heimberg.radio.core.Family
+import ch.heimberg.radio.core.FamilyMember
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
@@ -25,6 +27,7 @@ enum class Tab(val label: String, val icon: Int) {
     LISTEN("Hören", R.drawable.ic_waveform),
     PROGRAM("Programm", R.drawable.ic_clock),
     ARCHIVE("Archiv", R.drawable.ic_archive),
+    FAMILY("Familie", R.drawable.ic_users),
     STUDIO("Studio", R.drawable.ic_sliders),
 }
 
@@ -76,6 +79,15 @@ class RadioState {
     var archive by mutableStateOf<List<TimelineItem>?>(null)
     var archiveNote by mutableStateOf("")
     var archiveRefreshing by mutableStateOf(false)
+
+    // «Familie»: shown once there are other listeners on the Worker.
+    var familyEnabled by mutableStateOf(false)
+    var family by mutableStateOf<Family?>(null)
+    var familyUnread by mutableIntStateOf(0)
+    var familyDraft by mutableStateOf("")
+    var familySending by mutableStateOf(false)
+    /** The member a greeting is being written for. */
+    var greetFor by mutableStateOf<FamilyMember?>(null)
 
     // «Heute» and the day plan.
     var mood by mutableStateOf<String?>(null)
@@ -166,6 +178,13 @@ interface RadioActions {
     fun chooseBlock(block: BlockView)
     fun addBlock(block: BlockView, subject: String)
     fun stopSeries(series: SeriesInfo)
+
+    /** «Familie»: loads members and chat (and marks it read while the tab is open). */
+    fun loadFamily()
+    fun sendMessage()
+    fun greet(member: FamilyMember, text: String)
+    fun listenAlong(member: FamilyMember)
+    fun share(item: TimelineItem, member: FamilyMember)
     fun shuffle()
     fun addSong()
     fun plan()

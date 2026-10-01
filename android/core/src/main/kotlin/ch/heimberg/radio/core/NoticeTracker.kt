@@ -5,18 +5,20 @@ import kotlinx.serialization.json.Json
 
 /**
  * Decides what is worth a notification between two program syncs: a long production (a music hour, a
- * music block) that has just become ready, and a production that has failed since the last sync. The
- * first sync only records the state, so opening the app does not report old news.
+ * music block) that has just become ready, a production that has failed since the last sync, and a new
+ * family message. The first sync only records the state, so opening the app does not report old news.
  */
 class NoticeTracker(saved: NoticeState = NoticeState()) {
-    data class Notices(val ready: List<TimelineItem>, val failure: FailureSummary?)
+    /** [message]: the newest unread family message, once (it is not repeated until a newer one arrives). */
+    data class Notices(val ready: List<TimelineItem>, val failure: FailureSummary?, val message: LatestMessage? = null)
 
     private val states = HashMap(saved.states)
     private var lastFailureAt: String? = saved.lastFailureAt
     private var started = saved.started
+    private var lastMessageId: Long = saved.lastMessageId
 
     /** What the tracker knows, so the player and the background check share it and report nothing twice. */
-    val state: NoticeState get() = NoticeState(HashMap(states), lastFailureAt, started)
+    val state: NoticeState get() = NoticeState(HashMap(states), lastFailureAt, started, lastMessageId)
 
     fun update(timeline: Timeline): Notices {
         val ready = if (!started) emptyList() else timeline.items.filter { item ->
@@ -24,11 +26,14 @@ class NoticeTracker(saved: NoticeState = NoticeState()) {
         }
         val failures = timeline.failures
         val failure = failures.takeIf { started && it.count > 0 && it.latestAt != null && it.latestAt != lastFailureAt }
+        val latest = timeline.family?.latest
+        val message = latest?.takeIf { started && it.id > lastMessageId }
         states.clear()
         timeline.items.forEach { states[it.id] = it.state }
         if (failures.latestAt != null) lastFailureAt = failures.latestAt
+        if (latest != null) lastMessageId = maxOf(lastMessageId, latest.id)
         started = true
-        return Notices(ready, failure)
+        return Notices(ready, failure, message)
     }
 
     companion object {
@@ -38,7 +43,7 @@ class NoticeTracker(saved: NoticeState = NoticeState()) {
 }
 
 @Serializable
-data class NoticeState(val states: Map<String, String> = emptyMap(), val lastFailureAt: String? = null, val started: Boolean = false) {
+data class NoticeState(val states: Map<String, String> = emptyMap(), val lastFailureAt: String? = null, val started: Boolean = false, val lastMessageId: Long = 0) {
     fun toJson(): String = json.encodeToString(serializer(), this)
 
     companion object {

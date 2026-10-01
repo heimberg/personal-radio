@@ -23,6 +23,7 @@ import androidx.media3.session.SessionToken
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.DayPlan
+import ch.heimberg.radio.core.FamilyMember
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Moods
@@ -393,6 +394,52 @@ class MainActivity : AppCompatActivity(), RadioActions {
         )
     }
 
+    override fun loadFamily() {
+        lifecycleScope.launch {
+            runCatching { api.family() }.onSuccess { family ->
+                state.family = family
+                // Seen while the tab is open: read.
+                val last = family.messages.lastOrNull()?.id
+                if (state.tab == Tab.FAMILY && last != null && family.unread > 0) {
+                    runCatching { api.markRead(last) }
+                    state.familyUnread = 0
+                } else state.familyUnread = family.unread
+            }
+        }
+    }
+
+    override fun sendMessage() {
+        val text = state.familyDraft.trim()
+        if (text.isEmpty() || state.familySending) return
+        state.familySending = true
+        lifecycleScope.launch {
+            runCatching { api.sendMessage(text) }
+                .onSuccess { state.familyDraft = "" }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            state.familySending = false
+            loadFamily()
+        }
+    }
+
+    override fun greet(member: FamilyMember, text: String) {
+        lifecycleScope.launch {
+            val result = runCatching { api.greet(member.key, text.trim()) }
+            state.say(result.fold({ "Der Gruss an ${member.name} kommt im nächsten Übergang im Radio." }, { it.message ?: getString(R.string.connection_failed) }))
+            loadFamily()
+        }
+    }
+
+    override fun listenAlong(member: FamilyMember) =
+        serverAction({ api.listenAlong(member.key) }, "«${member.nowPlaying ?: "Das"}» kommt gleich auch bei dir.")
+
+    override fun share(item: TimelineItem, member: FamilyMember) {
+        lifecycleScope.launch {
+            val result = runCatching { api.share(item.id, member.key) }
+            state.say(result.fold({ "Mit ${member.name} geteilt: kommt gleich in ${member.name}s Programm." }, { it.message ?: getString(R.string.connection_failed) }))
+            loadFamily()
+        }
+    }
+
     override fun stopSeries(series: SeriesInfo) = serverAction({ api.stopSeries(series.id) }, "«${series.title}» ist beendet.")
 
     override fun shuffle() = serverAction({ api.shuffle() }, "Programm gemischt.")
@@ -447,6 +494,10 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 state.spotifyNeeded = spotifyClientId != null && !RadioSettings(this).spotifyLinked
                 state.connectionError = null
                 state.failures = timeline.failures
+                state.familyEnabled = timeline.family != null
+                state.familyUnread = timeline.family?.unread ?: 0
+                // The share menu needs the members; the open tab keeps its chat current.
+                if (timeline.family != null && (state.family == null || (state.tab == Tab.FAMILY && state.familyUnread > 0))) loadFamily()
                 if (!moodSending) state.mood = timeline.mood?.id
                 // All open items: a new order always covers the whole program.
                 state.open = timeline.items.filter { it.isOpen && it.id !in removing }

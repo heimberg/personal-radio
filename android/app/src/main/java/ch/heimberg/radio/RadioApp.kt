@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,11 +96,15 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
             Column {
                 if (state.tab != Tab.LISTEN && state.hasMedia) MiniPlayer(state, actions)
                 NavigationBar(containerColor = Nocturne.surface, tonalElevation = 0.dp) {
-                    for (tab in Tab.entries) {
+                    // «Familie» appears once there are other listeners on the Worker.
+                    for (tab in Tab.entries.filter { it != Tab.FAMILY || state.familyEnabled }) {
                         NavigationBarItem(
                             selected = state.tab == tab,
                             onClick = { state.tab = tab },
-                            icon = { Icon(painterResource(tab.icon), null, Modifier.size(20.dp)) },
+                            icon = {
+                                val unread = if (tab == Tab.FAMILY) state.familyUnread else 0
+                                BadgedBox(badge = { if (unread > 0) Badge { Text("$unread") } }) { Icon(painterResource(tab.icon), null, Modifier.size(20.dp)) }
+                            },
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Nocturne.bg, selectedTextColor = Nocturne.accentLight,
@@ -114,6 +120,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
             Tab.LISTEN -> ListenScreen(state, actions, padding)
             Tab.PROGRAM -> if (state.dayPlanOpen) DayPlanScreen(state, actions, padding) else ProgramScreen(state, actions, padding)
             Tab.ARCHIVE -> ArchiveScreen(state, actions, padding)
+            Tab.FAMILY -> FamilyScreen(state, actions, padding)
             Tab.STUDIO -> StudioScreen(state, actions, studio, version, padding)
         }
     }
@@ -231,6 +238,10 @@ private fun ItemActions(item: TimelineItem, state: RadioState, actions: RadioAct
             add((if (item.surprise) "🎲  Andere Überraschung" else "🎲  Anders – eine Überraschung stattdessen") to { actions.swap(item) })
         }
         if (item.state != "planned") add("📄  Text und Quellen" to { actions.transcript(item) })
+        // Produced items can go to the family: a copy lands in their program.
+        if (item.state != "planned" && item.state != "voicing" && item.hasAudio) {
+            for (member in state.family?.shareTargets().orEmpty()) add("🎧  Teilen mit ${member.name}" to { actions.share(item, member) })
+        }
         if (item.isOpen && !playing) add("✕  Aus dem Programm nehmen" to { actions.remove(item) })
         if (!item.isOpen) add("🗑  Löschen" to { state.deleteAsk = item })
     }

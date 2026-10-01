@@ -23,8 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Notifications about the program while the player runs: a music hour or block is ready, or a
- * production failed – with "Erneut versuchen" right in the notification.
+ * Notifications about the program while the player runs: a music hour or block is ready, a production
+ * failed – with "Erneut versuchen" right in the notification – or a family member wrote or shared something.
  */
 class ProductionNotices(private val context: Context) {
     private val prefs = context.getSharedPreferences("notices", Context.MODE_PRIVATE)
@@ -42,6 +42,7 @@ class ProductionNotices(private val context: Context) {
         }
         notices.ready.forEach(::ready)
         notices.failure?.let(::failed)
+        notices.message?.let { notify(MESSAGE_ID, builder(context.getString(R.string.notice_family), it.line).setStyle(NotificationCompat.BigTextStyle().bigText(it.line)).build()) }
     }
 
     private fun ready(item: TimelineItem) {
@@ -76,6 +77,7 @@ class ProductionNotices(private val context: Context) {
         private const val KEY_STATE = "state"
         private val LOCK = Any()
         const val FAILURE_ID = 4201
+        const val MESSAGE_ID = 4202
     }
 }
 

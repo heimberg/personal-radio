@@ -271,7 +271,8 @@ private fun StateIcon(item: TimelineItem) {
 private fun meta(item: TimelineItem): String {
     val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · $it Songs" } ?: ""
     val surprise = if (item.surprise) " · 🎲" else ""
-    return "${item.showName} · ${Labels.state(item.state)}$tracks$surprise"
+    val shared = item.sharedBy?.let { " · von $it" } ?: ""
+    return "${item.showName} · ${Labels.state(item.state)}$tracks$surprise$shared"
 }
 
 /** The building blocks: one tap puts one at the end of the program. */
