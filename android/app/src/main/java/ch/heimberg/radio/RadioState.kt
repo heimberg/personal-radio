@@ -15,7 +15,11 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
 import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.Mitmachen
 import ch.heimberg.radio.core.Place
+import ch.heimberg.radio.core.PlaySummary
+import ch.heimberg.radio.core.Sticker
+import ch.heimberg.radio.core.StickerAlbum
 import ch.heimberg.radio.core.ProgramSections
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
@@ -92,6 +96,22 @@ class RadioState {
     var avatarMenuOpen by mutableStateOf(false)
     var avatarBusy by mutableStateOf(false)
 
+    // Mitmachen: choices, quizzes, stickers and questions to the radio.
+    /** Items heard recently (from the timeline), for a choice or quiz still waiting after they ended. */
+    var heard by mutableStateOf<List<TimelineItem>>(emptyList())
+    var play by mutableStateOf(PlaySummary())
+    /** The item whose choice or quiz is being sent. */
+    var playSending by mutableStateOf<String?>(null)
+    var askOpen by mutableStateOf(false)
+    var askDraft by mutableStateOf("")
+    var asking by mutableStateOf(false)
+    var album by mutableStateOf<StickerAlbum?>(null)
+    var albumOpen by mutableStateOf(false)
+    /** A sticker just earned: shown big, once. */
+    var newSticker by mutableStateOf<Sticker?>(null)
+    /** Starting a Mitmach-Geschichte from picture cards. */
+    var storyCardsFor by mutableStateOf<BlockView?>(null)
+
     // «Heute» and the day plan.
     var mood by mutableStateOf<String?>(null)
     var dayPlan by mutableStateOf<DayPlan?>(null)
@@ -150,6 +170,8 @@ class RadioState {
     val coverUrl: String? get() = artworkUrl ?: current?.coverUrl
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val readyCount: Int get() = open.count { it.isPlayable }
+    /** The choice or quiz to show on «Hören»: for what plays, else for something heard a little earlier. */
+    val mitmachen: TimelineItem? get() = Mitmachen.pending(current, heard, Instant.now())
 
     /** Music starts within the hour: only then is Spotify worth a note on «Hören». */
     val musicSoon: Boolean get() {
@@ -186,6 +208,13 @@ interface RadioActions {
     fun chooseBlock(block: BlockView)
     fun addBlock(block: BlockView, subject: String)
     fun stopSeries(series: SeriesInfo)
+
+    /** Mitmachen: how a story goes on, a quiz answer, the album, a question to the radio (typed or spoken). */
+    fun choose(item: TimelineItem, option: Int)
+    fun answer(item: TimelineItem, option: Int)
+    fun openAlbum()
+    fun ask()
+    fun dictate()
 
     /** «Familie»: loads members and chat (and marks it read while the tab is open). */
     fun loadFamily()

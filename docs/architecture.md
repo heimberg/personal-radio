@@ -236,6 +236,16 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
   - Pictures never go to an AI.
 - **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
 
+### Mitmachen
+
+Interactive features, above all for a child's station (`src/domain/play.ts`, `server/play.ts`, migration 0013).
+
+- **Mitmach-Geschichte** (block `mitmach`): a story series with `interactive` set. Before each episode but the last is written, the agent model plans a choice from the outline and the recaps (our own story, no listener data): a question and two ways with an emoji (`series.choices_json`, per episode, and in the item's `research_json` for the app). The writer ends the episode with that question. `POST /api/timeline/{id}/choice {option}` records the listener's pick and plans right away; the next episode gets «the listener chose …» in its instructions. The next episode waits for the choice; three hours after the episode was heard the narrator picks at random and says so. The app starts the story from picture cards (hero, place, kind, «I play along» with the listener's name) that become the subject.
+- **Quiz:** on a child's station, every checked spoken item of three minutes or more (not stories) gets a quiz question from the finished script (three answers, one right), spoken at its end by the host. `toView` sends the right answer only after `POST /api/timeline/{id}/quiz {option}` (one try).
+- **Stickers:** 50 emoji stickers (`STICKERS`, IDs stored and never changed). A right quiz answer, a story choice and, on a child's station, every episode heard to the end (feedback `complete`) earn one the listener does not have yet (`stickers` table). `GET /api/stickers` returns the album; `GET /api/timeline` carries `play: { stickers, kids, ask }`.
+- **Frag das Radio** (`POST /api/questions`, `GET /api/questions`): the question (200 characters) is stored in `radio_questions` and posted to the family chat as «❓ Frage ans Radio: …». The next live transition without a greeting answers it with the listener's first name (`question` in the linker facts, up to 140 words, honest when unsure, no cache), and stores the answer. Without live transitions the route answers 409. The app offers Android's speech recognition (`RecognizerIntent`) for typing by voice.
+- **What reaches the AI:** the child's own question with their first name, our own scripts and story outlines; never Spotify data. Kids' rules (`KIDS_RULES`) apply to the choice, the quiz and the answer.
+
 ### New releases, «Mehr dazu», station sound
 
 - **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). The moderation announces each release by artist and title as new (the owner's decision, 29.09.2026: these release names go to the AI and to speech synthesis); release dates and other metadata stay on the Worker.

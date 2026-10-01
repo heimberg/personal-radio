@@ -29,6 +29,12 @@ data class TimelineItem(
     val series: SeriesRef? = null,
     /** Shared by a family member: their name. */
     val sharedBy: String? = null,
+    /** Last change on the server (for heard items: when they were heard). */
+    val updatedAt: String? = null,
+    /** A Mitmach-Geschichte: how it may go on after this episode. */
+    val choice: StoryChoice? = null,
+    /** A quiz question about this item. */
+    val quiz: Quiz? = null,
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }
@@ -107,6 +113,8 @@ data class Timeline(
     val mood: StationMood? = null,
     /** Unread family messages; absent without other listeners. */
     val family: FamilySummary? = null,
+    /** Mitmachen: stickers, a child's station, questions to the radio. */
+    val play: PlaySummary = PlaySummary(),
 )
 
 /**

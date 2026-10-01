@@ -126,6 +126,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     }
     Dialogs(state, actions)
     DayPlanDialogs(state, actions)
+    MitmachenDialogs(state, actions)
 }
 
 /** What plays, on every tab but «Hören»; a tap opens the player. */

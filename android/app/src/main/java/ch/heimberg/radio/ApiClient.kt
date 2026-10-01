@@ -9,6 +9,9 @@ import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
+import ch.heimberg.radio.core.Mitmachen
+import ch.heimberg.radio.core.PlayResult
+import ch.heimberg.radio.core.StickerAlbum
 import ch.heimberg.radio.core.Place
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
@@ -195,6 +198,23 @@ class ApiClient(private val connection: Connection) {
 
     /** Retires failed productions and starts waiting ones again. */
     suspend fun retry() { withContext(Dispatchers.IO) { request("POST", "api/timeline/retry") } }
+
+    // ── Mitmachen ──────────────────────────────────────────────────────────────────────────────
+
+    /** Chooses how a Mitmach-Geschichte goes on ([option] 0 or 1). */
+    suspend fun choose(itemId: String, option: Int): PlayResult = withContext(Dispatchers.IO) {
+        Mitmachen.parseResult(request("POST", "api/timeline/$itemId/choice", JSONObject().put("option", option).toString()))
+    }
+
+    /** Answers an item's quiz question ([option] 0–2); once only. */
+    suspend fun answer(itemId: String, option: Int): PlayResult = withContext(Dispatchers.IO) {
+        Mitmachen.parseResult(request("POST", "api/timeline/$itemId/quiz", JSONObject().put("option", option).toString()))
+    }
+
+    suspend fun stickers(): StickerAlbum = withContext(Dispatchers.IO) { Mitmachen.parseAlbum(request("GET", "api/stickers")) }
+
+    /** «Frag das Radio»: the host answers it in the next live transition. */
+    suspend fun ask(text: String) { withContext(Dispatchers.IO) { request("POST", "api/questions", JSONObject().put("text", text).toString()) } }
 
     // ── Family ────────────────────────────────────────────────────────────────────────────────
 

@@ -16,6 +16,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
+- Mitmachen (above all for a child's station): a «Mitmach-Geschichte» started from picture cards ends every episode with a choice of two ways, chosen in the app; knowledge items on a child's station end with a quiz question (A/B/C); right answers, choices and episodes heard to the end fill a sticker album; «Frag das Radio» sends a question (typed or spoken) that the host answers in the next live transition.
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
 - Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.
 - Voices: 30 prebuilt Gemini voices, Google's German voice library, a voice designed from a description, or your own voice cloned in the app (with Google's spoken consent); lively delivery with vocal tags (`<laugh>`, `|mhm|`).
@@ -25,6 +26,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
 - Music plays in the Spotify app (App Remote); the app hands over between speech and songs.
 - Tabs Hören, Programm, Archiv, Studio – and «Familie» when more people listen (chat, sharing, greetings on air) – with a mini player; the program as «Jetzt · Gleich · Später».
+- On «Hören»: the story's choice or the quiz with big buttons, «Frag das Radio» (with speech input) and the sticker album.
 - «Anders» swaps the next item for something different; swipe to remove (with «Rückgängig» for a few seconds), long press to move or play next.
 - 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, archive, sleep timer, transcript with sources.
 - In-app updates from your own Worker.

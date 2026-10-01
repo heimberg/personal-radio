@@ -92,6 +92,13 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private val avatarCamera = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
         if (bitmap != null) uploadAvatar { bitmap }
     }
+    /** «Frag das Radio» by voice: Android's speech recognition turns it into text; nothing is recorded here. */
+    private val dictation = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spoken = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!spoken.isNullOrBlank()) state.askDraft = (state.askDraft.trim() + " " + spoken.trim()).trim().take(200)
+    }
+    /** Stickers known from the last timeline: more of them means one was earned (e.g. an episode heard to the end). */
+    private var stickersSeen = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -408,7 +415,85 @@ class MainActivity : AppCompatActivity(), RadioActions {
     /** One tap adds the block as the next item; a block that takes a word asks for it, empty lets the AI choose. */
     override fun chooseBlock(block: BlockView) {
         if (block.music && spotifyClientId != null && !RadioSettings(this).spotifyLinked) state.say(getString(R.string.block_needs_spotify))
-        if (block.input != null) state.blockAsk = block else addBlock(block, "")
+        when {
+            // A Mitmach-Geschichte starts from picture cards.
+            block.id == "mitmach" -> state.storyCardsFor = block
+            block.input != null -> state.blockAsk = block
+            else -> addBlock(block, "")
+        }
+    }
+
+    override fun choose(item: TimelineItem, option: Int) {
+        if (state.playSending != null) return
+        state.playSending = item.id
+        window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        lifecycleScope.launch {
+            runCatching { api.choose(item.id, option) }
+                .onSuccess { result ->
+                    val label = item.choice?.options?.getOrNull(option)?.let { "${it.emoji} ${it.label}" } ?: ""
+                    state.say("Du hast gewählt: $label. So geht die Geschichte weiter!")
+                    earned(result.sticker)
+                }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            state.playSending = null
+            changed()
+        }
+    }
+
+    override fun answer(item: TimelineItem, option: Int) {
+        if (state.playSending != null) return
+        state.playSending = item.id
+        lifecycleScope.launch {
+            runCatching { api.answer(item.id, option) }
+                .onSuccess { result ->
+                    val right = result.correct?.let { item.quiz?.options?.getOrNull(it) }
+                    if (result.right == true) window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                    state.say(if (result.right == true) "Richtig! 🎉" else "Knapp daneben – richtig ist ${right?.let { "«$it»" } ?: "eine andere Antwort"}.")
+                    earned(result.sticker)
+                }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            state.playSending = null
+            changed()
+        }
+    }
+
+    /** A new sticker: shown big, and the album is loaded again when it is opened. */
+    private fun earned(sticker: ch.heimberg.radio.core.Sticker?) {
+        if (sticker == null) return
+        state.newSticker = sticker
+        state.album = null
+        stickersSeen += 1
+    }
+
+    override fun openAlbum() {
+        state.albumOpen = true
+        lifecycleScope.launch {
+            runCatching { api.stickers() }.onSuccess { state.album = it }.onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    override fun ask() {
+        val text = state.askDraft.trim()
+        if (text.length < 3 || state.asking) return
+        state.asking = true
+        lifecycleScope.launch {
+            runCatching { api.ask(text) }
+                .onSuccess {
+                    state.askDraft = ""
+                    state.askOpen = false
+                    state.say("Deine Frage ist im Studio – die Antwort kommt im nächsten Übergang.")
+                }
+                .onFailure { state.say(if (it is ApiException && it.status == 409) "Das Radio hat gerade keine Übergänge eingeschaltet, also kann niemand antworten." else it.message ?: getString(R.string.connection_failed)) }
+            state.asking = false
+        }
+    }
+
+    override fun dictate() {
+        val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "de-CH")
+            .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Was möchtest du das Radio fragen?")
+        runCatching { dictation.launch(intent) }.onFailure { state.say("Auf diesem Gerät gibt es keine Spracheingabe – tipp die Frage einfach ein.") }
     }
 
     override fun addBlock(block: BlockView, subject: String) {
@@ -558,6 +643,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 if (!moodSending) state.mood = timeline.mood?.id
                 // All open items: a new order always covers the whole program.
                 state.open = timeline.items.filter { it.isOpen && it.id !in removing }
+                state.heard = timeline.items.filter { it.isHeard }
+                // More stickers than last time, without a choice or quiz here: earned elsewhere (an episode heard to the end).
+                if (stickersSeen >= 0 && timeline.play.stickers > stickersSeen) {
+                    state.say("⭐ Ein neuer Sticker ist in deinem Album!", "Ansehen") { openAlbum() }
+                    state.album = null
+                }
+                stickersSeen = timeline.play.stickers
+                state.play = timeline.play
                 state.loaded = true
                 renderTimes()
             }
