@@ -377,3 +377,52 @@ class SeriesTest {
         assertTrue(AccessDiagnosis.message(502, null, """{"error":"series_outline_failed"}""").contains("nochmals"))
     }
 }
+
+class FamilyTest {
+    private val body = """{"me":"tom","members":[
+        {"key":"owner","name":"Papa","nowPlaying":"Kernfusion erklärt","lastSeen":"2026-10-01T07:55:00Z"},
+        {"key":"lea","name":"Lea","kids":true,"lastSeen":"2026-09-28T20:00:00Z"},
+        {"key":"tom","name":"Tom","me":true}],
+      "messages":[{"id":1,"from":"owner","fromName":"Papa","kind":"text","text":"Hallo!","at":"2026-10-01T07:58:00Z"},
+        {"id":2,"from":"owner","fromName":"Papa","to":"lea","toName":"Lea","kind":"share","text":"Die Drachen-Saga","at":"2026-10-01T07:59:00Z"},
+        {"id":3,"from":"owner","fromName":"Papa","to":"lea","toName":"Lea","kind":"greeting","text":"Schlaf gut!","at":"2026-10-01T08:00:00Z"}],
+      "unread":2}"""
+
+    @Test fun membersStatusAndWhatCanBeShared() {
+        val family = Family.parse(body)
+        val now = java.time.Instant.parse("2026-10-01T08:00:00Z")
+        assertEquals(listOf("Papa", "Lea"), family.others.map { it.name })
+        assertEquals("hört gerade «Kernfusion erklärt»", family.members[0].status(now))
+        assertEquals("zuletzt aktiv vor 2 Tagen", family.members[1].status(now))
+        assertEquals("noch nie zugehört", family.members[2].status(now))
+        // Tom is not the owner: Lea's station only takes what Papa shares.
+        assertEquals(listOf("owner"), family.shareTargets().map { it.key })
+        assertTrue(family.canListenAlong(family.members[0]))
+        assertFalse(family.canListenAlong(family.members[1]))
+        assertEquals(listOf("Lea"), family.copy(me = "owner", members = family.members.map { it.copy(me = it.key == "owner") }).shareTargets().map { it.name }.filter { it == "Lea" })
+        val asLea = family.copy(me = "lea", members = family.members.map { it.copy(me = it.key == "lea") })
+        assertFalse(asLea.canListenAlong(asLea.members[0])) // a child takes nothing from others
+    }
+
+    @Test fun messagesReadAsWhatHappened() {
+        val messages = Family.parse(body).messages
+        assertEquals(listOf("Hallo!", "hat «Die Drachen-Saga» mit Lea geteilt", "grüsst Lea im Radio: «Schlaf gut!»"), messages.map { it.line })
+        assertEquals(listOf("", "🎧", "💌"), messages.map { it.icon })
+        val now = java.time.Instant.parse("2026-10-01T08:00:00Z")
+        assertEquals("gerade eben", ago(now.minusSeconds(30), now))
+        assertEquals("vor 5 Min.", ago(now.minusSeconds(300), now))
+        assertEquals("vor 3 Std.", ago(now.minusSeconds(3 * 3600), now))
+        assertEquals("gestern", ago(now.minusSeconds(30 * 3600), now))
+    }
+
+    @Test fun aNewFamilyMessageIsNotifiedOnce() {
+        val timeline = { id: Long? -> TimelineJson.parseResponse("""{"items":[]${id?.let { ""","family":{"unread":1,"latest":{"id":$it,"line":"Papa: Hallo!"}}""" } ?: ""}}""") }
+        val tracker = NoticeTracker()
+        assertEquals(null, tracker.update(timeline(5)).message) // the first sync only records
+        assertEquals(null, tracker.update(timeline(5)).message)
+        assertEquals("Papa: Hallo!", tracker.update(timeline(6)).message?.line)
+        assertEquals(null, NoticeTracker(tracker.state).update(timeline(6)).message) // shared state: not twice
+        assertEquals(null, tracker.update(timeline(null)).message)
+        assertEquals(null, TimelineJson.parseResponse("""{"items":[]}""").family)
+    }
+}

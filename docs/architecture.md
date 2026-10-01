@@ -222,6 +222,16 @@ A series tells one subject over several episodes (`src/domain/series.ts`, table 
 - **Next episode.** While someone listens, the planner adds the next episode right behind the coming item once the previous one left the program heard (played, skipped or archived). An episode removed or expired unheard comes again; a failed one waits for its retry. After the last episode the series is `done`.
 - **Ending.** `GET /api/series` lists the series; `POST /api/series/{id}/stop` ends one and takes its open episode out of the program. In the app, «Programm» lists running series with «Beenden». Series are not offered in the day plan.
 
+### Family
+
+Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms the family (`server/family.ts`, migration 0011). The API names members by `owner` or their listener name and shows names only, never the owner's email. The owner's name is `OWNER_NAME`, default «Papa».
+
+- **Chat:** `family_messages` keeps the last thousand messages. `family_reads` keeps each member's last read message. `GET /api/timeline` carries `family: { unread, latest }` for the badge and the notification.
+- **Sharing** (`POST /api/family/share`): copies a produced item (script, sources, every audio object under a new key) into the recipient's program, right behind the item that plays next there. It is marked with `sharedBy`, and nothing is produced again. A chat message records it.
+- **Listening along** (`POST /api/family/listen`): the same copy, of what another member hears now. «What they hear» is reported by the app once per item (`POST /api/family/presence`) and lasts as long as the item.
+- **Greetings** (`POST /api/family/greet`) are read in the recipient's next live transition: the linker adds them to its facts, skips the cache and marks them aired. Without live transitions they stay in the chat.
+- **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
+
 ### New releases, «Mehr dazu», station sound
 
 - **«Neu von deinen Künstlern».** A music-block group can take the new albums and singles (last 60 days) of the owner's top artists from the listening profile: the Worker finds each artist on Spotify by exact name, lists their releases and plays the first track of each, newest first (`SpotifyCatalog.newReleases`). The moderation announces each release by artist and title as new (the owner's decision, 29.09.2026: these release names go to the AI and to speech synthesis); release dates and other metadata stay on the Worker.

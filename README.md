@@ -24,7 +24,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 **Listening (Android)**
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
 - Music plays in the Spotify app (App Remote); the app hands over between speech and songs.
-- Four tabs – Hören, Programm, Archiv, Studio – with a mini player; the program as «Jetzt · Gleich · Später».
+- Tabs Hören, Programm, Archiv, Studio – and «Familie» when more people listen (chat, sharing, greetings on air) – with a mini player; the program as «Jetzt · Gleich · Später».
 - «Anders» swaps the next item for something different; swipe to remove, long press to move or play next.
 - 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, archive, sleep timer, transcript with sources.
 - In-app updates from your own Worker.
@@ -138,6 +138,7 @@ Worker → **Settings → Variables and Secrets**, type *Secret* (or `npx wrangl
 | `GEMINI_API_KEY` | yes | your Gemini API key |
 | `ACCESS_SERVICE_TOKEN_ID` | for the app | see step 8 |
 | `LISTENERS` | optional | further listeners with their own station, see step 11 |
+| `OWNER_NAME` | optional | how the family tab names you (default «Papa»), see step 11 |
 | `SPOTIFY_CLIENT_SECRET` | for music | see step 6 |
 | `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL` | no | an OpenAI-compatible endpoint; when all three are set it verifies facts as an independent second model |
 | `MISTRAL_API_KEY` | no | enables Mistral voices in addition to the Gemini voices |
@@ -192,6 +193,15 @@ Each further listener gets their own service token and their own station (progra
 2. Add the token to the **Service Auth** policy of the Worker's Access application (the same policy as the app's token).
 3. Set the Worker secret `LISTENERS` to `<Client ID>=<name>` – for a child `<Client ID>=<name>:kids`. Several listeners are separated by `;`, e.g. `ab12.access=lea:kids; cd34.access=tom`. Then run the deploy workflow again (or save the secret in the dashboard).
 4. Install the APK on their phone and enter the Worker address with *their* Client ID and Secret. The app shows «noch nicht eingerichtet»: set up the station in the studio. Spotify needs their own account on their phone.
+
+**Family.** As soon as `LISTENERS` has an entry, the app gets a tab «Familie» for everyone on the Worker:
+- who is there and what they hear right now;
+- a chat;
+- sharing a produced item into another member's program (a copy with its audio, nothing is produced again);
+- «Auch hören», which puts what another member hears into your own program;
+- greetings the host reads in the other person's next live transition (and that also appear in the chat).
+
+New messages show a badge and a notification. A child's station only takes what the owner shares, and a child cannot listen along to other stations. The family sees member names only; set `OWNER_NAME` to change yours.
 
 A `:kids` station follows fixed rules for an 11-year-old in every script, research brief and agent (age-appropriate language, no violence, sexuality, drugs or horror, difficult news only gently), and never plays tracks Spotify marks as explicit. The rules are added in production only, so they cannot be edited away in the studio. Removing the entry from `LISTENERS` (or the token in Access) ends the access; the station's data stays until you delete it.
 

@@ -935,10 +935,14 @@ async function scheduleEpisode(deps: StationDeps, owner: string, series: Series,
   const ref: EpisodeRef = { series: series.id, episode: index, total: series.episodes.length, seriesTitle: series.title, kind: series.kind };
   await deps.store.update(owner, id, { research_json: JSON.stringify(ref) }, now);
   await deps.store.updateSeries(owner, series.id, { scheduled: Math.max(series.scheduled, index + 1) }, now);
-  // Soon, but with time to produce: behind the item that plays next.
-  const open = (await deps.store.openItems(owner)).filter(item => item.id !== id);
-  await placeAfter(deps, owner, id, after ?? open[Math.min(1, open.length - 1)]?.id);
+  if (after) await placeAfter(deps, owner, id, after); else await placeSoon(deps, owner, id);
   return id;
+}
+
+/** Soon, but with time to produce: behind the item that plays next (or first, when nothing is open). */
+export async function placeSoon(deps: Pick<StationDeps, 'store' | 'now'>, owner: string, id: string) {
+  const open = (await deps.store.openItems(owner)).filter(item => item.id !== id);
+  await placeAfter(deps as StationDeps, owner, id, open[Math.min(1, open.length - 1)]?.id);
 }
 
 /** What an episode said, kept for the «previously on» of the next ones. */
@@ -1096,13 +1100,15 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { sources = JSON.parse(row.sources_json ?? '[]'); } catch { /* Keep the item visible without sources. */ }
   let queries: string[] = [];
   let team: TimelineItemView['team'];
-  try { ({ queries = [], team } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team'] }); } catch { /* Research details are optional. */ }
+  let sharedBy: string | undefined, sharedShow: string | undefined;
+  try { ({ queries = [], team, sharedBy, sharedShow } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team']; sharedBy?: string; sharedShow?: string }); } catch { /* Research details are optional. */ }
   const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
   // The plan of a story is how it is written, not a source to list.
   sources = sources.filter(source => source.id !== OUTLINE_SOURCE_ID);
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
-    showName: episode ? `${episode.seriesTitle} · Folge ${episode.episode + 1}/${episode.total}` : showNameOf(row.show_id, config),
+    showName: episode ? `${episode.seriesTitle} · Folge ${episode.episode + 1}/${episode.total}` : sharedShow ?? showNameOf(row.show_id, config),
+    ...(typeof sharedBy === 'string' ? { sharedBy } : {}),
     ...(episode ? { series: { id: episode.series, episode: episode.episode + 1, total: episode.total, kind: episode.kind } } : {}),
     ...(isSurprise(row.show_id) ? { surprise: true } : {}),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,

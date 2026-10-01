@@ -26,6 +26,8 @@ import { meteredFetch, usageSummary } from './usage.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
 import { allOwners, forKids, isKids, parseListeners } from './listeners.ts';
+import { FamilyStore, copyItem, familyMembers, mayCopyInto, messageLine } from './family.ts';
+import type { AudioObjects, Member } from './family.ts';
 
 const identAudio: Array<Uint8Array | undefined> = [];
 let signalAudio: Uint8Array | undefined, newsAudio: Uint8Array | undefined;
@@ -76,6 +78,8 @@ interface Environment {
   GEMINI_TTS_LITE_MODEL?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
+  /** How the family tab names the owner (default «Papa»). */
+  OWNER_NAME?: string;
 }
 
 class D1CharacterBudget implements CharacterBudgetStore {
@@ -165,22 +169,120 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
     const [nextRow, before] = await Promise.all([store.getItem(owner, next), after ? store.getItem(owner, after) : Promise.resolve(null)]);
     if (!nextRow) return quiet();
     const now = new Date(), voice = `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}|${stationSounds(config).musicBed}`;
-    const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice);
+    // A family greeting waiting for this listener is read in this transition (and never comes from the cache).
+    const family = new FamilyStore(env.DB), greeting = await family.pendingGreeting(owner, now);
+    const from = greeting ? membersOf(env).find(member => member.owner === greeting.sender)?.name ?? 'der Familie' : '';
+    const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice + (greeting ? `|g${greeting.id}` : ''));
     for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
       const stored = await env.AUDIO.get(key + suffix);
       if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
     }
     await new D1LinkerCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_LINKERS) || 40));
-    const facts = linkerFacts(config, before, nextRow, showNameOf(nextRow.show_id, config), now);
-    const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music), facts, 'Gemini linker', 0.8));
+    const facts = { ...linkerFacts(config, before, nextRow, showNameOf(nextRow.show_id, config), now), ...(greeting ? { greeting: { from, text: greeting.text } } : {}) };
+    const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music, !!greeting), facts, 'Gemini linker', 0.8), greeting ? 640 : 320);
     if (!text) return quiet();
     const voiced = await pipelineFor(env).voice(owner, { title: 'Übergang', text, sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle,
       { reserve: false, bed: stationSounds(config).musicBed, lite: true });
     await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+    if (greeting) await family.markAired(greeting.id, now);
     return audio(voiced.audio, voiced.contentType);
   } catch (error) {
     console.error('linker failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown');
     return quiet();
+  }
+}
+
+/** Everyone on this Worker: the owner and the listeners. */
+const membersOf = (env: Environment): Member[] => familyMembers(env.ALLOWED_EMAIL ?? '', parseListeners(env.LISTENERS), env.OWNER_NAME);
+
+/** R2 objects as the family copy reads them. */
+const audioObjects = (env: Environment): AudioObjects => ({
+  get: async key => {
+    const object = await env.AUDIO.get(key);
+    return object ? { arrayBuffer: () => new Response(object.body).arrayBuffer(), httpMetadata: (object as { httpMetadata?: { contentType?: string } }).httpMetadata } : null;
+  },
+  put: (key, value, options) => env.AUDIO.put(key, value, options),
+});
+
+/**
+ * Family: who is there and what they hear, the chat, sharing an item into another member's program,
+ * listening along, and greetings the host reads on air.
+ */
+async function familyRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
+  if (!url.pathname.startsWith('/api/family')) return null;
+  const members = membersOf(env), me = members.find(member => member.owner === owner);
+  if (!me) return json({ error: 'not_found' }, 404);
+  const family = new FamilyStore(env.DB), store = new StationStore(env.DB), now = new Date();
+  const nameOf = (id: string | null) => members.find(member => member.owner === id);
+  if (url.pathname === '/api/family') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const messages = await family.messages();
+    return json({
+      me: me.key,
+      members: await Promise.all(members.map(async member => {
+        const [playing, seen] = await Promise.all([family.presence(member.owner, now), store.lastSeen(member.owner)]);
+        return { key: member.key, name: member.name, kids: member.kids, me: member.key === me.key,
+          ...(playing ? { nowPlaying: playing.title } : {}), ...(seen ? { lastSeen: seen.toISOString() } : {}) };
+      })),
+      messages: messages.map(message => ({ id: message.id, from: nameOf(message.sender)?.key ?? '', fromName: nameOf(message.sender)?.name ?? 'Unbekannt',
+        ...(message.recipient ? { to: nameOf(message.recipient)?.key ?? '', toName: nameOf(message.recipient)?.name ?? '' } : {}),
+        kind: message.kind, text: message.text, at: message.created_at })),
+      unread: await family.unread(owner),
+    }, 200);
+  }
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+  const body = await readJson(request, 4096);
+  if (body.error) return body.error;
+  const input = (body.value ?? {}) as Record<string, unknown>;
+  const text = (max: number) => typeof input.text === 'string' ? input.text.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  const other = () => typeof input.to === 'string' ? members.find(member => member.key === input.to && member.key !== me.key) : undefined;
+  switch (url.pathname) {
+    case '/api/family/messages': {
+      const message = text(500);
+      if (!message) return json({ error: 'invalid_message' }, 400);
+      const id = await family.addMessage(owner, 'text', message, now);
+      await family.markRead(owner, id);
+      return json({ id }, 200);
+    }
+    case '/api/family/read': {
+      if (!Number.isInteger(input.lastId)) return json({ error: 'invalid_read' }, 400);
+      await family.markRead(owner, input.lastId as number);
+      return json({ ok: true }, 200);
+    }
+    case '/api/family/presence': {
+      const row = typeof input.itemId === 'string' ? await store.getItem(owner, input.itemId) : null;
+      if (!row) return json({ error: 'not_found' }, 404);
+      const view = toView(row, await store.getConfig(owner));
+      await family.setPresence(owner, row.id, (view.title ?? view.showName).slice(0, 160), new Date(now.getTime() + Math.min(120, row.estimated_minutes + 5) * 60_000));
+      return json({ ok: true }, 200);
+    }
+    case '/api/family/share': {
+      const to = other();
+      if (!to || typeof input.itemId !== 'string') return json({ error: 'invalid_share' }, 400);
+      if (!mayCopyInto(me, to)) return json({ error: 'kids_only_from_owner' }, 403);
+      const copied = await copyItem({ store, owner, config: await store.getConfig(owner) }, input.itemId, { store, owner: to.owner }, audioObjects(env), me.name, now, crypto.randomUUID());
+      if (!copied) return json({ error: 'not_shareable' }, 409);
+      await family.addMessage(owner, 'share', copied.title, now, to.owner);
+      return json({ itemId: copied.id }, 200);
+    }
+    case '/api/family/listen': {
+      const from = typeof input.member === 'string' ? members.find(member => member.key === input.member && member.key !== me.key) : undefined;
+      if (!from) return json({ error: 'invalid_member' }, 400);
+      if (!mayCopyInto(from, me)) return json({ error: 'kids_only_from_owner' }, 403);
+      const playing = await family.presence(from.owner, now);
+      if (!playing) return json({ error: 'not_playing' }, 409);
+      const copied = await copyItem({ store, owner: from.owner, config: await store.getConfig(from.owner) }, playing.itemId, { store, owner }, audioObjects(env), from.name, now, crypto.randomUUID());
+      return copied ? json({ itemId: copied.id }, 200) : json({ error: 'not_shareable' }, 409);
+    }
+    case '/api/family/greet': {
+      const to = other(), greeting = text(200);
+      if (!to || !greeting) return json({ error: 'invalid_greeting' }, 400);
+      await family.addGreeting(owner, to.owner, greeting, now);
+      await family.addMessage(owner, 'greeting', greeting, now, to.owner);
+      return json({ ok: true }, 200);
+    }
+    default: return json({ error: 'not_found' }, 404);
   }
 }
 
@@ -465,7 +567,11 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const sounds = config ? stationSounds(config) : { ident: false, hourChange: false, linker: false };
     const idents = Array.from({ length: IDENT_VARIANTS }, (_, variant) => `api/sounds/ident/${variant}.wav`);
     const mood = config && activeMood(config, new Date()) ? { mood: config.mood } : {};
-    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood,
+    // Unread family messages, for the badge on the family tab and the notification.
+    const familyStore = new FamilyStore(env.DB);
+    const [unread, latest] = parseListeners(env.LISTENERS).size ? await Promise.all([familyStore.unread(owner), familyStore.latestUnread(owner)]) : [0, null];
+    const family = parseListeners(env.LISTENERS).size ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, membersOf(env)) } } : {}) } } : {};
+    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),
@@ -859,6 +965,8 @@ export default {
         return json({ error: code }, status);
       }
     }
+    const familyResponse = await familyRoutes(request, env, owner, url);
+    if (familyResponse) return familyResponse;
     const listeningResponse = await listeningRoutes(request, env, owner, url);
     if (listeningResponse) return listeningResponse;
     const stationResponse = await stationRoutes(request, env, owner, url);

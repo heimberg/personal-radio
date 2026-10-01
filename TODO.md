@@ -11,6 +11,7 @@ Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
 - [ ] **Stimmen ausprobieren:** im Studio unter «Stimme» eine Stimme entwerfen («✨ Entwerfen») oder die eigene klonen («🎤 Meine Stimme»); auf Lachen, Pausen und Zwischenrufe in Dialogen hören.
 - [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
+- [ ] **Familie ausprobieren:** Sobald Leas Token in `LISTENERS` steht, erscheint der Tab «Familie»: Chat, «Teilen mit Lea» im Beitragsmenü, «💌 Gruss» (liest die Moderation bei ihr vor), «🎧 Auch hören». Optional `OWNER_NAME` setzen (Standard «Papa»).
 - [ ] **Serien ausprobieren:** im Programm «Wissensserie» (z. B. «Geschichte des Internets») oder «Fortsetzungsgeschichte» antippen; die nächste Folge kommt, sobald die vorige gehört ist. Für die Tochter: eine Gutenachtgeschichte als Fortsetzungsgeschichte.
 - [ ] **Hinhören:** Live-Übergänge der Moderation, Jingle-Varianten, Nachrichten-Opener; was stört, lässt sich im Studio unter «Stationssound» einzeln abschalten.
 - [ ] **Ausprobieren:** Redaktionsteam für eine Musikstunde («Produktion → Redaktionsteam (Beta)») mit einer Standard-Stunde vergleichen; Musikblock mit eigenen Playlists; Überraschungsregler im Tagesplan.
@@ -29,6 +30,7 @@ Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 - **Programm auf dem Server:** Konfiguration, Timeline, Gedächtnis und Feedback in D1; Produktion über Queue mit Audio in R2; Cron plant nur, solange gehört wird.
 - **Inhalte:** Web-Recherche mit Google-Suche oder Feeds; Kurzbeitrag, Dialog, Künstler-/Genre-/Themenstunde, Musikblock; Schlussredaktion, Qualitäts-Jury, Faktencheck; Wetter, Schlagzeilen, Datum; keine Uhrzeiten in vorproduzierten Texten.
+- **Familie:** Tab mit allen Hörern des Workers, «hört gerade», Chat mit Benachrichtigung, Beiträge teilen (Kopie mit Audio ins Programm der anderen), «Auch hören», Grüsse, die die Moderation im nächsten Übergang vorliest; Kinder-Sender nehmen nur, was der Besitzer teilt.
 - **Serien:** Wissensserie (Dialog mit Recherche) und Fortsetzungsgeschichte (erfunden, nach Plan) in fünf Folgen, mit «Was bisher geschah» und Ausblick; die nächste Folge kommt, sobald die vorige gehört ist; «Beenden» im Programm.
 - **Bausteine und Tagesplan:** ein Tipp fügt einen Baustein ein; Tagesplan mit Zeitfenstern; Songs zwischen Beiträgen; 🎲 Überraschungen mit Regler; «Mehr dazu»; «Neu von deinen Künstlern».
 - **Redaktion:** alle Agenten konfigurierbar (Anweisungen, Freiheit, An/Aus, Stil-Vorlagen, Probeläufe), Qualitätsverlauf, Hinweise aus 👎-Gründen, Verbrauchsübersicht.
@@ -43,6 +45,7 @@ Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - Konfiguration serverseitig in D1, weil der Server ohne offenen Browser produziert.
 - Neuerscheinungen (29.09.2026): Die Moderation von «Neu von deinen Künstlern» nennt Künstler und Titel jeder Neuerscheinung; diese Spotify-Metadaten gehen dafür an die KI und die Sprachausgabe. Playlist-Titel bleiben weiterhin bei Spotify.
 - Kein Radiowecker (verworfen am 29.09.2026).
+- Familie (01.10.2026): alles bleibt auf dem privaten Worker; die Familie sieht nur Namen. Geteilt wird eine Kopie mit Audio, nicht neu produziert. In einen Kinder-Sender teilt nur der Besitzer.
 - Serien (01.10.2026): Folgen ohne feste Sendezeit; die nächste kommt, sobald die vorige gehört ist. Geschichten sind als Fiktion gekennzeichnet und ohne Faktencheck (`off`), Wissensfolgen werden wie Hintergrund geprüft (`light`).
 - Mehrere Hörer (30.09.2026): jede weitere Person bekommt ein eigenes Access-Token und einen eigenen Sender (`LISTENERS`); ein Kinder-Sender (`:kids`) folgt festen Regeln für 11-Jährige und spielt keine Songs mit expliziten Texten.
 - Keine Sendeuhr mit festen Zeitfenstern pro Stunde: das Programm spielt frei (29.09.2026). Übergänge entstehen live kurz vor der Sendung; vorproduzierte Texte bleiben ohne Uhrzeit.

@@ -91,6 +91,8 @@ class PlaybackService : MediaLibraryService() {
     private var spotifyClientId: String? = null
     private var lastSpotifyAttempt = 0L
     private var watch: TrackWatch? = null
+    /** The item last reported as playing, for «hört gerade» in the family. */
+    private var presenceItem: String? = null
     private var handingBack = false
     private var holdsFocus = true
     /** Sleep timer: a pause at a set time, or when the playing item ends. */
@@ -436,6 +438,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Called whenever the current playlist entry changes or playback starts or stops. */
     private fun follow() {
+        reportPresence()
         val step = currentStep()
         if (step !is TrackStep) {
             stopTrack()
@@ -450,6 +453,15 @@ class PlaybackService : MediaLibraryService() {
             current == null || current.uri != step.spotifyUri -> startTrack(step)
             else -> spotify.resume()
         }
+    }
+
+    /** Tells the family what plays, once per item and only while it plays. */
+    private fun reportPresence() {
+        val itemId = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)?.takeIf { player.playWhenReady } ?: return
+        if (itemId == presenceItem) return
+        presenceItem = itemId
+        val api = api ?: return
+        scope.launch { runCatching { api.presence(itemId) } }
     }
 
     private fun handleFocus(handle: Boolean) {

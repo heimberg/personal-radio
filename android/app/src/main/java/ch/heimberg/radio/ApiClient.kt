@@ -5,6 +5,7 @@ import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.DayPlan
+import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Library
@@ -189,6 +190,28 @@ class ApiClient(private val connection: Connection) {
 
     /** Retires failed productions and starts waiting ones again. */
     suspend fun retry() { withContext(Dispatchers.IO) { request("POST", "api/timeline/retry") } }
+
+    // ── Family ────────────────────────────────────────────────────────────────────────────────
+
+    suspend fun family(): Family = withContext(Dispatchers.IO) { Family.parse(request("GET", "api/family")) }
+
+    suspend fun sendMessage(text: String) { withContext(Dispatchers.IO) { request("POST", "api/family/messages", JSONObject().put("text", text).toString()) } }
+
+    suspend fun markRead(lastId: Long) { withContext(Dispatchers.IO) { request("POST", "api/family/read", JSONObject().put("lastId", lastId).toString()) } }
+
+    /** Copies one of my produced items into [to]'s program. */
+    suspend fun share(itemId: String, to: String) {
+        withContext(Dispatchers.IO) { request("POST", "api/family/share", JSONObject().put("itemId", itemId).put("to", to).toString()) }
+    }
+
+    /** Puts what [member] hears right now into my program. */
+    suspend fun listenAlong(member: String) { withContext(Dispatchers.IO) { request("POST", "api/family/listen", JSONObject().put("member", member).toString()) } }
+
+    /** A greeting the host reads in [to]'s next live transition. */
+    suspend fun greet(to: String, text: String) { withContext(Dispatchers.IO) { request("POST", "api/family/greet", JSONObject().put("to", to).put("text", text).toString()) } }
+
+    /** What I hear now, for «hört gerade» in the family. */
+    suspend fun presence(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/family/presence", JSONObject().put("itemId", itemId).toString()) } }
 
     /** Deletes a production from the archive (or takes it out of the program). */
     suspend fun delete(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/delete") } }

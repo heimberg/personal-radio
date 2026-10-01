@@ -27,6 +27,8 @@ data class TimelineItem(
     val surprise: Boolean = false,
     /** An episode of a series: which one of how many. */
     val series: SeriesRef? = null,
+    /** Shared by a family member: their name. */
+    val sharedBy: String? = null,
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }
@@ -103,6 +105,8 @@ data class Timeline(
     val sounds: StationSounds = StationSounds(),
     /** Today's mood, while it lasts (until midnight in the station's time zone). */
     val mood: StationMood? = null,
+    /** Unread family messages; absent without other listeners. */
+    val family: FamilySummary? = null,
 )
 
 /**
