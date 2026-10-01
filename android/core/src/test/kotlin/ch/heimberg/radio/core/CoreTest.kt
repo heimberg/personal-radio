@@ -430,3 +430,49 @@ class FamilyTest {
         assertEquals(null, TimelineJson.parseResponse("""{"items":[]}""").family)
     }
 }
+
+class MitmachenTest {
+    private val now = java.time.Instant.parse("2026-10-01T12:00:00Z")
+    private val choice = StoryChoice("Wohin?", listOf(ChoiceOption("Höhle", "🕳️"), ChoiceOption("See", "🌊")))
+    private val quiz = Quiz("Welcher Planet?", listOf("Mars", "Jupiter", "Venus"))
+    private fun item(id: String, seq: Int, state: String, updatedAt: String? = null, choice: StoryChoice? = null, quiz: Quiz? = null) =
+        TimelineItem(id = id, seq = seq, showId = "_series:a", showName = "Fini", plannedAt = "2026-10-01T08:00:00Z", state = state,
+            estimatedMinutes = 6.0, updatedAt = updatedAt, choice = choice, quiz = quiz)
+
+    @Test fun showsThePlayingItemFirstThenTheNewestRecentlyHeardOneThatWaits() {
+        val playing = item("p", 5, "ready", quiz = quiz)
+        val heard = listOf(
+            item("old", 1, "played", "2026-10-01T02:00:00Z", choice = choice),
+            item("a", 2, "played", "2026-10-01T10:00:00Z", choice = choice),
+            item("b", 3, "played", "2026-10-01T11:00:00Z", quiz = quiz.copy(answered = 1, correct = 1)),
+            item("c", 4, "ready", choice = choice),
+        )
+        assertEquals("p", Mitmachen.pending(playing, heard, now)?.id)
+        assertEquals("a", Mitmachen.pending(item("x", 9, "ready"), heard, now)?.id)
+        assertEquals(null, Mitmachen.pending(null, heard.filter { it.id != "a" }, now)?.id)
+        assertFalse(choice.copy(picked = 0).open)
+        assertEquals("C", Mitmachen.letter(2))
+    }
+
+    @Test fun parsesTheTimelineAlbumAndAnswers() {
+        val timeline = TimelineJson.parseResponse("""{"items":[{"id":"i","seq":1,"showId":"s","showName":"S","plannedAt":"x","state":"played","estimatedMinutes":2,
+            "choice":{"question":"Wohin?","options":[{"label":"Höhle","emoji":"🕳️"},{"label":"See","emoji":"🌊"}],"picked":1},
+            "quiz":{"question":"Q?","options":["a","b","c"],"answered":0,"correct":2}}],"play":{"stickers":3,"kids":true,"ask":true}}""")
+        assertEquals(1, timeline.items[0].choice?.picked)
+        assertEquals(2, timeline.items[0].quiz?.correct)
+        assertEquals(PlaySummary(3, kids = true, ask = true), timeline.play)
+        assertTrue(timeline.play.album)
+        assertFalse(TimelineJson.parseResponse("""{"items":[]}""").play.album)
+        val album = Mitmachen.parseAlbum("""{"total":2,"count":1,"stickers":[{"id":"fuchs","emoji":"🦊","name":"Fuchs","at":"2026-10-01T08:00:00Z"},{"id":"eule","emoji":"🦉","name":"Eule"}]}""")
+        assertEquals(listOf(true, false), album.stickers.map { it.owned })
+        val result = Mitmachen.parseResult("""{"right":true,"correct":1,"sticker":{"id":"eule","emoji":"🦉","name":"Eule"}}""")
+        assertEquals("Eule", result.sticker?.name)
+        assertEquals(true, result.right)
+    }
+
+    @Test fun storyCardsMakeTheSubject() {
+        assertEquals("Hauptfigur: ein schlauer Fuchs · Ort: im Zauberwald · Art: mit einem Rätsel · Nina spielt selbst mit",
+            StoryCards.subject(StoryCards.heroes[0], StoryCards.places[2], StoryCards.kinds[1], "Nina"))
+        assertEquals("Ort: am Meer", StoryCards.subject(null, StoryCards.places[1], null, " "))
+    }
+}

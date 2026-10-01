@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent } from './station.ts';
+import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent, answerQuiz, chooseStory } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -23,6 +23,8 @@ import type { MoodId, StationConfig } from '../src/domain/station.ts';
 import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
+import { PlayStore, albumView } from './play.ts';
+import { SERIES_PREFIX } from '../src/domain/series.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
 import { allOwners, forKids, isKids, parseListeners } from './listeners.ts';
@@ -174,19 +176,25 @@ async function linker(env: Environment, store: StationStore, owner: string, url:
     // A family greeting waiting for this listener is read in this transition (and never comes from the cache).
     const family = new FamilyStore(env.DB), greeting = await family.pendingGreeting(owner, now);
     const from = greeting ? membersOf(env).find(member => member.owner === greeting.sender)?.name ?? 'der Familie' : '';
-    const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice + (greeting ? `|g${greeting.id}` : ''));
+    // A question to the radio is answered in a transition without a greeting (one thing at a time).
+    const play = new PlayStore(env.DB), question = greeting ? null : await play.pendingQuestion(owner, now);
+    const asker = question ? membersOf(env).find(member => member.owner === owner)?.name ?? '' : '';
+    const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice + (greeting ? `|g${greeting.id}` : '') + (question ? `|q${question.id}` : ''));
     for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
       const stored = await env.AUDIO.get(key + suffix);
       if (stored) return new Response(stored.body, { headers: { 'Content-Type': type, 'Content-Length': String(stored.size), 'Cache-Control': 'private, max-age=86400' } });
     }
     await new D1LinkerCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_LINKERS) || 40));
-    const facts = { ...linkerFacts(config, before, nextRow, showNameOf(nextRow.show_id, config), now), ...(greeting ? { greeting: { from, text: greeting.text } } : {}) };
-    const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music, !!greeting), facts, 'Gemini linker', 0.8), greeting ? 640 : 320);
+    const facts = { ...linkerFacts(config, before, nextRow, showNameOf(nextRow.show_id, config), now), ...(greeting ? { greeting: { from, text: greeting.text } } : {}),
+      ...(question ? { question: { from: asker, text: question.text } } : {}) };
+    const text = linkerText(await writer.askJson(linkerSystem(config, !facts.before || facts.before.music, !!greeting, !!question), facts, 'Gemini linker', 0.8),
+      greeting ? 640 : question ? 900 : 320);
     if (!text) return quiet();
     const voiced = await pipelineFor(env).voice(owner, { title: 'Übergang', text, sourceIds: [] }, 'brief', config.host.voiceId, config.host.voiceStyle,
       { reserve: false, bed: stationSounds(config).musicBed, lite: true });
     await env.AUDIO.put(key + (voiced.contentType === 'audio/wav' ? '.wav' : '.mp3'), voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     if (greeting) await family.markAired(greeting.id, now);
+    if (question) await play.answered(question.id, text, now);
     return audio(voiced.audio, voiced.contentType);
   } catch (error) {
     console.error('linker failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown');
@@ -606,7 +614,10 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     const familyStore = new FamilyStore(env.DB);
     const [unread, latest] = parseListeners(env.LISTENERS).size ? await Promise.all([familyStore.unread(owner), familyStore.latestUnread(owner)]) : [0, null];
     const family = parseListeners(env.LISTENERS).size ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, membersOf(env)) } } : {}) } } : {};
-    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family,
+    // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
+    const kids = isKids(owner, parseListeners(env.LISTENERS)), stickers = (await new PlayStore(env.DB).stickers(owner)).length;
+    const play = { play: { stickers, kids, ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
+    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family, ...play,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),
@@ -671,6 +682,29 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (url.pathname === '/api/series') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json({ series: (await store.listSeries(owner)).map(seriesView) }, 200);
+  }
+  // The sticker album: every sticker, and which ones the listener has.
+  if (url.pathname === '/api/stickers') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json(albumView(await new PlayStore(env.DB).stickers(owner)), 200);
+  }
+  // «Frag das Radio»: a question the host answers in the next live transition; the family sees it in the chat.
+  if (url.pathname === '/api/questions') {
+    const play = new PlayStore(env.DB);
+    if (request.method === 'GET') return json({ questions: await play.questions(owner) }, 200);
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 1024);
+    if (body.error) return body.error;
+    const raw = (body.value as { text?: unknown } | null)?.text;
+    const text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    if (text.length < 3) return json({ error: 'invalid_question' }, 400);
+    const config = await store.getConfig(owner);
+    if (!config || !stationSounds(config).linker || !env.GEMINI_API_KEY) return json({ error: 'linker_off' }, 409);
+    const now = new Date();
+    const id = await play.addQuestion(owner, text, now);
+    if (parseListeners(env.LISTENERS).size) await new FamilyStore(env.DB).addMessage(owner, 'text', `❓ Frage ans Radio: ${text}`, now);
+    return json({ id }, 200);
   }
   const stopMatch = url.pathname.match(/^\/api\/series\/([A-Za-z0-9-]{1,64})\/stop$/);
   if (stopMatch) {
@@ -800,10 +834,32 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|swap|remove|delete|script)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|swap|remove|delete|script|choice|quiz)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
+  // Mitmachen: choosing how a story goes on, answering a quiz question; both can earn a sticker.
+  if (match[2] === 'choice' || match[2] === 'quiz') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 256);
+    if (body.error) return body.error;
+    const picked = (body.value as { option?: unknown } | null)?.option;
+    if (!Number.isInteger(picked)) return json({ error: 'invalid_option' }, 400);
+    const deps = stationDeps(env, owner), play = new PlayStore(env.DB), now = new Date();
+    if (match[2] === 'choice') {
+      const result = await chooseStory(deps, owner, row.id, picked as number);
+      if (!result) return json({ error: 'no_choice' }, 409);
+      const sticker = result.fresh ? await play.award(owner, 'choice', now) : undefined;
+      // The next episode joins the program right away when this one was already heard.
+      if (result.fresh) await refreshProgram(env, owner, false);
+      return json({ picked: result.choice.picked, ...(sticker ? { sticker } : {}) }, 200);
+    }
+    const result = await answerQuiz(deps, owner, row.id, picked as number);
+    if (!result) return json({ error: 'no_quiz' }, 409);
+    const sticker = result.right && result.fresh ? await play.award(owner, 'quiz', now) : undefined;
+    return json({ right: result.right, correct: result.quiz.correct, ...(sticker ? { sticker } : {}) }, 200);
+  }
   if (match[2] === 'script') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json(transcriptView(row, await store.getConfig(owner)), 200);
@@ -888,6 +944,10 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (listening && row.state !== 'ready' && row.state !== 'archived') return json({ ok: true }, 200);
   await store.addFeedback(owner, { itemId: row.id, interests, action: action as FeedbackAction, listenedRatio, createdAt: now.toISOString() });
   if (listening) await store.update(owner, row.id, { state: action === 'complete' ? 'played' : 'skipped' }, now);
+  // On a child's station every episode heard to the end earns a sticker.
+  if (action === 'complete' && row.show_id.startsWith(SERIES_PREFIX) && isKids(owner, parseListeners(env.LISTENERS))) {
+    return json({ ok: true, sticker: await new PlayStore(env.DB).award(owner, 'episode', now) }, 200);
+  }
   return json({ ok: true }, 200);
 }
 

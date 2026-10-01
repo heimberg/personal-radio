@@ -66,6 +66,8 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         MoodChips(state, actions)
         Banners(state, actions)
         PlayerCard(state, actions)
+        MitmachenCard(state, actions)
+        PlayRow(state, actions)
         state.sections.next?.let { NextCard(it, state, actions) }
     }
 }

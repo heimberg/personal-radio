@@ -156,7 +156,8 @@ export async function copyItem(from: { store: StationStore; owner: string; confi
   }
   const last = await to.store.lastItem(to.owner);
   await to.store.insertItem(to.owner, { id: newId, seq: (last?.seq ?? 0) + 1, showId: row.show_id, plannedAt: now.toISOString(), estimatedMinutes: row.estimated_minutes }, now);
-  const research = (() => { try { return JSON.parse(row.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
+  // A story's choice belongs to the sender's series; it does not travel with the copy.
+  const { choice: _choice, ...research } = (() => { try { return JSON.parse(row.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
   await to.store.update(to.owner, newId, {
     state: 'ready', script_json: script, sources_json: row.sources_json, verification: row.verification,
     audio_key: audioKey ?? (row.audio_key ? row.audio_key.replace(row.id, newId) : null), content_type: row.content_type,

@@ -174,6 +174,10 @@ export interface TimelineItemView {
   series?: { id: string; episode: number; total: number; kind: 'wissen' | 'geschichte' };
   /** Shared by another member of the family: their name. */
   sharedBy?: string;
+  /** A Mitmach-Geschichte: how it may go on after this episode, and what was chosen. */
+  choice?: { question: string; options: Array<{ label: string; emoji: string }>; picked?: number };
+  /** A quiz question about this item; the right answer only once it was answered. */
+  quiz?: { question: string; options: string[]; answered?: number; correct?: number };
 }
 
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */

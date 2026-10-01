@@ -5,6 +5,7 @@ import { parseFeedback } from '../src/domain/recommendation.ts';
 import type { FeedbackEvent } from '../src/domain/recommendation.ts';
 import { isFeedbackReason } from '../src/domain/listener-notes.ts';
 import type { EpisodePlan, Series, SeriesKind, SeriesState } from '../src/domain/series.ts';
+import { parseChoice } from '../src/domain/play.ts';
 import type { FeedbackReason, ReasonCount } from '../src/domain/listener-notes.ts';
 
 export interface D1Statement {
@@ -125,9 +126,9 @@ export class StationStore {
   }
 
   async insertSeries(owner: string, series: Series, now: Date) {
-    await this.db.prepare(`INSERT INTO series (owner_id, id, title, subject, kind, episodes_json, recaps_json, scheduled, state, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(owner, series.id, series.title, series.subject, series.kind, JSON.stringify(series.episodes),
-      JSON.stringify(series.recaps), series.scheduled, series.state, series.createdAt, now.toISOString()).run();
+    await this.db.prepare(`INSERT INTO series (owner_id, id, title, subject, kind, episodes_json, recaps_json, scheduled, state, created_at, updated_at, interactive, choices_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(owner, series.id, series.title, series.subject, series.kind, JSON.stringify(series.episodes),
+      JSON.stringify(series.recaps), series.scheduled, series.state, series.createdAt, now.toISOString(), series.interactive ? 1 : 0, JSON.stringify(series.choices ?? [])).run();
   }
 
   async getSeries(owner: string, id: string): Promise<Series | null> {
@@ -141,8 +142,9 @@ export class StationStore {
       .bind(owner, limit).all<SeriesRow>()).results.map(seriesOf);
   }
 
-  async updateSeries(owner: string, id: string, patch: Partial<Pick<Series, 'recaps' | 'scheduled' | 'state'>>, now: Date) {
+  async updateSeries(owner: string, id: string, patch: Partial<Pick<Series, 'recaps' | 'scheduled' | 'state' | 'choices'>>, now: Date) {
     const sets: string[] = [], values: unknown[] = [];
+    if (patch.choices) { sets.push('choices_json = ?'); values.push(JSON.stringify(patch.choices)); }
     if (patch.recaps) { sets.push('recaps_json = ?'); values.push(JSON.stringify(patch.recaps)); }
     if (patch.scheduled !== undefined) { sets.push('scheduled = ?'); values.push(patch.scheduled); }
     if (patch.state) { sets.push('state = ?'); values.push(patch.state); }
@@ -334,10 +336,12 @@ export class StationStore {
   }
 }
 
-interface SeriesRow { id: string; title: string; subject: string; kind: SeriesKind; episodes_json: string; recaps_json: string; scheduled: number; state: SeriesState; created_at: string }
+interface SeriesRow { id: string; title: string; subject: string; kind: SeriesKind; episodes_json: string; recaps_json: string; scheduled: number; state: SeriesState; created_at: string;
+  interactive?: number; choices_json?: string }
 
 function seriesOf(row: SeriesRow): Series {
   const list = <T>(json: string): T[] => { try { const value = JSON.parse(json); return Array.isArray(value) ? value : []; } catch { return []; } };
   return { id: row.id, title: row.title, subject: row.subject, kind: row.kind, episodes: list<EpisodePlan>(row.episodes_json),
-    recaps: list<string>(row.recaps_json), scheduled: row.scheduled, state: row.state, createdAt: row.created_at };
+    recaps: list<string>(row.recaps_json), scheduled: row.scheduled, state: row.state, createdAt: row.created_at,
+    ...(row.interactive ? { interactive: true, choices: list<unknown>(row.choices_json ?? '[]').map(parseChoice) } : {}) };
 }

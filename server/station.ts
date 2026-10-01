@@ -8,6 +8,8 @@ import { ProviderError, TTS_PARALLEL, withoutVoiceTags } from './providers.ts';
 import { KIDS_RULES } from './listeners.ts';
 import { MAX_EPISODES, MIN_EPISODES, OUTLINE_SOURCE_ID, SERIES_EPISODES, SERIES_PREFIX, episodeRefOf, episodeShow, outlinePrompt, parseOutline, recapOf, seriesBlock } from '../src/domain/series.ts';
 import type { EpisodeRef, Series, SeriesKind } from '../src/domain/series.ts';
+import { CHOICE_PROMPT, CHOICE_WAIT_HOURS, QUIZ_PROMPT, parseChoice, parseQuiz, quizSpeech } from '../src/domain/play.ts';
+import type { Quiz, StoryChoice } from '../src/domain/play.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -270,10 +272,21 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   // An episode of a series is produced from the series: its step (knowledge) or its chapter (story).
   const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
   let seriesSources: Source[] = [];
+  let storyChoice: StoryChoice | null = null;
   if (row.show_id.startsWith(SERIES_PREFIX)) {
     const series = episode ? await deps.store.getSeries(owner, episode.series) : null;
     if (!series || !episode || !series.episodes[episode.episode]) return fail('SERIES_REMOVED');
-    const built = episodeShow(series, episode.episode, now, kidsRules(config));
+    // A Mitmach-Geschichte ends each episode but the last with a choice, planned before the episode is written.
+    if (series.interactive && row.state === 'planned' && episode.episode < series.episodes.length - 1) {
+      storyChoice = series.choices?.[episode.episode] ?? await planChoice(deps, series, episode.episode, config);
+      if (storyChoice && !series.choices?.[episode.episode]) {
+        const choices = [...(series.choices ?? [])];
+        while (choices.length <= episode.episode) choices.push(null);
+        choices[episode.episode] = storyChoice;
+        await deps.store.updateSeries(owner, series.id, { choices }, now);
+      }
+    }
+    const built = episodeShow(series, episode.episode, now, kidsRules(config), storyChoice);
     // Without the dialog voices a knowledge episode is told by the host alone.
     configured = built.show.format === 'podcast' && !deps.podcastAvailable ? { ...built.show, format: 'brief' } : built.show;
     seriesSources = built.sources;
@@ -363,9 +376,12 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
         await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions);
       }
       if (script.quality) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: script.quality.overall, at: now });
+      // On a child's station a knowledge item ends with a quiz question, spoken and answered in the app.
+      const quiz = kidsRules(config) && episode?.kind !== 'geschichte' && show.verification !== 'off' && show.targetMinutes >= 3 ? await writeQuiz(deps, script) : null;
+      if (quiz) script = withQuiz(script, quiz);
       // The research record keeps what the item already carries (a requested subject, its series).
       const kept = (() => { try { return JSON.parse(row.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
-      const research = { ...kept, ...(queries.length ? { queries } : {}) };
+      const research = { ...kept, ...(queries.length ? { queries } : {}), ...(storyChoice ? { choice: storyChoice } : {}), ...(quiz ? { quiz } : {}) };
       const patch = { state: 'voicing' as const, script_json: JSON.stringify(script), sources_json: JSON.stringify(sources), verification: show.verification,
         research_json: Object.keys(research).length ? JSON.stringify(research) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
@@ -858,7 +874,7 @@ export async function addBlock(deps: StationDeps, owner: string, blockId: string
   if (!config) return null;
   if (blockId === SURPRISE_ID) return addSurprise(deps, owner, config, after);
   const series = seriesBlock(blockId);
-  if (series) return (await startSeries(deps, owner, config, series.kind, subject ?? '')).itemId;
+  if (series) return (await startSeries(deps, owner, config, series.kind, subject ?? '', SERIES_EPISODES, series.interactive)).itemId;
   if (blockId === 'song') {
     const song = await scheduleShowNow(deps, owner, MUSIC_SHOW_ID);
     if (song) await placeAfter(deps, owner, song, after);
@@ -905,14 +921,14 @@ export class SeriesError extends Error {
  * episode into the program. Without a subject the planner picks one from the listener's interests.
  */
 export async function startSeries(deps: StationDeps, owner: string, config: StationConfig, kind: SeriesKind, subject: string,
-  episodes = SERIES_EPISODES): Promise<{ seriesId: string; itemId: string }> {
+  episodes = SERIES_EPISODES, interactive = false): Promise<{ seriesId: string; itemId: string }> {
   if (!deps.agentModel) throw new SeriesError('NOT_CONFIGURED');
   const count = Math.min(MAX_EPISODES, Math.max(MIN_EPISODES, Math.round(episodes)));
   await deps.reserveGeneration(owner);
   const topic = subject.trim().slice(0, 200);
   let outline: { title: string; episodes: Series['episodes'] };
   try {
-    outline = parseOutline(await deps.agentModel.askJson(outlinePrompt(kind, count, kidsRules(config)),
+    outline = parseOutline(await deps.agentModel.askJson(outlinePrompt(kind, count, kidsRules(config), interactive && kind === 'geschichte'),
       { thema: topic || 'Wähle selbst ein Thema, das zu den Interessen passt.', interessen: [...config.profile.topics, ...config.profile.interests].slice(0, 30) },
       'Gemini series outline', kind === 'geschichte' ? 0.9 : 0.6), count);
   } catch (error) {
@@ -921,7 +937,8 @@ export async function startSeries(deps: StationDeps, owner: string, config: Stat
   }
   const now = deps.now();
   const series: Series = { id: (deps.newId ?? (() => crypto.randomUUID()))(), title: outline.title, subject: topic || outline.title, kind,
-    episodes: outline.episodes, recaps: [], scheduled: 0, state: 'active', createdAt: now.toISOString() };
+    episodes: outline.episodes, recaps: [], scheduled: 0, state: 'active', createdAt: now.toISOString(),
+    ...(interactive && kind === 'geschichte' ? { interactive: true, choices: [] } : {}) };
   await deps.store.insertSeries(owner, series, now);
   const itemId = await scheduleEpisode(deps, owner, series, 0, AT_END);
   return { seriesId: series.id, itemId };
@@ -964,6 +981,12 @@ async function advanceSeries(deps: StationDeps, owner: string) {
     const latest = await deps.store.latestOfShow(owner, `${SERIES_PREFIX}${series.id}`);
     if (latest && ['planned', 'voicing', 'ready', 'failed'].includes(latest.state)) continue;
     const ref = latest ? episodeRefOf(latest.research_json) : null;
+    // A Mitmach-Geschichte waits for the listener's choice; after a while the narrator decides.
+    const choice = latest && ref && latest.state !== 'expired' ? series.choices?.[ref.episode] : null;
+    if (choice && choice.picked === undefined) {
+      if (deps.now().getTime() - Date.parse(latest!.updated_at) < CHOICE_WAIT_HOURS * 3_600_000) continue;
+      await recordChoice(deps, owner, series, ref!.episode, (deps.random ?? Math.random)() < 0.5 ? 0 : 1, 'narrator', latest!);
+    }
     const index = !latest || !ref ? series.scheduled : latest.state === 'expired' ? ref.episode : ref.episode + 1;
     if (index >= series.episodes.length) { await deps.store.updateSeries(owner, series.id, { state: 'done' }, deps.now()); continue; }
     await scheduleEpisode(deps, owner, series, index);
@@ -980,9 +1003,82 @@ export async function stopSeries(deps: StationDeps, owner: string, id: string): 
 }
 
 /** The series for the app: running ones first, with their episode titles and how far they are. */
-export interface SeriesView { id: string; title: string; subject: string; kind: SeriesKind; state: Series['state']; episodes: string[]; scheduled: number }
+export interface SeriesView { id: string; title: string; subject: string; kind: SeriesKind; state: Series['state']; episodes: string[]; scheduled: number; interactive?: boolean }
 export const seriesView = (series: Series): SeriesView => ({ id: series.id, title: series.title, subject: series.subject, kind: series.kind,
-  state: series.state, episodes: series.episodes.map(episode => episode.title), scheduled: series.scheduled });
+  state: series.state, episodes: series.episodes.map(episode => episode.title), scheduled: series.scheduled, ...(series.interactive ? { interactive: true } : {}) });
+
+/** Plans the choice at the end of episode [index]: from the outline and what was told so far (our own story, no listener data). */
+async function planChoice(deps: StationDeps, series: Series, index: number, config: StationConfig): Promise<StoryChoice | null> {
+  if (!deps.agentModel) return null;
+  try {
+    return parseChoice(await deps.agentModel.askJson([CHOICE_PROMPT, kidsRules(config)].filter(Boolean).join(' '), {
+      geschichte: series.title, worum: series.subject,
+      plan: series.episodes.map((episode, at) => `Folge ${at + 1}: ${episode.title} – ${episode.idea}`),
+      bisher: series.recaps.slice(0, index).filter(Boolean),
+      dieseFolge: series.episodes[index], naechsteFolge: series.episodes[index + 1],
+    }, 'Gemini story choice', 0.9));
+  } catch (error) {
+    // A spent quota waits like any production; anything else just tells the episode without a choice.
+    if (error instanceof ProviderError && error.status === 429) throw error;
+    return null;
+  }
+}
+
+/** Stores what was chosen at the end of episode [index], on the series (for the next episode) and on the item (for the app). */
+async function recordChoice(deps: StationDeps, owner: string, series: Series, index: number, picked: 0 | 1, by: StoryChoice['by'], item: TimelineRow) {
+  const choices = [...(series.choices ?? [])];
+  const choice = choices[index];
+  if (!choice) return null;
+  choices[index] = { ...choice, picked, by };
+  series.choices = choices;
+  await deps.store.updateSeries(owner, series.id, { choices }, deps.now());
+  const research = (() => { try { return JSON.parse(item.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
+  await deps.store.update(owner, item.id, { research_json: JSON.stringify({ ...research, choice: choices[index] }) }, deps.now());
+  return choices[index];
+}
+
+/**
+ * The listener chose how a Mitmach-Geschichte goes on, after (or while) hearing the episode [itemId].
+ * Returns the stored choice and whether it is new (a sticker), or null when the item offers no choice.
+ */
+export async function chooseStory(deps: StationDeps, owner: string, itemId: string, option: number): Promise<{ choice: StoryChoice; fresh: boolean } | null> {
+  const row = await deps.store.getItem(owner, itemId);
+  const ref = row ? episodeRefOf(row.research_json) : null;
+  const series = ref ? await deps.store.getSeries(owner, ref.series) : null;
+  const choice = series?.choices?.[ref!.episode];
+  if (!row || !series || !choice || (option !== 0 && option !== 1)) return null;
+  if (choice.picked !== undefined) return { choice, fresh: false };
+  const stored = await recordChoice(deps, owner, series, ref!.episode, option, 'listener', row);
+  return stored ? { choice: stored, fresh: true } : null;
+}
+
+/** A quiz question about a finished script (our own text). Nothing when the model is missing or answers badly. */
+async function writeQuiz(deps: StationDeps, script: Script): Promise<Quiz | null> {
+  if (!deps.agentModel) return null;
+  try { return parseQuiz(await deps.agentModel.askJson(`${QUIZ_PROMPT} ${KIDS_RULES}`, { titel: script.title, text: withoutVoiceTags(script.text).slice(0, 6000) }, 'Gemini quiz', 0.5)); }
+  catch (error) {
+    if (error instanceof ProviderError && error.status === 429) throw error;
+    return null;
+  }
+}
+
+/** The script with the quiz question spoken at its end: by the host, in a dialog by the first voice. */
+function withQuiz(script: Script, quiz: Quiz): Script {
+  const speech = quizSpeech(quiz);
+  return { ...script, text: `${script.text.trim()} ${speech}`, ...(script.turns ? { turns: [...script.turns, { speaker: 'host-a' as const, text: speech }] } : {}) };
+}
+
+/** The listener answered an item's quiz: once only. Returns the quiz and whether the answer was right and new (a sticker). */
+export async function answerQuiz(deps: StationDeps, owner: string, itemId: string, answer: number): Promise<{ quiz: Quiz; right: boolean; fresh: boolean } | null> {
+  const row = await deps.store.getItem(owner, itemId);
+  const research = (() => { try { return JSON.parse(row?.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
+  const quiz = parseQuiz(research.quiz);
+  if (!row || !quiz || ![0, 1, 2].includes(answer)) return null;
+  if (quiz.answered !== undefined) return { quiz, right: quiz.answered === quiz.correct, fresh: false };
+  const answered = { ...quiz, answered: answer };
+  await deps.store.update(owner, row.id, { research_json: JSON.stringify({ ...research, quiz: answered }) }, deps.now());
+  return { quiz: answered, right: answer === quiz.correct, fresh: true };
+}
 
 /**
  * «Anders»: an open item gives way to something different at the same place – a surprise for another
@@ -1103,6 +1199,10 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   let sharedBy: string | undefined, sharedShow: string | undefined;
   try { ({ queries = [], team, sharedBy, sharedShow } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team']; sharedBy?: string; sharedShow?: string }); } catch { /* Research details are optional. */ }
   const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
+  const { choice, quiz } = (() => {
+    try { const research = JSON.parse(row.research_json ?? '{}') as { choice?: unknown; quiz?: unknown }; return { choice: parseChoice(research.choice), quiz: parseQuiz(research.quiz) }; }
+    catch { return { choice: null, quiz: null }; }
+  })();
   // The plan of a story is how it is written, not a source to list.
   sources = sources.filter(source => source.id !== OUTLINE_SOURCE_ID);
   return {
@@ -1111,6 +1211,9 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     ...(typeof sharedBy === 'string' ? { sharedBy } : {}),
     ...(episode ? { series: { id: episode.series, episode: episode.episode + 1, total: episode.total, kind: episode.kind } } : {}),
     ...(isSurprise(row.show_id) ? { surprise: true } : {}),
+    ...(choice ? { choice: { question: choice.question, options: choice.options, ...(choice.picked !== undefined ? { picked: choice.picked } : {}) } } : {}),
+    // The right answer stays on the server until the listener answered.
+    ...(quiz ? { quiz: { question: quiz.question, options: quiz.options, ...(quiz.answered !== undefined ? { answered: quiz.answered, correct: quiz.correct } : {}) } } : {}),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
