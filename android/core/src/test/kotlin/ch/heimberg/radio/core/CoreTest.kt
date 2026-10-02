@@ -495,3 +495,24 @@ class ReadingTest {
         assertEquals("Kernfusion", Reading.topicOf(item.copy(title = "Kernfusion")))
     }
 }
+
+class FeaturesTest {
+    @Test fun parsesTheCatalogAndSummarises() {
+        val catalog = Features.parse("""{"features":[{"id":"review","name":"Wochenrückblick","enabled":true},{"id":"places","name":"Ortsgeschichten","enabled":false}],
+            "blocks":[{"id":"wetter","name":"Wetter","visible":false},{"id":"morgen","name":"Morgenbriefing"}]}""")
+        assertTrue(catalog.on("review"))
+        assertFalse(catalog.on("places"))
+        assertEquals("1 von 2 an · 1 Baustein ausgeblendet", catalog.summary)
+        assertEquals("Langenthal, Bern", Features.parsePlace("""{"place":"Langenthal, Bern","itemId":"i"}""").place)
+    }
+
+    @Test fun reportsANewPlaceOnlyAfterMovingAndWaiting() {
+        val melchnau = Fix(47.1834, 7.8521, 0)
+        val langenthal = Fix(47.2153, 7.7945, 15 * 60_000)
+        assertTrue(PlaceTrigger.shouldReport(null, melchnau))
+        assertEquals(5.5, PlaceTrigger.distanceKm(melchnau, langenthal), 0.5)
+        assertTrue(PlaceTrigger.shouldReport(melchnau, langenthal))
+        assertFalse(PlaceTrigger.shouldReport(melchnau, langenthal.copy(atMs = 5 * 60_000))) // too soon
+        assertFalse(PlaceTrigger.shouldReport(melchnau, Fix(47.19, 7.86, 30 * 60_000))) // barely moved
+    }
+}

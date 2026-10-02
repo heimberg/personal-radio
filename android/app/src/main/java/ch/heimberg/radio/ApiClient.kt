@@ -6,6 +6,8 @@ import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.Family
+import ch.heimberg.radio.core.FeatureCatalog
+import ch.heimberg.radio.core.Features
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.AnswerResult
@@ -17,6 +19,7 @@ import ch.heimberg.radio.core.Mitmachen
 import ch.heimberg.radio.core.PlayResult
 import ch.heimberg.radio.core.StickerAlbum
 import ch.heimberg.radio.core.Place
+import ch.heimberg.radio.core.PlaceStory
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.VoiceOption
@@ -221,6 +224,25 @@ class ApiClient(private val connection: Connection) {
     suspend fun follow(topic: String) { withContext(Dispatchers.IO) { request("POST", "api/follow", JSONObject().put("topic", topic).toString()) } }
 
     suspend fun unfollow(id: Long) { withContext(Dispatchers.IO) { request("DELETE", "api/follow/$id") } }
+
+    // ── Funktionen und Ortsgeschichten ──────────────────────────────────────────────────────────
+
+    suspend fun features(): FeatureCatalog = withContext(Dispatchers.IO) { Features.parse(request("GET", "api/features")) }
+
+    /** Switches one feature; the answer is the whole catalog as it is now. */
+    suspend fun setFeature(id: String, on: Boolean): FeatureCatalog = withContext(Dispatchers.IO) {
+        Features.parse(request("PUT", "api/features", JSONObject().put("features", JSONObject().put(id, on)).toString()))
+    }
+
+    /** The blocks the palette leaves out. */
+    suspend fun setHiddenBlocks(ids: List<String>): FeatureCatalog = withContext(Dispatchers.IO) {
+        Features.parse(request("PUT", "api/features", JSONObject().put("hiddenBlocks", JSONArray(ids)).toString()))
+    }
+
+    /** Where the listener is now: the Worker names the place and plans its story (once a month per place). */
+    suspend fun placeStory(latitude: Double, longitude: Double): PlaceStory = withContext(Dispatchers.IO) {
+        Features.parsePlace(request("POST", "api/places/story", JSONObject().put("latitude", latitude).put("longitude", longitude).toString()))
+    }
 
     // ── Mitmachen ──────────────────────────────────────────────────────────────────────────────
 

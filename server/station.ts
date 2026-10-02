@@ -14,6 +14,7 @@ import { MIN_REVIEW_ITEMS, REVIEW_DAYS, REVIEW_SHOW, reviewSources, reviewable }
 import type { WeekExtras } from './review.ts';
 import { ANSWER_PROMPT, NOVELTY_PROMPT, parseAnswer, parseNovelty } from './follow.ts';
 import type { FollowStore } from './follow.ts';
+import { featureOn } from '../src/domain/features.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -423,7 +424,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       }
       if (script.quality) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: script.quality.overall, at: now });
       // On a child's station a knowledge item ends with a quiz question, spoken and answered in the app.
-      const quiz = kidsRules(config) && episode?.kind !== 'geschichte' && show.verification !== 'off' && show.targetMinutes >= 3 ? await writeQuiz(deps, script) : null;
+      const quiz = kidsRules(config) && featureOn(config, 'quiz') && episode?.kind !== 'geschichte' && show.verification !== 'off' && show.targetMinutes >= 3 ? await writeQuiz(deps, script) : null;
       if (quiz) script = withQuiz(script, quiz);
       // The research record keeps what the item already carries (a requested subject, its series).
       const kept = (() => { try { return JSON.parse(row.research_json ?? 'null') ?? {}; } catch { return {}; } })() as Record<string, unknown>;
@@ -1046,7 +1047,7 @@ async function advanceSeries(deps: StationDeps, owner: string) {
  */
 async function planWeekReview(deps: StationDeps, owner: string, config: StationConfig) {
   const now = deps.now(), { day, minutes } = localClock(now, config.timezone);
-  if (day !== 0 || minutes < 8 * 60) return;
+  if (!featureOn(config, 'review') || day !== 0 || minutes < 8 * 60) return;
   const latest = await deps.store.latestOfShow(owner, REVIEW_SHOW);
   if (latest && now.getTime() - Date.parse(latest.created_at) < 6 * 86_400_000) return;
   const heard = (await deps.store.heardSince(owner, new Date(now.getTime() - REVIEW_DAYS * 86_400_000))).filter(reviewable);
@@ -1070,7 +1071,7 @@ const followSince = (topic: { createdAt: string; reportedAt: string | null }) =>
 
 /** Dranbleiben: during the day, topics not checked for a day get a check (it stays quiet when nothing is new). */
 async function planFollowChecks(deps: StationDeps, owner: string, config: StationConfig) {
-  if (!deps.follows) return;
+  if (!deps.follows || !featureOn(config, 'follow')) return;
   const now = deps.now(), { minutes } = localClock(now, config.timezone);
   if (minutes < 7 * 60 || minutes >= 21 * 60) return;
   for (const topic of await deps.follows.due(owner, now)) {
@@ -1084,7 +1085,7 @@ async function planFollowChecks(deps: StationDeps, owner: string, config: Statio
 
 /** Konzerte: on Friday from four in the afternoon, once a week, when the listener's Spotify profile has top artists. */
 async function planConcerts(deps: StationDeps, owner: string, config: StationConfig) {
-  if (!deps.listening) return;
+  if (!deps.listening || !featureOn(config, 'concerts')) return;
   const now = deps.now(), { day, minutes } = localClock(now, config.timezone);
   if (day !== 5 || minutes < 16 * 60) return;
   const latest = await deps.store.latestOfShow(owner, CONCERT_SHOW);
@@ -1093,6 +1094,29 @@ async function planConcerts(deps: StationDeps, owner: string, config: StationCon
   const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
   await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: CONCERT_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 2 }, now);
   await placeSoon(deps, owner, id);
+}
+
+const PLACE_SHOW = `${BLOCK_PREFIX}ortsgeschichte`;
+/** At most this many place stories a day; the same place is told once a month. */
+export const PLACES_PER_DAY = 6, PLACE_REPEAT_DAYS = 30;
+
+/**
+ * Ortsgeschichten: the listener passes [place] (named by the Worker from the app's location). Its story is
+ * put into the program soon – unless it was told this month or the day's stories are used up.
+ */
+export async function addPlaceStory(deps: StationDeps, owner: string, place: string): Promise<{ itemId: string } | { skipped: 'known' | 'enough' | 'off' }> {
+  const config = await deps.store.getConfig(owner);
+  if (!config || !featureOn(config, 'places')) return { skipped: 'off' };
+  const now = deps.now();
+  const month = await deps.store.ofShowSince(owner, PLACE_SHOW, new Date(now.getTime() - PLACE_REPEAT_DAYS * 86_400_000));
+  const placeOf = (row: TimelineRow) => { try { return (JSON.parse(row.research_json ?? '{}') as { place?: string }).place; } catch { return undefined; } };
+  if (month.some(row => placeOf(row) === place)) return { skipped: 'known' };
+  if (month.filter(row => now.getTime() - Date.parse(row.created_at) < 86_400_000).length >= PLACES_PER_DAY) return { skipped: 'enough' };
+  const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: PLACE_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 2 }, now);
+  await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: place, place }) }, now);
+  await placeSoon(deps, owner, id);
+  return { itemId: id };
 }
 
 /** Thrown when a question about an item cannot be answered (not a spoken item, no model). */

@@ -13,6 +13,7 @@ import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FailureSummary
 import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.FamilyMember
+import ch.heimberg.radio.core.FeatureCatalog
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
@@ -124,6 +125,10 @@ class RadioState {
     /** The topic being entered for «Dranbleiben». */
     var followDraft by mutableStateOf<String?>(null)
 
+    // «Funktionen»: what the station does on its own, and which blocks the palette shows.
+    var features by mutableStateOf<FeatureCatalog?>(null)
+    var featuresBusy by mutableStateOf(false)
+
     // «Heute» and the day plan.
     var mood by mutableStateOf<String?>(null)
     var dayPlan by mutableStateOf<DayPlan?>(null)
@@ -234,6 +239,11 @@ interface RadioActions {
     fun suggestFollow(suggestion: String)
     fun follow(topic: String)
     fun unfollow(id: Long)
+
+    /** «Funktionen»: load, switch a feature (Ortsgeschichten asks for the location first), show or hide a block. */
+    fun loadFeatures()
+    fun setFeature(id: String, on: Boolean)
+    fun setBlockVisible(id: String, visible: Boolean)
 
     /** Mitmachen: how a story goes on, a quiz answer, the album, a question to the radio (typed or spoken). */
     fun choose(item: TimelineItem, option: Int)

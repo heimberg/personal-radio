@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent, answerQuiz, chooseStory, AnswerError, answerAbout } from './station.ts';
+import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent, answerQuiz, chooseStory, AnswerError, answerAbout, addPlaceStory } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -25,6 +25,9 @@ import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
 import { PlayStore, albumView } from './play.ts';
 import { BookmarkStore, FollowStore, MAX_FOLLOWED } from './follow.ts';
+import { reverseGeocode, validCoordinate } from './places.ts';
+import { FEATURES, featureOn, parseFeatures, parseHiddenBlocks } from '../src/domain/features.ts';
+import { allBlockViews } from '../src/domain/blocks.ts';
 import { SERIES_PREFIX } from '../src/domain/series.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
@@ -685,6 +688,52 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   if (url.pathname === '/api/series') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json({ series: (await store.listSeries(owner)).map(seriesView) }, 200);
+  }
+  // Funktionen: what the station does on its own, and which blocks the palette shows – managed in one place.
+  if (url.pathname === '/api/features') {
+    const config = await store.getConfig(owner);
+    if (!config) return json({ error: 'not_configured' }, 404);
+    const kids = isKids(owner, parseListeners(env.LISTENERS));
+    const view = (current: typeof config) => ({
+      features: FEATURES.filter(feature => !feature.only || (feature.only === 'kids') === kids)
+        .map(({ id, name, description, cost }) => ({ id, name, description, cost, enabled: featureOn(current, id) })),
+      blocks: allBlockViews(current).map(({ id, name, description }) => ({ id, name, description, visible: !(current.hiddenBlocks ?? []).includes(id) })),
+    });
+    if (request.method === 'GET') return json(view(config), 200);
+    if (request.method !== 'PUT') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 8192);
+    if (body.error) return body.error;
+    const input = (body.value ?? {}) as { features?: Record<string, unknown>; hiddenBlocks?: unknown };
+    const changed = parseFeatures(input.features) ?? {};
+    const linker = input.features?.linker;
+    const next: typeof config = {
+      ...config,
+      features: { ...config.features, ...changed },
+      ...(typeof linker === 'boolean' ? { sounds: { ident: true, hourChange: true, ...config.sounds, linker } } : {}),
+      ...(input.hiddenBlocks !== undefined ? { hiddenBlocks: parseHiddenBlocks(input.hiddenBlocks) ?? [] } : {}),
+    };
+    if (!next.hiddenBlocks?.length) delete next.hiddenBlocks;
+    if (!Object.keys(next.features ?? {}).length) delete next.features;
+    await store.saveConfig(owner, next, new Date());
+    return json(view(next), 200);
+  }
+  // Ortsgeschichten: the app reports a new place; its story joins the program (once a month per place).
+  if (url.pathname === '/api/places/story') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 512);
+    if (body.error) return body.error;
+    const { latitude, longitude } = (body.value ?? {}) as { latitude?: unknown; longitude?: unknown };
+    if (!validCoordinate(latitude, longitude)) return json({ error: 'invalid_location' }, 400);
+    const config = await store.getConfig(owner);
+    if (!config || !featureOn(config, 'places')) return json({ error: 'feature_off' }, 409);
+    let place;
+    try { place = await reverseGeocode(latitude, longitude as number); } catch { place = null; }
+    if (!place) return json({ skipped: 'no_place' }, 200);
+    const result = await addPlaceStory(stationDeps(env, owner), owner, place.label);
+    if ('itemId' in result) await env.PRODUCTION.send({ owner, itemId: result.itemId });
+    return json({ place: place.label, ...result }, 200);
   }
   // Merken: the reading list.
   if (url.pathname === '/api/bookmarks') {
