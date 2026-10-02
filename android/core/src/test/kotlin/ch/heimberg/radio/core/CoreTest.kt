@@ -476,3 +476,22 @@ class MitmachenTest {
         assertEquals("Ort: am Meer", StoryCards.subject(null, StoryCards.places[1], null, " "))
     }
 }
+
+class ReadingTest {
+    @Test fun parsesFollowsBookmarksAndAnswers() {
+        val follows = Reading.parseFollows("""{"topics":[{"id":1,"topic":"Kernfusion","createdAt":"x"}],"max":1}""")
+        assertEquals("Kernfusion", follows.topics.single().topic)
+        assertTrue(follows.full)
+        val bookmarks = Reading.parseBookmarks("""{"bookmarks":[{"itemId":"a","title":"Kernfusion","showName":"Hintergrund","sources":[{"title":"SRF","url":"https://srf.ch/a"}],"at":"x"}]}""")
+        assertEquals("Meine Leseliste aus dem Radio\n\n• Kernfusion (Hintergrund)\n  SRF: https://srf.ch/a", Reading.shareText(bookmarks))
+        assertEquals("i2", Reading.parseAnswer("""{"itemId":"i2","text":"Weil …"}""").itemId)
+        assertEquals("Für Konzerte fehlt dein Spotify-Hörprofil (Studio → Spotify verbinden).", Labels.error("NO_ARTISTS"))
+    }
+
+    @Test fun takesATopicFromAnItem() {
+        val item = TimelineItem(id = "i", seq = 1, showId = "_block:nachfrage", showName = "Nachgefragt", plannedAt = "x", state = "ready",
+            estimatedMinutes = 1.0, title = "Nachgefragt: Wie lange lief der Reaktor?")
+        assertEquals("Wie lange lief der Reaktor?", Reading.topicOf(item))
+        assertEquals("Kernfusion", Reading.topicOf(item.copy(title = "Kernfusion")))
+    }
+}

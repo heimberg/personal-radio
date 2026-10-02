@@ -12,7 +12,7 @@ import type { D1Database } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { blockViews } from '../src/domain/blocks.ts';
-import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent, answerQuiz, chooseStory } from './station.ts';
+import { AUDIO_RETENTION_DAYS, SeriesError, addBlock, addFollowUp, arrangeTimeline, deleteItem, produceItem, removeItem, scheduleShowNow, seriesView, shuffleTimeline, showNameOf, stopSeries, swapItem, tick, toView, transcriptView, trialAgent, answerQuiz, chooseStory, AnswerError, answerAbout } from './station.ts';
 import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
@@ -24,6 +24,7 @@ import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
 import { PlayStore, albumView } from './play.ts';
+import { BookmarkStore, FollowStore, MAX_FOLLOWED } from './follow.ts';
 import { SERIES_PREFIX } from '../src/domain/series.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, previewKey, previewText, timeSignal } from './sounds.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from './linker.ts';
@@ -481,6 +482,8 @@ function stationDeps(env: Environment, owner: string): StationDeps {
     ...(musicFor(env).writer ? { editor: new GeminiScriptEditor((system, input, label, temperature) => musicFor(env).writer!.askJson(system, input, label, temperature)) } : {}),
     ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
     agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
+    week: (owner, since) => new PlayStore(env.DB).week(owner, since),
+    follows: new FollowStore(env.DB),
     catalog,
     ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
     ...(catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(catalog, listeningFor(env)) } : {}),
@@ -683,6 +686,41 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json({ series: (await store.listSeries(owner)).map(seriesView) }, 200);
   }
+  // Merken: the reading list.
+  if (url.pathname === '/api/bookmarks') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json({ bookmarks: await new BookmarkStore(env.DB).list(owner) }, 200);
+  }
+  const bookmarkMatch = url.pathname.match(/^\/api\/bookmarks\/([A-Za-z0-9-]{1,64})$/);
+  if (bookmarkMatch) {
+    if (request.method !== 'DELETE') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    return await new BookmarkStore(env.DB).remove(owner, bookmarkMatch[1]) ? json({ removed: true }, 200) : json({ error: 'not_found' }, 404);
+  }
+  // Dranbleiben: the topics the listener follows.
+  if (url.pathname === '/api/follow') {
+    const follows = new FollowStore(env.DB);
+    if (request.method === 'GET') return json({ topics: (await follows.list(owner)).map(({ known: _known, ...topic }) => topic), max: MAX_FOLLOWED }, 200);
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 1024);
+    if (body.error) return body.error;
+    const raw = (body.value as { topic?: unknown } | null)?.topic;
+    const topic = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    if (topic.length < 2) return json({ error: 'invalid_topic' }, 400);
+    const added = await follows.add(owner, topic, new Date());
+    if (!added) return json({ error: 'too_many_topics', max: MAX_FOLLOWED }, 409);
+    // The first check runs right away (within the day's hours), so the listener hears soon what is new.
+    await refreshProgram(env, owner, false);
+    const { known: _known, ...view } = added;
+    return json({ topic: view }, 200);
+  }
+  const followMatch = url.pathname.match(/^\/api\/follow\/(\d{1,9})$/);
+  if (followMatch) {
+    if (request.method !== 'DELETE') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    return await new FollowStore(env.DB).remove(owner, Number(followMatch[1])) ? json({ removed: true }, 200) : json({ error: 'not_found' }, 404);
+  }
   // The sticker album: every sticker, and which ones the listener has.
   if (url.pathname === '/api/stickers') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
@@ -834,10 +872,37 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     await env.PRODUCTION.send({ owner, itemId });
     return json({ itemId }, 200);
   }
-  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|swap|remove|delete|script|choice|quiz)$/);
+  const match = url.pathname.match(/^\/api\/timeline\/([A-Za-z0-9-]{1,64})\/(audio|feedback|reason|more|swap|remove|delete|script|choice|quiz|ask|bookmark)$/);
   if (!match) return null;
   const row = await store.getItem(owner, match[1]);
   if (!row) return json({ error: 'not_found' }, 404);
+  // «Nachfragen»: a question about this item, answered from its sources, voiced and placed right after it.
+  if (match[2] === 'ask') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 1024);
+    if (body.error) return body.error;
+    const raw = (body.value as { text?: unknown } | null)?.text;
+    const question = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    if (question.length < 3) return json({ error: 'invalid_question' }, 400);
+    try {
+      const answer = await answerAbout(stationDeps(env, owner), owner, row.id, question);
+      return answer ? json(answer, 200) : json({ error: 'not_found' }, 404);
+    } catch (error) {
+      if (error instanceof AnswerError) return json({ error: error.code === 'NOT_SPOKEN' ? 'not_spoken' : 'gemini_not_configured' }, 409);
+      if (error instanceof PipelineError && error.code === 'BUDGET_EXCEEDED') return json({ error: 'daily_limit' }, 429);
+      if (error instanceof PipelineError || error instanceof ProviderError) return json({ error: 'answer_failed' }, error instanceof ProviderError && error.status === 429 ? 429 : statusFor(error));
+      throw error;
+    }
+  }
+  // Merken: the item, its title and sources on the reading list.
+  if (match[2] === 'bookmark') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const view = toView(row, await store.getConfig(owner));
+    await new BookmarkStore(env.DB).add(owner, { itemId: row.id, title: view.title ?? view.showName, showName: view.showName, sources: view.sources ?? [] }, new Date());
+    return json({ ok: true }, 200);
+  }
   // Mitmachen: choosing how a story goes on, answering a quiz question; both can earn a sticker.
   if (match[2] === 'choice' || match[2] === 'quiz') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);

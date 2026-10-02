@@ -58,6 +58,22 @@ export const BLOCKS: readonly Block[] = [
       instructions: 'Stelle jeden Song als Neuerscheinung eines Künstlers vor, den der Hörer gern hört: Künstler und Titel nennen, erfinde keine Details zum Album.',
       groups: [{ name: 'Neuerscheinungen', playlists: [], taste: '', releases: true }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20,
       triggers: { ...DEFAULT_TRIGGERS, beforeTrack: 1, afterTrack: 0, everyMinutes: 0 } } },
+  { id: 'konzerte', name: 'Konzerte in der Nähe', description: 'Wo deine Spotify-Künstler bald auftreten',
+    show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'light', sourceMode: 'web',
+      instructions: 'Nenne die gefundenen Konzerte mit Datum, Stadt und Halle, die nächsten zuerst, und sag zu jedem Künstler einen Satz, warum es sich lohnt. Erfinde keine Termine; nenne nur, was die Quellen belegen.' } },
+  // Hidden: an answer to the listener's question about an item, and the daily check of a followed topic.
+  { id: 'nachfrage', name: 'Nachgefragt', description: 'Die Antwort auf deine Frage zu einem Beitrag', hidden: true,
+    show: { ...spoken, format: 'brief', targetMinutes: 1, verification: 'light', sourceMode: 'feeds', instructions: '' } },
+  { id: 'dranbleiben', name: 'Dranbleiben', description: 'Was es Neues gibt zu einem Thema, an dem du dranbleibst', hidden: true,
+    show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'light', sourceMode: 'web',
+      instructions: 'Erzähle nur, was seit dem letzten Mal neu ist, knüpfe kurz an das Bekannte an und ordne ein, warum es wichtig ist.' } },
+  // Written from what was heard this week; the planner adds it on Sunday on its own.
+  { id: 'rueckblick', name: 'Wochenrückblick', description: 'Deine Woche im Radio: das Beste, deine Fragen, deine Sticker',
+    show: { ...spoken, format: 'brief', targetMinutes: 4, verification: 'light', sourceMode: 'feeds',
+      instructions: 'Ein persönlicher Rückblick auf die Woche im Radio, direkt an die Hörerin oder den Hörer gerichtet. Die Quellen «w…» sind Beiträge, die diese Woche gehört wurden: ' +
+        'greife die drei bis fünf spannendsten heraus und sag zu jedem in ein, zwei Sätzen, was davon hängen bleibt; was in den Nachrichten wichtig war, fasse kurz als «Was diese Woche wichtig war» zusammen. ' +
+        'Nennt die Quelle «woche» Fragen ans Radio oder neue Sticker, greif sie herzlich auf; erwähne auch Mitmach-Entscheidungen und Quizfragen. ' +
+        'Schliesse mit einem freundlichen Gruss ins Wochenende oder in die neue Woche. Erfinde nichts, was nicht in den Quellen steht.' } },
   // Surprises: the planner mixes them in by the station's surprise level; «Überraschung» in the palette draws one.
   { id: 'zufallsfund', name: 'Zufallsfund', description: 'Eine überraschende Geschichte von nebenan deiner Interessen', hidden: true, surprise: { weight: 3 },
     show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'strict', sourceMode: 'web',

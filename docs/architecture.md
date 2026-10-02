@@ -236,6 +236,22 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
   - Pictures never go to an AI.
 - **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
 
+### Nachfragen, Dranbleiben, Merken, Konzerte
+
+`server/follow.ts`, migration 0014.
+
+- **Nachfragen** (`POST /api/timeline/{id}/ask {text}`, `answerAbout`): only for spoken items (`reviewable`), so no song or playlist data reaches the AI. The agent model answers from the item's script and sources (`ANSWER_PROMPT`); when they do not suffice, one grounded search for the question, then a second answer, else an honest «nothing reliable found». The answer is voiced right away, stored as a ready item `_block:nachfrage` and placed right after the item; it counts towards `DAILY_GENERATIONS` and the speech budget.
+- **Dranbleiben** (`GET/POST /api/follow`, `DELETE /api/follow/{id}`, `followed_topics`): at most five topics. Between 07:00 and 21:00 station time, `tick` adds a check (`_block:dranbleiben`) for every topic not checked for 22 hours. Production researches what is new since the last report (or the week before following). The agent model compares the result with what is known (`NOVELTY_PROMPT`). Without anything new, the item expires quietly (`NOTHING_NEW`); otherwise the brief tells only what is new, and `known` is updated.
+- **Merken** (`POST /api/timeline/{id}/bookmark`, `GET /api/bookmarks`, `DELETE /api/bookmarks/{itemId}`, `bookmarks`): title, show and web sources are copied, so the reading list outlives the item. The app opens the sources and shares the list as text.
+- **Konzerte in der Nähe** (block `konzerte`): on Friday from 16:00 station time, once a week, when the Spotify listening profile has top artists. The research asks for confirmed concerts of up to 15 top artists in Switzerland near the station's place in the next four months. Only artist names go to the AI, as with new releases.
+
+### Wochenrückblick
+
+`server/review.ts`, block `rueckblick` (a 4-minute brief, checked `light`).
+
+- **When:** `tick` adds it on Sunday from 08:00 station time, once in six days, when at least three spoken items were heard to the end in the last seven days (`heardSince`). It can also be added from the palette on any day.
+- **Sources:** one per heard spoken item (`w1` …, the newest 15): title, the script without voice tags (900 characters), and notes on a shared item, a story choice or a quiz answer. A source `woche` lists the week's questions to the radio (with the answer on air) and new stickers (`PlayStore.week`). Songs, music hours and blocks, items with tracks and earlier reviews stay out, so no Spotify data reaches the AI. The review does not avoid recent topics (`avoidTopics` is empty).
+
 ### Mitmachen
 
 Interactive features, above all for a child's station (`src/domain/play.ts`, `server/play.ts`, migration 0013).

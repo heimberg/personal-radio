@@ -210,6 +210,9 @@ object Labels {
         "NO_LOCATION" -> "Für das Wetter fehlt der Ort (Programm einstellen → Sendeuhr → Ort)."
         "WEATHER_NOT_CONFIGURED" -> "Das Wetter-Tool ist nicht verfügbar."
         "SPOTIFY_NOT_CONFIGURED" -> "Spotify ist auf dem Server nicht eingerichtet."
+        "NO_ARTISTS" -> "Für Konzerte fehlt dein Spotify-Hörprofil (Studio → Spotify verbinden)."
+        "NOTHING_NEW" -> "Nichts Neues zum Thema."
+        "FOLLOW_REMOVED" -> "Du bleibst an diesem Thema nicht mehr dran."
         else -> code
     }
 }

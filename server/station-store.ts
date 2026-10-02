@@ -152,6 +152,12 @@ export class StationStore {
     await this.db.prepare(`UPDATE series SET ${sets.join(', ')}, updated_at = ? WHERE owner_id = ? AND id = ?`).bind(...values, now.toISOString(), owner, id).run();
   }
 
+  /** Items heard to the end since [since], oldest first (the week for the Wochenrückblick). */
+  async heardSince(owner: string, since: Date): Promise<TimelineRow[]> {
+    return (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND state = 'played' AND updated_at >= ? AND script_json IS NOT NULL
+      ORDER BY updated_at`).bind(owner, since.toISOString()).all<TimelineRow>()).results;
+  }
+
   /** The newest timeline item of a show (a series' latest episode), whatever its state. */
   async latestOfShow(owner: string, showId: string): Promise<TimelineRow | null> {
     return this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? AND show_id = ? ORDER BY seq DESC LIMIT 1').bind(owner, showId).first<TimelineRow>();

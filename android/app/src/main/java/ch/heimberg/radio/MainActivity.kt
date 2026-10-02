@@ -30,6 +30,7 @@ import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.Program
 import ch.heimberg.radio.core.ProgramClock
+import ch.heimberg.radio.core.Reading
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.TimelineItem
@@ -488,6 +489,108 @@ class MainActivity : AppCompatActivity(), RadioActions {
         }
     }
 
+    /** The item a question or bookmark is about: the given one, else what plays (from the program or the archive). */
+    private fun itemOrPlaying(item: TimelineItem?): TimelineItem? {
+        if (item != null) return item
+        val id = currentId() ?: return null
+        return state.open.firstOrNull { it.id == id } ?: state.heard.firstOrNull { it.id == id } ?: state.archive?.firstOrNull { it.id == id }
+    }
+
+    override fun askAbout(item: TimelineItem?) {
+        val about = itemOrPlaying(item) ?: return state.say(getString(R.string.nothing_playing))
+        if (about.hasMusic || about.showId == "_musik") return state.say("Zu Songs und Musikstunden kann das Radio keine Fragen beantworten.")
+        state.askAbout = about
+        state.askOpen = true
+    }
+
+    override fun sendQuestion() {
+        val about = state.askAbout ?: return
+        val text = state.askDraft.trim()
+        if (text.length < 3 || state.asking) return
+        state.asking = true
+        lifecycleScope.launch {
+            runCatching { api.askAbout(about.id, text) }
+                .onSuccess { answer ->
+                    state.askDraft = ""
+                    state.askOpen = false
+                    state.askAbout = null
+                    changed()
+                    val reply = state.open.firstOrNull { it.id == answer.itemId }
+                    state.say("Die Antwort kommt direkt nach «${about.displayTitle}».", "Jetzt hören") { reply?.let { play(it) } ?: state.say(answer.text) }
+                }
+                .onFailure {
+                    state.say(when ((it as? ApiException)?.status) {
+                        409 -> "Dazu kann das Radio keine Frage beantworten."
+                        429 -> "Für heute ist das Limit erreicht – morgen geht es wieder."
+                        else -> it.message ?: getString(R.string.connection_failed)
+                    })
+                }
+            state.asking = false
+        }
+    }
+
+    override fun toggleBookmark(item: TimelineItem?) {
+        val target = itemOrPlaying(item) ?: return state.say(getString(R.string.nothing_playing))
+        val on = !state.bookmarked(target.id)
+        window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        lifecycleScope.launch {
+            val result = runCatching { if (on) api.bookmark(target.id) else api.unbookmark(target.id) }
+            state.say(result.fold({ if (on) "🔖 «${target.displayTitle}» ist auf deiner Leseliste." else "Von der Leseliste genommen." }, { it.message ?: getString(R.string.connection_failed) }))
+            loadBookmarks()
+        }
+    }
+
+    override fun removeBookmark(itemId: String) {
+        lifecycleScope.launch {
+            runCatching { api.unbookmark(itemId) }.onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            loadBookmarks()
+        }
+    }
+
+    override fun shareReading() {
+        if (state.bookmarks.isEmpty()) return
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "Meine Leseliste aus dem Radio")
+            .putExtra(Intent.EXTRA_TEXT, Reading.shareText(state.bookmarks))
+        startActivity(Intent.createChooser(send, "Leseliste teilen"))
+    }
+
+    override fun openSource(url: String) {
+        if (!url.startsWith("https://") && !url.startsWith("http://")) return
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }.onFailure { state.say("Kein Browser gefunden.") }
+    }
+
+    override fun suggestFollow(suggestion: String) {
+        if (state.follows.full) return state.say("Du bleibst schon an ${state.follows.max} Themen dran – entferne zuerst eines im Programm.")
+        state.followDraft = suggestion
+    }
+
+    override fun follow(topic: String) {
+        state.followDraft = null
+        val clean = topic.trim()
+        if (clean.length < 2) return
+        lifecycleScope.launch {
+            val result = runCatching { api.follow(clean) }
+            state.say(result.fold(
+                { "📌 Du bleibst an «$clean» dran. Gibt es Neues, kommt es ins Programm." },
+                { if (it is ApiException && it.status == 409) "Du bleibst schon an ${state.follows.max} Themen dran." else it.message ?: getString(R.string.connection_failed) },
+            ))
+            loadFollows()
+            changed()
+        }
+    }
+
+    override fun unfollow(id: Long) {
+        lifecycleScope.launch {
+            runCatching { api.unfollow(id) }.onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            loadFollows()
+        }
+    }
+
+    private suspend fun loadBookmarks() { runCatching { api.bookmarks() }.getOrNull()?.let { state.bookmarks = it } }
+
+    private suspend fun loadFollows() { runCatching { api.follows() }.getOrNull()?.let { state.follows = it } }
+
     override fun dictate() {
         val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -622,6 +725,8 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private suspend fun loadBlocks() {
         runCatching { api.blocks() }.getOrNull()?.let { state.blocks = it }
         loadSeries()
+        loadFollows()
+        loadBookmarks()
     }
 
     private suspend fun loadSeries() {
@@ -673,6 +778,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
                     else "Antippen: sofort hören, danach geht das Programm weiter. Lange drücken: Text oder löschen. Gehörtes bleibt ${library.retentionDays} Tage."
                 }
                 .onFailure { state.archiveNote = it.message ?: getString(R.string.connection_failed) }
+            loadBookmarks()
             state.archiveRefreshing = false
         }
     }

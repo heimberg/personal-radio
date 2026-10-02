@@ -8,7 +8,11 @@ import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.Feedback
 import ch.heimberg.radio.core.FeedbackReason
+import ch.heimberg.radio.core.AnswerResult
+import ch.heimberg.radio.core.Bookmark
+import ch.heimberg.radio.core.FollowList
 import ch.heimberg.radio.core.Library
+import ch.heimberg.radio.core.Reading
 import ch.heimberg.radio.core.Mitmachen
 import ch.heimberg.radio.core.PlayResult
 import ch.heimberg.radio.core.StickerAlbum
@@ -198,6 +202,25 @@ class ApiClient(private val connection: Connection) {
 
     /** Retires failed productions and starts waiting ones again. */
     suspend fun retry() { withContext(Dispatchers.IO) { request("POST", "api/timeline/retry") } }
+
+    // ── Nachfragen, Merken, Dranbleiben ──────────────────────────────────────────────────────
+
+    /** A question about [itemId]: answered from its sources, voiced and placed right after it. */
+    suspend fun askAbout(itemId: String, text: String): AnswerResult = withContext(Dispatchers.IO) {
+        Reading.parseAnswer(request("POST", "api/timeline/$itemId/ask", JSONObject().put("text", text).toString()))
+    }
+
+    suspend fun bookmarks(): List<Bookmark> = withContext(Dispatchers.IO) { Reading.parseBookmarks(request("GET", "api/bookmarks")) }
+
+    suspend fun bookmark(itemId: String) { withContext(Dispatchers.IO) { request("POST", "api/timeline/$itemId/bookmark") } }
+
+    suspend fun unbookmark(itemId: String) { withContext(Dispatchers.IO) { request("DELETE", "api/bookmarks/$itemId") } }
+
+    suspend fun follows(): FollowList = withContext(Dispatchers.IO) { Reading.parseFollows(request("GET", "api/follow")) }
+
+    suspend fun follow(topic: String) { withContext(Dispatchers.IO) { request("POST", "api/follow", JSONObject().put("topic", topic).toString()) } }
+
+    suspend fun unfollow(id: Long) { withContext(Dispatchers.IO) { request("DELETE", "api/follow/$id") } }
 
     // ── Mitmachen ──────────────────────────────────────────────────────────────────────────────
 

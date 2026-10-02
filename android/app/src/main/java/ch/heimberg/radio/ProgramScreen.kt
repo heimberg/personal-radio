@@ -72,6 +72,8 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                 section("Serien")
                 items(running, key = { "series-${it.id}" }) { SeriesRow(it, actions) }
             }
+            section("Dranbleiben")
+            item(key = "follows") { FollowedTopics(state, actions) }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
             if (state.open.isEmpty()) {
                 item(key = "empty") {

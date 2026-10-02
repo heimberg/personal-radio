@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
+import ch.heimberg.radio.core.Bookmark
+import ch.heimberg.radio.core.FollowList
 import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FailureSummary
 import ch.heimberg.radio.core.Family
@@ -112,6 +114,16 @@ class RadioState {
     /** Starting a Mitmach-Geschichte from picture cards. */
     var storyCardsFor by mutableStateOf<BlockView?>(null)
 
+    // Nachfragen (a question about an item), Merken (the reading list) and Dranbleiben (followed topics).
+    /** The item a question is asked about; the question dialog asks the radio when it is null. */
+    var askAbout by mutableStateOf<TimelineItem?>(null)
+    var bookmarks by mutableStateOf<List<Bookmark>>(emptyList())
+    /** «Archiv» shows the reading list instead of the productions. */
+    var readingList by mutableStateOf(false)
+    var follows by mutableStateOf(FollowList())
+    /** The topic being entered for «Dranbleiben». */
+    var followDraft by mutableStateOf<String?>(null)
+
     // «Heute» and the day plan.
     var mood by mutableStateOf<String?>(null)
     var dayPlan by mutableStateOf<DayPlan?>(null)
@@ -170,6 +182,7 @@ class RadioState {
     val coverUrl: String? get() = artworkUrl ?: current?.coverUrl
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val readyCount: Int get() = open.count { it.isPlayable }
+    fun bookmarked(itemId: String?): Boolean = itemId != null && bookmarks.any { it.itemId == itemId }
     /** The choice or quiz to show on «Hören»: for what plays, else for something heard a little earlier. */
     val mitmachen: TimelineItem? get() = Mitmachen.pending(current, heard, Instant.now())
 
@@ -208,6 +221,19 @@ interface RadioActions {
     fun chooseBlock(block: BlockView)
     fun addBlock(block: BlockView, subject: String)
     fun stopSeries(series: SeriesInfo)
+
+    /** Nachfragen: opens the question dialog for [item] (or what plays); sends the question. */
+    fun askAbout(item: TimelineItem? = null)
+    fun sendQuestion()
+    /** Merken: on or off the reading list; the list to share. */
+    fun toggleBookmark(item: TimelineItem? = null)
+    fun removeBookmark(itemId: String)
+    fun shareReading()
+    fun openSource(url: String)
+    /** Dranbleiben: follow a topic (the dialog with [suggestion]), stop following one. */
+    fun suggestFollow(suggestion: String)
+    fun follow(topic: String)
+    fun unfollow(id: Long)
 
     /** Mitmachen: how a story goes on, a quiz answer, the album, a question to the radio (typed or spoken). */
     fun choose(item: TimelineItem, option: Int)

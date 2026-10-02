@@ -42,6 +42,17 @@ export class PlayStore {
     await this.db.prepare('UPDATE radio_questions SET aired_at = ?, answer = ? WHERE id = ?').bind(now.toISOString(), answer, id).run();
   }
 
+  /** What the Wochenrückblick mentions: questions since [since] (with the answer once on air) and the stickers earned. */
+  async week(owner: string, since: Date): Promise<{ questions: Array<{ text: string; answer: string | null }>; stickers: string[] }> {
+    const from = since.toISOString();
+    const [questions, stickers] = await Promise.all([
+      this.db.prepare('SELECT text, answer FROM radio_questions WHERE owner_id = ? AND created_at >= ? ORDER BY id').bind(owner, from).all<{ text: string; answer: string | null }>(),
+      this.db.prepare('SELECT sticker FROM stickers WHERE owner_id = ? AND created_at >= ? ORDER BY id').bind(owner, from).all<{ sticker: string }>(),
+    ]);
+    return { questions: questions.results.map(row => ({ text: row.text, answer: row.answer })),
+      stickers: stickers.results.flatMap(row => { const sticker = stickerById(row.sticker); return sticker ? [`${sticker.emoji} ${sticker.name}`] : []; }) };
+  }
+
   /** The listener's recent questions, newest first, with the answer once it was on air. */
   async questions(owner: string, limit = 20): Promise<Array<{ id: number; text: string; at: string; answer: string | null }>> {
     return (await this.db.prepare('SELECT id, text, created_at AS at, answer FROM radio_questions WHERE owner_id = ? ORDER BY id DESC LIMIT ?')
