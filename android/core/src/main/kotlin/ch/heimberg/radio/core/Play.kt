@@ -75,9 +75,9 @@ object StoryCards {
     val heroes = listOf(Card("🦊", "Fuchs", "ein schlauer Fuchs"), Card("🐉", "Drache", "ein kleiner Drache"), Card("🤖", "Roboter", "ein neugieriger Roboter"),
         Card("🧙", "Zauberin", "eine junge Zauberin"), Card("🦄", "Einhorn", "ein Einhorn"), Card("🕵️", "Detektivin", "eine Detektivin"))
     val places = listOf(Card("🏰", "Burg", "in einer alten Burg"), Card("🌊", "Meer", "am Meer"), Card("🌲", "Zauberwald", "im Zauberwald"),
-        Card("🚀", "Weltall", "im Weltall"), Card("🏔️", "Bergen", "in den Bergen"), Card("🏙️", "Stadt", "in einer grossen Stadt"))
-    val kinds = listOf(Card("✨", "Magie", "voller Magie"), Card("🔍", "Rätsel", "mit einem Rätsel"), Card("😂", "lustig", "sehr lustig"),
-        Card("🐾", "Tieren", "mit vielen Tieren"), Card("🏆", "Wettbewerb", "mit einem Wettbewerb"), Card("🌙", "Einschlafen", "ruhig, zum Einschlafen"))
+        Card("🚀", "Weltall", "im Weltall"), Card("🏔️", "Berge", "in den Bergen"), Card("🏙️", "Stadt", "in einer grossen Stadt"))
+    val kinds = listOf(Card("✨", "Magie", "voller Magie"), Card("🔍", "Rätsel", "mit einem Rätsel"), Card("😂", "Lustig", "sehr lustig"),
+        Card("🐾", "Tiere", "mit vielen Tieren"), Card("🏆", "Wettbewerb", "mit einem Wettbewerb"), Card("🌙", "Zum Einschlafen", "ruhig, zum Einschlafen"))
 
     /** The subject for the server, e.g. «Hauptfigur: ein schlauer Fuchs · Ort: im Zauberwald · Art: mit einem Rätsel · Nina spielt selbst mit». */
     fun subject(hero: Card?, place: Card?, kind: Card?, player: String?): String = listOfNotNull(
