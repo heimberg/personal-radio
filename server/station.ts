@@ -12,6 +12,8 @@ import { CHOICE_PROMPT, CHOICE_WAIT_HOURS, QUIZ_PROMPT, parseChoice, parseQuiz, 
 import type { Quiz, StoryChoice } from '../src/domain/play.ts';
 import { MIN_REVIEW_ITEMS, REVIEW_DAYS, REVIEW_SHOW, reviewSources, reviewable } from './review.ts';
 import type { WeekExtras } from './review.ts';
+import { ANSWER_PROMPT, NOVELTY_PROMPT, parseAnswer, parseNovelty } from './follow.ts';
+import type { FollowStore } from './follow.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -64,6 +66,8 @@ export interface StationDeps {
   agentSteps?(owner: string, runId: string): DurableStepRunner & { clear(): Promise<void> };
   /** Wochenrückblick: questions to the radio and stickers since a date. */
   week?(owner: string, since: Date): Promise<WeekExtras>;
+  /** Dranbleiben: the topics the listener follows. */
+  follows?: Pick<FollowStore, 'due' | 'get' | 'checked' | 'reported'>;
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -177,6 +181,8 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   if (listening && await deps.store.recentFailures(owner, minutes(now, -60)) < 3) {
     await advanceSeries(deps, owner);
     await planWeekReview(deps, owner, config);
+    await planFollowChecks(deps, owner, config);
+    await planConcerts(deps, owner, config);
     const recent = await deps.store.recentItems(owner, 4);
     planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id), deps.random);
     for (const item of planned) await deps.store.insertItem(owner, item, now);
@@ -278,6 +284,8 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
   let seriesSources: Source[] = [];
   let storyChoice: StoryChoice | null = null;
+  const followId = followOf(row);
+  let followed: { id: number; topic: string; known: string; createdAt: string; reportedAt: string | null } | null = null, followNote = '';
   if (row.show_id.startsWith(SERIES_PREFIX)) {
     const series = episode ? await deps.store.getSeries(owner, episode.series) : null;
     if (!series || !episode || !series.episodes[episode.episode]) return fail('SERIES_REMOVED');
@@ -346,6 +354,20 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
         notes.push(`Der vorherige Beitrag hiess «${said.title}» und sagte bereits: «${said.text.replace(/\s+/g, ' ').slice(0, 1500)}». Wiederhole das nicht, sondern gehe tiefer.${parentSources.length ? ` Seine Quellen stehen in «p1» bis «p${parentSources.length}».` : ''}`);
         researchPrompt = `Recherchiere Hintergründe, Ursachen, Folgen und neue Aspekte zu «${said.title}», die über einen kurzen Nachrichtenbeitrag hinausgehen.`;
       }
+      // Dranbleiben: research what is new about the topic since the last report.
+      if (followId !== undefined && row.state === 'planned') {
+        followed = await deps.follows?.get(owner, followId) ?? null;
+        if (!followed) return fail('FOLLOW_REMOVED');
+        const since = followSince(followed);
+        researchPrompt = `Neue Entwicklungen zu «${followed.topic}» seit dem ${since.toISOString().slice(0, 10)}: was ist passiert, was wurde entschieden, was ist neu bekannt geworden? Nur Meldungen aus dieser Zeit.`;
+      }
+      // Konzerte: where the listener's Spotify top artists play soon (only artist names go to the AI).
+      if (row.show_id === CONCERT_SHOW && row.state === 'planned') {
+        const artists = (await deps.listening?.topArtists(owner, now).catch(() => []) ?? []).slice(0, 15);
+        if (!artists.length) return fail('NO_ARTISTS');
+        researchPrompt = `Angekündigte Konzerte in den nächsten vier Monaten in der Schweiz, möglichst nahe bei ${config.location?.name ?? 'Bern'} (etwa Bern, Zürich, Basel, Luzern), ` +
+          `von diesen Künstlern: ${artists.join(', ')}. Nur bestätigte Termine mit Datum, Stadt und Halle.`;
+      }
       const instructions = [expandPlaceholders(configured.instructions, values), ...notes].filter(Boolean).join(' ');
       show = { ...configured, instructions, researchPrompt };
     }
@@ -371,7 +393,20 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       // Tool results are evidence too; a show can live on them alone (a weather report).
       sources = [...toolSources, ...sources];
       if (!sources.length) return fail('NO_SOURCES');
-      const direction = { instructions: show.instructions, targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents,
+      // Dranbleiben says nothing when there is nothing new: the check leaves the program quietly.
+      if (followed) {
+        const novelty = deps.agentModel ? parseNovelty(await deps.agentModel.askJson(NOVELTY_PROMPT, {
+          thema: followed.topic, seit: followSince(followed).toISOString().slice(0, 10), bisher: followed.known || 'noch nichts',
+          quellen: sources.slice(0, 8).map(source => ({ id: source.id, titel: source.title, datum: source.publishedAt, text: source.excerpt.slice(0, 1500) })),
+        }, 'Gemini follow check', 0.2)) : { neu: true, was: '' };
+        if (!novelty.neu) {
+          await deps.store.update(owner, row.id, { state: 'expired', lease_until: null, error: 'NOTHING_NEW' }, deps.now());
+          return 'skipped';
+        }
+        followNote = `Das Thema ist «${followed.topic}». Bisher bekannt: ${followed.known || 'noch nichts'}. Neu ist: ${novelty.was}`;
+        followed.known = novelty.was;
+      }
+      const direction = { instructions: [show.instructions, followNote].filter(Boolean).join(' '), targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents,
         listenerNotes: await notesFor(deps, owner, now), ...(episode?.kind === 'geschichte' ? { story: true } : {}) };
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
@@ -397,6 +432,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
         research_json: Object.keys(research).length ? JSON.stringify(research) : null };
       await deps.store.update(owner, row.id, patch, deps.now());
       if (episode) await rememberEpisode(deps, owner, episode, script);
+      if (followed) await deps.follows?.reported(owner, followed.id, followed.known, deps.now());
       current = { ...current, ...patch };
     }
     const script = JSON.parse(current.script_json ?? 'null') as Script;
@@ -1020,6 +1056,89 @@ async function planWeekReview(deps: StationDeps, owner: string, config: StationC
   await placeSoon(deps, owner, id);
 }
 
+const FOLLOW_SHOW = `${BLOCK_PREFIX}dranbleiben`, CONCERT_SHOW = `${BLOCK_PREFIX}konzerte`, ANSWER_SHOW = `${BLOCK_PREFIX}nachfrage`;
+
+function followOf(row: TimelineRow): number | undefined {
+  if (row.show_id !== FOLLOW_SHOW) return undefined;
+  try { const value = (JSON.parse(row.research_json ?? '{}') as { follow?: unknown }).follow; return Number.isInteger(value) ? value as number : undefined; }
+  catch { return undefined; }
+}
+
+/** What is new since: the last report, else a week before the topic was followed. */
+const followSince = (topic: { createdAt: string; reportedAt: string | null }) =>
+  new Date(topic.reportedAt ? Date.parse(topic.reportedAt) : Date.parse(topic.createdAt) - 7 * 86_400_000);
+
+/** Dranbleiben: during the day, topics not checked for a day get a check (it stays quiet when nothing is new). */
+async function planFollowChecks(deps: StationDeps, owner: string, config: StationConfig) {
+  if (!deps.follows) return;
+  const now = deps.now(), { minutes } = localClock(now, config.timezone);
+  if (minutes < 7 * 60 || minutes >= 21 * 60) return;
+  for (const topic of await deps.follows.due(owner, now)) {
+    const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
+    await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: FOLLOW_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 2 }, now);
+    await deps.store.update(owner, id, { research_json: JSON.stringify({ follow: topic.id, followTopic: topic.topic }) }, now);
+    await deps.follows.checked(owner, topic.id, now);
+    await placeSoon(deps, owner, id);
+  }
+}
+
+/** Konzerte: on Friday from four in the afternoon, once a week, when the listener's Spotify profile has top artists. */
+async function planConcerts(deps: StationDeps, owner: string, config: StationConfig) {
+  if (!deps.listening) return;
+  const now = deps.now(), { day, minutes } = localClock(now, config.timezone);
+  if (day !== 5 || minutes < 16 * 60) return;
+  const latest = await deps.store.latestOfShow(owner, CONCERT_SHOW);
+  if (latest && now.getTime() - Date.parse(latest.created_at) < 6 * 86_400_000) return;
+  if (!(await deps.listening.topArtists(owner, now).catch(() => [])).length) return;
+  const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: CONCERT_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 2 }, now);
+  await placeSoon(deps, owner, id);
+}
+
+/** Thrown when a question about an item cannot be answered (not a spoken item, no model). */
+export class AnswerError extends Error {
+  readonly code: 'NOT_SPOKEN' | 'NOT_CONFIGURED';
+  constructor(code: AnswerError['code']) { super(code); this.code = code; }
+}
+
+/**
+ * «Nachfragen»: the listener's question about an item, answered from that item's script and sources
+ * (with fresh research when they do not suffice), voiced and put right after it. Songs and hours are
+ * not asked about, so no playlist data reaches the AI.
+ */
+export async function answerAbout(deps: StationDeps, owner: string, itemId: string, question: string): Promise<{ itemId: string; text: string } | null> {
+  const row = await deps.store.getItem(owner, itemId), config = await deps.store.getConfig(owner);
+  if (!row || !config) return null;
+  if (!reviewable(row)) throw new AnswerError('NOT_SPOKEN');
+  if (!deps.agentModel) throw new AnswerError('NOT_CONFIGURED');
+  await deps.reserveGeneration(owner);
+  const now = deps.now(), script = JSON.parse(row.script_json!) as Script;
+  let sources: Source[] = (() => { try { return (JSON.parse(row.sources_json ?? '[]') as Source[]).filter(source => source.id !== OUTLINE_SOURCE_ID); } catch { return []; } })();
+  const system = [ANSWER_PROMPT, kidsRules(config)].filter(Boolean).join(' ');
+  const ask = async () => parseAnswer(await deps.agentModel!.askJson(system, {
+    frage: question, beitrag: { titel: script.title, text: withoutVoiceTags(script.text).slice(0, 6000) },
+    quellen: sources.slice(0, 8).map(source => ({ id: source.id, titel: source.title, text: source.excerpt.slice(0, 2500) })),
+  }, 'Gemini answer', 0.3));
+  let answer = await ask();
+  // Not in the item: one grounded search for the question, then answer again.
+  if (!answer.answerable && deps.researcher) {
+    const found = await deps.researcher.research({ brief: `${question} (im Zusammenhang mit «${script.title}»)`, interests: [], avoidTopics: [], now, agent: agentOf(resolveAgents(config.agents), 'research') });
+    if (found.sources.length) { sources = found.sources; answer = await ask(); }
+  }
+  const text = answer.answerable ? answer.text : `Zu deiner Frage «${question}» habe ich leider nichts Verlässliches gefunden – weder im Beitrag noch bei einer kurzen Suche.`;
+  const reply: Script = { title: `Nachgefragt: ${question.slice(0, 80)}`, text, sourceIds: answer.sourceIds.filter(id => sources.some(source => source.id === id)) };
+  const voiced = await deps.pipeline.voice(owner, reply, 'brief', config.host.voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed });
+  const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
+  const key = `segments/${id}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
+  await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: ANSWER_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 1 }, now);
+  await deps.store.update(owner, id, { state: 'ready', script_json: JSON.stringify(reply), sources_json: JSON.stringify(sources.filter(source => reply.sourceIds.includes(source.id))),
+    verification: 'light', audio_key: key, content_type: voiced.contentType, research_json: JSON.stringify({ question, about: row.id }) }, now);
+  const open = (await deps.store.openItems(owner)).map(item => item.id);
+  await placeAfter(deps, owner, id, open.includes(row.id) ? row.id : undefined);
+  return { itemId: id, text };
+}
+
 /** Ends a series: no further episodes, and the open one leaves the program. */
 export async function stopSeries(deps: StationDeps, owner: string, id: string): Promise<boolean> {
   const series = await deps.store.getSeries(owner, id);
@@ -1223,8 +1342,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   try { sources = JSON.parse(row.sources_json ?? '[]'); } catch { /* Keep the item visible without sources. */ }
   let queries: string[] = [];
   let team: TimelineItemView['team'];
-  let sharedBy: string | undefined, sharedShow: string | undefined;
-  try { ({ queries = [], team, sharedBy, sharedShow } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team']; sharedBy?: string; sharedShow?: string }); } catch { /* Research details are optional. */ }
+  let sharedBy: string | undefined, sharedShow: string | undefined, followTopic: string | undefined;
+  try { ({ queries = [], team, sharedBy, sharedShow, followTopic } = JSON.parse(row.research_json ?? '{}') as { queries?: string[]; team?: TimelineItemView['team']; sharedBy?: string; sharedShow?: string; followTopic?: string }); } catch { /* Research details are optional. */ }
   const episode = row.show_id.startsWith(SERIES_PREFIX) ? episodeRefOf(row.research_json) : null;
   const { choice, quiz } = (() => {
     try { const research = JSON.parse(row.research_json ?? '{}') as { choice?: unknown; quiz?: unknown }; return { choice: parseChoice(research.choice), quiz: parseQuiz(research.quiz) }; }
@@ -1234,7 +1353,7 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
   sources = sources.filter(source => source.id !== OUTLINE_SOURCE_ID);
   return {
     id: row.id, seq: row.seq, showId: row.show_id,
-    showName: episode ? `${episode.seriesTitle} · Folge ${episode.episode + 1}/${episode.total}` : sharedShow ?? showNameOf(row.show_id, config),
+    showName: episode ? `${episode.seriesTitle} · Folge ${episode.episode + 1}/${episode.total}` : sharedShow ?? (followTopic ? `Dranbleiben: ${followTopic}` : showNameOf(row.show_id, config)),
     ...(typeof sharedBy === 'string' ? { sharedBy } : {}),
     ...(episode ? { series: { id: episode.series, episode: episode.episode + 1, total: episode.total, kind: episode.kind } } : {}),
     ...(isSurprise(row.show_id) ? { surprise: true } : {}),

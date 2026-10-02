@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phosphor Icons (bookmark-simple fill), MIT License. Tinted by the view that shows it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="?attr/colorControlNormal"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M200,48V224a8,8,0,0,1-12.24,6.78L128,193.43,68.23,230.78A8,8,0,0,1,56,224V48A16,16,0,0,1,72,32H184A16,16,0,0,1,200,48Z" />
+</vector>

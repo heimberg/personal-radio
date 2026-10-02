@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -219,9 +220,13 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
             RoundIcon(R.drawable.ic_skip_forward, "Weiter") { actions.next() }
             RoundIcon(R.drawable.ic_thumbs_up, "Mehr davon") { actions.rate(true) }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        // Five small actions: they scroll sideways on a narrow screen.
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp)) {
             SmallAction(R.drawable.ic_info, "Text") { actions.transcript() }
+            SmallAction(R.drawable.ic_question, "Nachfragen") { actions.askAbout() }
             SmallAction(R.drawable.ic_plus_circle, "Mehr dazu") { actions.deepen() }
+            val marked = state.bookmarked(state.currentItemId)
+            SmallAction(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
             SmallAction(R.drawable.ic_moon, if (state.sleepLabel != null) "Timer an" else "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
         }
     }

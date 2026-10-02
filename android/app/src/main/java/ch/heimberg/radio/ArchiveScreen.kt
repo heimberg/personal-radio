@@ -1,18 +1,23 @@
 package ch.heimberg.radio
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.TimelineItem
@@ -38,11 +43,22 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             item(key = "head") {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
                     Text("Archiv", style = MaterialTheme.typography.headlineSmall)
+                    // The productions, or the reading list (what was kept with «Merken»).
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = !state.readingList, onClick = { state.readingList = false }, label = { Text("Gehört") })
+                        FilterChip(selected = state.readingList, onClick = { state.readingList = true }, label = { Text("🔖 Leseliste · ${state.bookmarks.size}") })
+                        if (state.readingList && state.bookmarks.isNotEmpty()) TextButton(onClick = actions::shareReading) { Text("Teilen") }
+                    }
                     Text(
-                        state.archiveNote.ifBlank { if (items == null) "Archiv wird geladen …" else "" },
+                        if (state.readingList) { if (state.bookmarks.isEmpty()) "Noch nichts gemerkt. Im Player oder im Menü eines Beitrags: «Merken»." else "" }
+                        else state.archiveNote.ifBlank { if (items == null) "Archiv wird geladen …" else "" },
                         style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(vertical = 6.dp),
                     )
                 }
+            }
+            if (state.readingList) {
+                items(state.bookmarks, key = { "bookmark-${it.itemId}" }) { ReadingListEntry(it, actions) }
+                return@LazyColumn
             }
             for ((date, group) in byDay(items.orEmpty())) {
                 item(key = "day-$date") {

@@ -157,23 +157,32 @@ fun MitmachenDialogs(state: RadioState, actions: RadioActions) {
     state.storyCardsFor?.let { block -> StoryCardsDialog(block, state, actions) }
 }
 
+/** «Frag das Radio» (answered in the next transition), or with [RadioState.askAbout] a question about one item (answered right after it). */
 @Composable
 private fun AskDialog(state: RadioState, actions: RadioActions) {
+    val about = state.askAbout
+    val close = { state.askOpen = false; state.askAbout = null }
     AlertDialog(
-        onDismissRequest = { state.askOpen = false },
-        title = { Text("Frag das Radio") },
+        onDismissRequest = close,
+        title = { Text(if (about != null) "Nachfragen" else "Frag das Radio") },
         text = {
             Column {
-                Text("Die Moderation beantwortet deine Frage im nächsten Übergang – mit deinem Namen. Die Familie sieht sie im Chat.",
-                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                Text(
+                    if (about != null) "Zu «${about.displayTitle}». Die Antwort kommt gleich nach diesem Beitrag, aus seinen Quellen (und wenn nötig einer kurzen Suche)."
+                    else "Die Moderation beantwortet deine Frage im nächsten Übergang – mit deinem Namen. Die Familie sieht sie im Chat.",
+                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted,
+                )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(value = state.askDraft, onValueChange = { state.askDraft = it.take(200) }, maxLines = 4,
-                    placeholder = { Text("z. B. Warum ist der Himmel blau?") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = state.askDraft, onValueChange = { state.askDraft = it.take(if (about != null) 300 else 200) }, maxLines = 4,
+                    placeholder = { Text(if (about != null) "z. B. Was heisst das für die Schweiz?" else "z. B. Warum ist der Himmel blau?") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = actions::dictate) { Text("🎤  Sprechen statt tippen") }
+                if (state.asking && about != null) Text("Die Redaktion sucht die Antwort …", style = MaterialTheme.typography.bodySmall, color = Nocturne.accentLight)
             }
         },
-        confirmButton = { TextButton(onClick = actions::ask, enabled = state.askDraft.trim().length >= 3 && !state.asking) { Text("Fragen") } },
-        dismissButton = { TextButton(onClick = { state.askOpen = false }) { Text("Abbrechen") } },
+        confirmButton = {
+            TextButton(onClick = { if (about != null) actions.sendQuestion() else actions.ask() }, enabled = state.askDraft.trim().length >= 3 && !state.asking) { Text("Fragen") }
+        },
+        dismissButton = { TextButton(onClick = close) { Text("Abbrechen") } },
         containerColor = Nocturne.surface,
     )
 }

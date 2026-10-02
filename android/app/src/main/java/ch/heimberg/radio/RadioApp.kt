@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.Reading
 import ch.heimberg.radio.core.TimelineItem
 
 /** Longer messages get «Details» and show two lines on screen. */
@@ -127,6 +128,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     Dialogs(state, actions)
     DayPlanDialogs(state, actions)
     MitmachenDialogs(state, actions)
+    FollowDialog(state, actions)
 }
 
 /** What plays, on every tab but «Hören»; a tap opens the player. */
@@ -239,6 +241,12 @@ private fun ItemActions(item: TimelineItem, state: RadioState, actions: RadioAct
             add((if (item.surprise) "🎲  Andere Überraschung" else "🎲  Anders – eine Überraschung stattdessen") to { actions.swap(item) })
         }
         if (item.state != "planned") add("📄  Text und Quellen" to { actions.transcript(item) })
+        // Spoken items: a question about it, the reading list, and following its topic.
+        if (item.state != "planned" && item.state != "voicing" && !item.hasMusic && item.showId != "_musik") {
+            add("❓  Nachfragen" to { actions.askAbout(item) })
+            add((if (state.bookmarked(item.id)) "🔖  Von der Leseliste nehmen" else "🔖  Merken") to { actions.toggleBookmark(item) })
+            add("📌  Dranbleiben" to { actions.suggestFollow(Reading.topicOf(item)) })
+        }
         // Produced items can go to the family: a copy lands in their program.
         if (item.state != "planned" && item.state != "voicing" && item.hasAudio) {
             for (member in state.family?.shareTargets().orEmpty()) add("🎧  Teilen mit ${member.name}" to { actions.share(item, member) })
