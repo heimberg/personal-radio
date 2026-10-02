@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -242,18 +244,18 @@ private fun StoryCardsDialog(block: ch.heimberg.radio.core.BlockView, state: Rad
     )
 }
 
+/** The cards of one question; they wrap onto the next line, so every label stays readable. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CardRow(label: String, cards: List<StoryCards.Card>, selected: Int?, onPick: (Int) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelMedium, color = Nocturne.accentLight, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-    for (row in cards.withIndex().chunked(3)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for ((index, card) in row) {
-                FilterChip(
-                    selected = selected == index, onClick = { onPick(index) },
-                    label = { Text("${card.emoji} ${card.label}", maxLines = 1) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Nocturne.accentDeep, selectedLabelColor = Nocturne.text),
-                )
-            }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        cards.forEachIndexed { index, card ->
+            FilterChip(
+                selected = selected == index, onClick = { onPick(index) },
+                label = { Text("${card.emoji} ${card.label}", maxLines = 1, softWrap = false) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Nocturne.accentDeep, selectedLabelColor = Nocturne.text),
+            )
         }
     }
 }
