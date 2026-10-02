@@ -236,6 +236,13 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
   - Pictures never go to an AI.
 - **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
 
+### Wochenrückblick
+
+`server/review.ts`, block `rueckblick` (a 4-minute brief, checked `light`).
+
+- **When:** `tick` adds it on Sunday from 08:00 station time, once in six days, when at least three spoken items were heard to the end in the last seven days (`heardSince`). It can also be added from the palette on any day.
+- **Sources:** one per heard spoken item (`w1` …, the newest 15): title, the script without voice tags (900 characters), and notes on a shared item, a story choice or a quiz answer. A source `woche` lists the week's questions to the radio (with the answer on air) and new stickers (`PlayStore.week`). Songs, music hours and blocks, items with tracks and earlier reviews stay out, so no Spotify data reaches the AI. The review does not avoid recent topics (`avoidTopics` is empty).
+
 ### Mitmachen
 
 Interactive features, above all for a child's station (`src/domain/play.ts`, `server/play.ts`, migration 0013).

@@ -16,6 +16,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
+- Wochenrückblick: on Sunday morning a personal look back on the week – the best of what was heard, what mattered in the news, questions to the radio, story choices and new stickers; also a block for any day.
 - Mitmachen (above all for a child's station): a «Mitmach-Geschichte» started from picture cards ends every episode with a choice of two ways, chosen in the app; knowledge items on a child's station end with a quiz question (A/B/C); right answers, choices and episodes heard to the end fill a sticker album; «Frag das Radio» sends a question (typed or spoken) that the host answers in the next live transition.
 - A day plan with time slots, songs between spoken items, and a surprise level (🎲) that mixes in unexpected items: on this day, word of the day, a music wildcard, …
 - Station sound: four ident jingle variants, a news opener, time signal and spoken hour at the full hour, and a soft music bed under short moderations.

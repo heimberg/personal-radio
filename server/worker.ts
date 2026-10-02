@@ -481,6 +481,7 @@ function stationDeps(env: Environment, owner: string): StationDeps {
     ...(musicFor(env).writer ? { editor: new GeminiScriptEditor((system, input, label, temperature) => musicFor(env).writer!.askJson(system, input, label, temperature)) } : {}),
     ...(musicFor(env).writer ? { agentModel: musicFor(env).writer } : {}),
     agentSteps: (owner, runId) => new D1StepRunner(env.DB, owner, runId),
+    week: (owner, since) => new PlayStore(env.DB).week(owner, since),
     catalog,
     ...(listeningFor(env) ? { listening: listeningFor(env)! } : {}),
     ...(catalog instanceof SpotifyCatalog ? { playlists: playlistsFor(catalog, listeningFor(env)) } : {}),

@@ -10,6 +10,8 @@ import { MAX_EPISODES, MIN_EPISODES, OUTLINE_SOURCE_ID, SERIES_EPISODES, SERIES_
 import type { EpisodeRef, Series, SeriesKind } from '../src/domain/series.ts';
 import { CHOICE_PROMPT, CHOICE_WAIT_HOURS, QUIZ_PROMPT, parseChoice, parseQuiz, quizSpeech } from '../src/domain/play.ts';
 import type { Quiz, StoryChoice } from '../src/domain/play.ts';
+import { MIN_REVIEW_ITEMS, REVIEW_DAYS, REVIEW_SHOW, reviewSources, reviewable } from './review.ts';
+import type { WeekExtras } from './review.ts';
 import { clockValues, expandPlaceholders, usesHeadlines, usesWeather } from './tools.ts';
 import { finishScript, repairScript } from './editing.ts';
 import type { ScriptEditor, StationContext } from './editing.ts';
@@ -60,6 +62,8 @@ export interface StationDeps {
   /** The editorial team's model and durable step storage (music hours with `production: agents`). */
   agentModel?: JsonModel;
   agentSteps?(owner: string, runId: string): DurableStepRunner & { clear(): Promise<void> };
+  /** Wochenrückblick: questions to the radio and stickers since a date. */
+  week?(owner: string, since: Date): Promise<WeekExtras>;
   now(): Date;
   random?(): number;
   newId?(): string;
@@ -172,6 +176,7 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const listening = !!lastSeen && now.getTime() - lastSeen.getTime() <= ACTIVE_LISTENER_HOURS * 3_600_000;
   if (listening && await deps.store.recentFailures(owner, minutes(now, -60)) < 3) {
     await advanceSeries(deps, owner);
+    await planWeekReview(deps, owner, config);
     const recent = await deps.store.recentItems(owner, 4);
     planned = planTimeline(config, await deps.store.openItems(owner), recent.at(-1) ?? null, now, deps.newId ?? (() => crypto.randomUUID()), recent.map(row => row.show_id), deps.random);
     for (const item of planned) await deps.store.insertItem(owner, item, now);
@@ -308,6 +313,11 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (tools.has('clock')) notes.push(`Heute ist ${values.wochentag}, ${values.datum}; der Beitrag läuft voraussichtlich am ${values.uhrzeit}.`);
       // Only a new draft needs fresh information; a retry of the voice keeps the approved script.
       if (row.state === 'planned') {
+        // The Wochenrückblick is written from the week's heard items, questions and stickers.
+        if (row.show_id === REVIEW_SHOW) {
+          const since = new Date(now.getTime() - REVIEW_DAYS * 86_400_000);
+          toolSources.push(...reviewSources(await deps.store.heardSince(owner, since), await deps.week?.(owner, since) ?? { questions: [], stickers: [] }, now));
+        }
         if (tools.has('weather')) {
           if (!config.location) return fail('NO_LOCATION');
           if (!deps.weather) return fail('WEATHER_NOT_CONFIGURED');
@@ -350,7 +360,8 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (show.sourceMode === 'web' && !deps.researcher) return fail('GEMINI_NOT_CONFIGURED');
       await deps.reserveGeneration(owner);
       const profile: Profile = { ...config.profile, interestWeights: learnedWeights(await deps.store.feedback(owner), now.getTime()) };
-      const avoidTopics = await recentTopics(deps, owner);
+      // A look back talks about the recent topics on purpose.
+      const avoidTopics = row.show_id === REVIEW_SHOW ? [] : await recentTopics(deps, owner);
       let sources: Source[], queries: string[] = [];
       if (show.sourceMode === 'web') {
         ({ sources, queries } = await deps.researcher!.research({ brief: show.researchPrompt, interests: [...profile.topics, ...profile.interests], avoidTopics, now, agent: agentOf(agents, 'research') }));
@@ -991,6 +1002,22 @@ async function advanceSeries(deps: StationDeps, owner: string) {
     if (index >= series.episodes.length) { await deps.store.updateSeries(owner, series.id, { state: 'done' }, deps.now()); continue; }
     await scheduleEpisode(deps, owner, series, index);
   }
+}
+
+/**
+ * On Sunday from eight in the morning (station time), the Wochenrückblick joins the program once: when
+ * none was made in the last six days and at least three spoken items were heard this week.
+ */
+async function planWeekReview(deps: StationDeps, owner: string, config: StationConfig) {
+  const now = deps.now(), { day, minutes } = localClock(now, config.timezone);
+  if (day !== 0 || minutes < 8 * 60) return;
+  const latest = await deps.store.latestOfShow(owner, REVIEW_SHOW);
+  if (latest && now.getTime() - Date.parse(latest.created_at) < 6 * 86_400_000) return;
+  const heard = (await deps.store.heardSince(owner, new Date(now.getTime() - REVIEW_DAYS * 86_400_000))).filter(reviewable);
+  if (heard.length < MIN_REVIEW_ITEMS) return;
+  const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
+  await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: REVIEW_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 4 }, now);
+  await placeSoon(deps, owner, id);
 }
 
 /** Ends a series: no further episodes, and the open one leaves the program. */
