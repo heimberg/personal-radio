@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 fun FeaturesContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadFeatures() }
     val catalog = state.features ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-    Text("VON SELBST", style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight)
+    Text("VON SELBST", style = Kicker, color = Nocturne.muted)
     for (feature in catalog.features) {
         SwitchRow(feature.name, feature.description, "Kosten: ${feature.cost}", feature.enabled, !state.featuresBusy) { actions.setFeature(feature.id, it) }
     }
@@ -31,7 +31,7 @@ fun FeaturesContent(state: RadioState, actions: RadioActions) {
         Text("Ortsgeschichten: Der Standort wird nur geprüft, solange die App offen ist. Die Position geht an OpenStreetMap (für den Ortsnamen), an die KI nur der Ortsname.",
             style = MaterialTheme.typography.bodySmall, color = Nocturne.faint)
     }
-    Text("BAUSTEINE IM PROGRAMM", style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(top = 8.dp))
+    Text("BAUSTEINE IM PROGRAMM", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 8.dp))
     Text("Ausgeblendete Bausteine verschwinden nur aus der Auswahl; was der Tagesplan vorsieht, läuft weiter.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     for (block in catalog.blocks) {
         SwitchRow(block.name, block.description, null, block.visible, !state.featuresBusy) { actions.setBlockVisible(block.id, it) }
