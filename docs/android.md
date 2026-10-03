@@ -87,7 +87,8 @@ Favourites and how often each block was inserted are kept only on the phone (`Ca
 - Screens: Jetpack Compose with Material 3 (`MainActivity`, `RadioApp.kt` and one file per tab). The tokens are in `RadioTheme.kt` (the object is still called `Nocturne`: ground, surface, ink, links, the rubric colours from `core/Kinds.kt`), with the type scale (Figtree 400–700), `display(size)` for the condensed titles and `Kicker` for small capitals above sections. Take colours from there instead of hard-coding them. `MainActivity` uses the light window theme `Theme.PersonalRadio.Paper` and dark system bar icons.
 - The setup and text screens are still views and still dark (Nocturne): their tokens are in `res/values/colors.xml`, `dimens.xml` and `themes.xml`.
 - Assets: Figtree (400, 500, 600, 700) and Archivo Condensed Black (static instances of the variable fonts, Latin subset, SIL OFL 1.1) for the Compose screens, Inter 4.1 (Latin subset, SIL OFL 1.1) for the view screens, all in `res/font`; Phosphor icons (MIT) as vector drawables `ic_*`. License texts are in `app/licenses/`.
-- Motion: the orb breathes and the waveform sways only while audio plays.
+- Motion: the waveform sways only while audio plays; the play button gives way a little under the finger.
+- App icon: five bars in the rubric colours with the live dot on the paper ground (`ic_launcher_foreground`), and a one-colour variant for themed icons (`ic_launcher_monochrome`).
 
 ## Build and test
 
