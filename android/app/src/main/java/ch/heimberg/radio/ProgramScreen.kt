@@ -46,13 +46,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.BlockView
-import ch.heimberg.radio.core.ForYou
 import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.TimelineItem
 import java.time.Instant
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
@@ -60,8 +58,8 @@ import kotlin.math.roundToInt
 private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
 /**
- * «Programm»: «＋ Einfügen» for the whole catalog, «Für dich» with four blocks that fit now, then the
- * Sendeplan as one list in the rubrics' colours. Tap: hear it now (or its options); long press: options;
+ * «Programm»: the Sendeplan as one list in the rubrics' colours, with tools to arrange it at the top and
+ * one button, «＋ Einfügen», for everything new. Tap: hear it now (or its options); long press: options;
  * swipe to the left: out of the program.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,10 +67,9 @@ private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemD
 fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValues) {
     val sections = state.sections
     PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = actions::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
-            if (state.blocks.isNotEmpty()) item(key = "for-you") { ForYouRow(state, actions) }
             val planned = listOfNotNull(sections.now, sections.next) + sections.later
             item(key = "plan-head") { PlanHead(planned) }
             if (state.open.isEmpty()) {
@@ -102,6 +99,8 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             section("Dranbleiben")
             item(key = "follows") { FollowedTopics(state, actions) }
         }
+        // Everything new goes in here: blocks, «Für dich», a song, a topic to follow.
+        InsertButton(onClick = { state.catalogOpen = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
     }
 }
 
@@ -115,41 +114,14 @@ private fun LazyListScope.section(title: String) {
 private fun ProgramHead(state: RadioState, actions: RadioActions) {
     val ready = state.open.count { it.state == "ready" }
     Column {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp), verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                ScreenTitle("Programm")
-                Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-            }
-            InsertPill(onClick = { state.catalogOpen = true }, modifier = Modifier.padding(bottom = 4.dp))
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
+            ScreenTitle("Programm")
+            Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { AssistChip(onClick = actions::openDayPlan, label = { Text("🗓  Tagesplan") }) }
             item { AssistChip(onClick = actions::shuffle, label = { Text("🔀  Mischen") }, enabled = state.open.size > 1) }
-            item { AssistChip(onClick = actions::addSong, label = { Text("♫  Song anhängen") }) }
             item { AssistChip(onClick = actions::plan, label = { Text("⚡  Jetzt planen") }) }
-        }
-    }
-}
-
-/** «Für dich · Samstagmorgen»: four blocks for now, from the time of day, favourites and habits. */
-@Composable
-private fun ForYouRow(state: RadioState, actions: RadioActions) {
-    val now = LocalDateTime.now()
-    val picks = remember(state.blocks, state.usage, state.favorites, now.hour, now.dayOfYear) {
-        ForYou.picks(state.blocks, now.hour, now.dayOfWeek.value, now.dayOfYear, state.usage, state.favorites)
-    }
-    if (picks.isEmpty()) return
-    Column {
-        Text(
-            "FÜR DICH · ${ForYou.moment(now.hour, now.dayOfWeek.value).uppercase()}", style = Kicker, color = Nocturne.muted,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
-        )
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (pick in picks) {
-                PickTile(pick.block.name, pick.why, Looks.ofBlock(pick.block).kind, Modifier.weight(1f)) { actions.chooseBlock(pick.block) }
-            }
-            // Fewer than four: the tiles keep their width.
-            repeat(ForYou.LIMIT - picks.size) { Spacer(Modifier.weight(1f)) }
         }
     }
 }

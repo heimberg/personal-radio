@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -61,14 +60,13 @@ fun FollowedTopics(state: RadioState, actions: RadioActions) {
     val follows = state.follows
     Column(Modifier.padding(horizontal = 16.dp)) {
         if (follows.topics.isEmpty()) {
-            Text("Lange drücken auf einen Beitrag → «Dranbleiben»: das Radio meldet sich, wenn es zum Thema Neues gibt.",
+            Text("«＋ Einfügen» → «Thema verfolgen», oder lange drücken auf einen Beitrag → «Dranbleiben»: das Radio meldet sich, wenn es zum Thema Neues gibt.",
                 style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 4.dp))
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (topic in follows.topics) {
                 InputChip(selected = false, onClick = { actions.unfollow(topic.id) }, label = { Text("📌 ${topic.topic}  ✕", maxLines = 1, overflow = TextOverflow.Ellipsis) })
             }
-            if (!follows.full) AssistChip(onClick = { actions.suggestFollow("") }, label = { Text("+ Thema") })
         }
     }
 }

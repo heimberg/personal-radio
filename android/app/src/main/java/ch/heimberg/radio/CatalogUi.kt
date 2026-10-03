@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,33 +31,41 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Catalog
+import ch.heimberg.radio.core.ForYou
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Looks
+import java.time.LocalDateTime
 import kotlin.math.roundToInt
 
 /** Short tab names, so five fit side by side. */
 private fun Kind.short(): String = if (this == Kind.STORY) "GESCH." else label.uppercase()
 
 /**
- * «＋ Einfügen»: every building block the station offers, in five rubrics, with a search and ⭐ favourites.
- * A tap puts the block at the end of the program (or asks for its word first).
+ * «＋ Einfügen»: the one place to add something to the program. «Für dich» on top, then a song or a topic
+ * to follow, then every building block in five rubrics, with a search and ⭐ favourites. A tap puts the
+ * block at the end of the program (or asks for its word first).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogSheet(state: RadioState, actions: RadioActions) {
     if (!state.catalogOpen) return
     val close = { state.catalogOpen = false; state.catalogQuery = "" }
+    val insert = { block: BlockView -> close(); actions.chooseBlock(block) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = close, sheetState = sheet, containerColor = Nocturne.bg, dragHandle = null) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.95f).imePadding()) {
@@ -85,21 +95,78 @@ fun CatalogSheet(state: RadioState, actions: RadioActions) {
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp),
             )
             val query = state.catalogQuery.trim()
-            if (query.isNotEmpty()) {
-                val found = Catalog.search(state.blocks, query, state.favorites)
-                BlockList(found, state, actions, close, showRubric = true, empty = "Nichts gefunden – versuch ein anderes Wort.")
-            } else {
-                val rubrics = Catalog.rubrics(state.blocks, state.favorites)
-                RubricTabs(rubrics.map { it.first to it.second.size }, state.catalogRubric) { state.catalogRubric = it }
-                val kind = state.catalogRubric
-                Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp), verticalAlignment = Alignment.Bottom) {
-                    Text(kind.label.uppercase(), style = display(28), color = Nocturne.kindLabel(kind))
-                    Spacer(Modifier.width(10.dp))
-                    Text(kind.hint, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(bottom = 3.dp))
+            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                if (query.isNotEmpty()) {
+                    blocks(Catalog.search(state.blocks, query, state.favorites), state, actions, insert, showRubric = true, empty = "Nichts gefunden – versuch ein anderes Wort.")
+                    return@LazyColumn
                 }
-                BlockList(rubrics.first { it.first == kind }.second, state, actions, close, showRubric = false, empty = "In dieser Rubrik ist gerade nichts eingeschaltet – unter Studio › Funktionen.")
+                item(key = "for-you") { ForYouPicks(state, insert) }
+                item(key = "quick") {
+                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickAction("♫", "Ein Song", Modifier.weight(1f)) { close(); actions.addSong() }
+                        QuickAction("📌", "Thema verfolgen", Modifier.weight(1f)) { close(); actions.suggestFollow("") }
+                    }
+                }
+                val rubrics = Catalog.rubrics(state.blocks, state.favorites)
+                item(key = "tabs") {
+                    Column {
+                        Text("ALLE BAUSTEINE", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp))
+                        RubricTabs(rubrics.map { it.first to it.second.size }, state.catalogRubric) { state.catalogRubric = it }
+                    }
+                }
+                val kind = state.catalogRubric
+                item(key = "rubric") {
+                    Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 2.dp), verticalAlignment = Alignment.Bottom) {
+                        Text(kind.label.uppercase(), style = display(28), color = Nocturne.kindLabel(kind))
+                        Spacer(Modifier.width(10.dp))
+                        Text(kind.hint, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(bottom = 3.dp))
+                    }
+                }
+                blocks(rubrics.first { it.first == kind }.second, state, actions, insert, showRubric = false, empty = "In dieser Rubrik ist gerade nichts eingeschaltet – unter Studio › Funktionen.")
             }
         }
+    }
+}
+
+/** «Für dich · Samstagmorgen»: four blocks for now, from the time of day, favourites and habits. */
+@Composable
+private fun ForYouPicks(state: RadioState, insert: (BlockView) -> Unit) {
+    val now = LocalDateTime.now()
+    val picks = remember(state.blocks, state.usage, state.favorites, now.hour, now.dayOfYear) {
+        ForYou.picks(state.blocks, now.hour, now.dayOfWeek.value, now.dayOfYear, state.usage, state.favorites)
+    }
+    if (picks.isEmpty()) return
+    Column {
+        Text(
+            "FÜR DICH · ${ForYou.moment(now.hour, now.dayOfWeek.value).uppercase()}", style = Kicker, color = Nocturne.muted,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
+        )
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (pick in picks) {
+                PickTile(pick.block.name, pick.why, Looks.ofBlock(pick.block).kind, Modifier.weight(1f)) { insert(pick.block) }
+            }
+            // Fewer than four: the tiles keep their width.
+            repeat(ForYou.LIMIT - picks.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** A white button with an icon and a word, for what is not a block: a song, a topic to follow. */
+@Composable
+private fun QuickAction(icon: String, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Nocturne.surface)
+            .border(1.dp, Nocturne.divider, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, fontSize = 18.sp)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -129,18 +196,16 @@ private fun RubricTabs(counts: List<Pair<Kind, Int>>, selected: Kind, onSelect: 
     }
 }
 
-@Composable
-private fun BlockList(blocks: List<BlockView>, state: RadioState, actions: RadioActions, close: () -> Unit, showRubric: Boolean, empty: String) {
+private fun LazyListScope.blocks(
+    blocks: List<BlockView>, state: RadioState, actions: RadioActions, insert: (BlockView) -> Unit, showRubric: Boolean, empty: String,
+) {
     if (blocks.isEmpty()) {
-        Text(empty, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
+        item(key = "empty") { Text(empty, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp)) }
         return
     }
-    LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(blocks, key = { it.id }) { block ->
-            BlockCard(block, favorite = block.id in state.favorites, showRubric = showRubric, onStar = { actions.toggleFavorite(block) }) {
-                close()
-                actions.chooseBlock(block)
-            }
+    items(blocks, key = { it.id }) { block ->
+        Box(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp)) {
+            BlockCard(block, favorite = block.id in state.favorites, showRubric = showRubric, onStar = { actions.toggleFavorite(block) }) { insert(block) }
         }
     }
 }
@@ -177,21 +242,23 @@ private fun BlockCard(block: BlockView, favorite: Boolean, showRubric: Boolean, 
     }
 }
 
-/** The ink pill «＋ Einfügen» that opens the catalog. */
+/** The ink button «＋ Einfügen» at the bottom of «Programm»: the one way to add something. */
 @Composable
-fun InsertPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun InsertButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier
-            .height(40.dp)
+            .shadow(8.dp, RoundedCornerShape(999.dp))
+            .height(56.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(Nocturne.accent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .semantics { contentDescription = "Einfügen" }
+            .padding(start = 18.dp, end = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(16.dp), tint = Nocturne.bg)
-        Spacer(Modifier.width(6.dp))
-        Text("Einfügen", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), color = Nocturne.bg)
+        Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(20.dp), tint = Nocturne.bg)
+        Spacer(Modifier.width(8.dp))
+        Text("Einfügen", style = MaterialTheme.typography.titleMedium, color = Nocturne.bg)
     }
 }
 
