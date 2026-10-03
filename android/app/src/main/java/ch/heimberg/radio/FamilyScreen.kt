@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,25 +70,28 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
             return@Column
         }
         val list = rememberLazyListState()
-        LaunchedEffect(family.messages.size) { if (family.messages.isNotEmpty()) list.animateScrollToItem(family.members.size + family.messages.size + 1) }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(bottom = 12.dp)) {
-            item(key = "head") {
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
-                    ScreenTitle("Familie")
-                    Text("Beiträge teilst du über ihr Menü im Programm oder Archiv.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-                }
-            }
-            itemsIndexed(family.members, key = { _, it -> "member-${it.key}" }) { index, member -> MemberRow(member, MEMBER_KINDS[index % MEMBER_KINDS.size], family, actions, state) }
-            item(key = "chat") {
-                Text("CHAT", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp))
+        // The list is anchored at the bottom like a chat (reverseLayout: the first item is the lowest), so the
+        // newest message stays above the input even when the space shrinks (mini player, keyboard).
+        LaunchedEffect(family.messages.size) { if (family.messages.isNotEmpty()) list.animateScrollToItem(0) }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, reverseLayout = true, contentPadding = PaddingValues(bottom = 12.dp)) {
+            items(family.messages.asReversed(), key = { "message-${it.id}" }) { message ->
+                MessageRow(message, message.from == family.me, family.members.firstOrNull { it.key == message.from }, actions)
             }
             if (family.messages.isEmpty()) {
                 item(key = "empty") {
                     Text("Noch keine Nachrichten. Schreib die erste!", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 20.dp))
                 }
             }
-            items(family.messages, key = { "message-${it.id}" }) { message ->
-                MessageRow(message, message.from == family.me, family.members.firstOrNull { it.key == message.from }, actions)
+            item(key = "chat") {
+                Text("CHAT", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp))
+            }
+            val members = family.members.withIndex().toList().asReversed()
+            items(members, key = { "member-${it.value.key}" }) { (index, member) -> MemberRow(member, MEMBER_KINDS[index % MEMBER_KINDS.size], family, actions, state) }
+            item(key = "head") {
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
+                    ScreenTitle("Familie")
+                    Text("Beiträge teilst du über ihr Menü im Programm oder Archiv.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
