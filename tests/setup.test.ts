@@ -4,6 +4,8 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import worker from '../server/worker.ts';
 import { AGENTS } from '../src/domain/agents.ts';
 import { AGENT_PRESETS } from '../src/domain/agent-presets.ts';
+import { FORMATS, MINUTES_LIMITS } from '../src/domain/station.ts';
+import type { ShowFormat } from '../src/domain/station.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
 
 const ORIGIN = 'https://private.example';
@@ -39,6 +41,13 @@ test('the app sets up a new station and reads the editorial agents', async () =>
     const agents = await (await call('/api/agents')).json() as { agents: Array<{ id: string; instructions: string }>; presets: Array<{ id: string }> };
     assert.deepEqual(agents.agents.map(agent => agent.id), AGENTS.map(agent => agent.id));
     assert.deepEqual(agents.presets.map(preset => preset.id), AGENT_PRESETS.map(preset => preset.id));
+    // The app's show editor takes the formats and their lengths from the config check itself.
+    const formats = await (await call('/api/formats')).json() as { formats: Array<{ id: ShowFormat; label: string; minMinutes: number; maxMinutes: number; defaultMinutes: number }> };
+    assert.deepEqual(formats.formats.map(format => format.id), FORMATS);
+    for (const format of formats.formats) {
+      assert.deepEqual([format.minMinutes, format.maxMinutes], MINUTES_LIMITS[format.id]);
+      assert.ok(format.label && format.minMinutes <= format.defaultMinutes && format.defaultMinutes <= format.maxMinutes, format.id);
+    }
     // No web interface: the root says where to go, and after Spotify's login how it went.
     const root = await (await call('/')).text();
     assert.match(root, /in der App/);

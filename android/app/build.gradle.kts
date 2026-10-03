@@ -64,6 +64,8 @@ kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 dependencies {
     implementation("ch.heimberg.radio:core")
     implementation("androidx.core:core-ktx:1.13.1")
+    // Installs the baseline profile (src/main/baseline-prof.txt) so startup code is compiled ahead of time.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     // The screens are Jetpack Compose with Material 3; the transcript and setup screens are still views.

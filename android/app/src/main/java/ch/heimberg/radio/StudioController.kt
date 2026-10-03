@@ -40,6 +40,8 @@ class StudioController(private val ref: HostRef) : StudioActions {
         // Unsaved changes stay until they are saved or discarded.
         if (!force && (state.studio != null || state.studioMissing)) return
         host.scope.launch {
+            // The formats first, so the show editor shows the server's lengths from the start.
+            runCatching { api.formats() }
             runCatching { api.station() }
                 .onSuccess { config ->
                     state.studio = config?.let { StudioSettings.of(it) }

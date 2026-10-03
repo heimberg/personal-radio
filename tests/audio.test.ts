@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { joinSpeech, normalizeSpeech, speechLevel, withBed } from '../server/audio.ts';
+import { joinSpeech, normalizeSpeech, speechLevel, wavToMp3, withBed } from '../server/audio.ts';
 import { pcmToWav } from '../server/providers.ts';
 
 /** A quiet 440 Hz tone framed by a second of silence on both sides, as 16-bit mono PCM at 24 kHz. */
@@ -85,4 +85,19 @@ test('dialog turns from separate calls are joined at one level, without clicks, 
   };
   const a = level(0, 16_000), b = level(16_000 + 5600, samples);
   assert.ok(Math.abs(a - b) < 3, `turn levels ${a} and ${b} dBFS`);
+});
+
+test('streamed speech is stored as MP3: about an eighth of the WAV, real MP3 frames', () => {
+  const rate = 24_000, seconds = 10;
+  const pcm = new Uint8Array(rate * seconds * 2);
+  const view = new DataView(pcm.buffer);
+  for (let i = 0; i < rate * seconds; i++) view.setInt16(i * 2, Math.round(9000 * Math.sin(i / 15) * Math.sin(i / 2400)), true);
+  const wav = pcmToWav(pcm, rate);
+  const mp3 = wavToMp3(wav)!;
+  assert.ok(mp3.length > 0 && mp3.length < wav.length / 6, `${mp3.length} of ${wav.length}`);
+  // An MPEG audio frame starts with eleven set bits (after an optional ID3 tag).
+  const start = String.fromCharCode(...mp3.subarray(0, 3)) === 'ID3' ? 10 + ((mp3[6] << 21) | (mp3[7] << 14) | (mp3[8] << 7) | mp3[9]) : 0;
+  assert.equal(mp3[start], 0xff);
+  assert.equal(mp3[start + 1] & 0xe0, 0xe0);
+  assert.equal(wavToMp3(new Uint8Array([1, 2, 3])), null);
 });

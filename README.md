@@ -54,7 +54,7 @@ flowchart LR
 ```
 
 1. While you listen, the cron tops up the timeline from your day plan.
-2. The queue produces one item at a time: research → draft → final edit and jury → fact check → speech synthesis → audio in R2.
+2. The queue produces up to two items at a time: research → draft → final edit and jury → fact check → speech synthesis → audio in R2 (speech is stored as 48 kbps mono MP3).
 3. The app syncs the timeline, streams speech from the Worker and hands songs to Spotify.
 
 The AI picks songs from its own knowledge; Spotify only resolves them to tracks. Spotify audio, playback data, playlist tracks and track metadata are never sent to an AI provider. Two exceptions apply only if you connect your Spotify listening profile: the names of your top artists guide the song picks, and the «new from your artists» block names each new release (artist and title) in its moderation.
@@ -241,7 +241,8 @@ cd android && ./gradlew -p core test   # Android program logic, no SDK needed
 ## Repository layout
 
 ```
-server/        Worker: API, planner, producer, providers (Gemini, ASK, Mistral, Spotify), agents
+server/        Worker: planner, producer, providers (Gemini, ASK, Mistral, Spotify), agents
+server/routes/ the API by area (program, items, studio, voices, family, listener, Spotify, transitions)
 src/domain/    the domain model (config, blocks, agents, features …) the Worker uses
 android/       Android app (app/) and its pure-Kotlin logic with tests (core/)
 migrations/    D1 schema
@@ -262,4 +263,4 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 
 ## License
 
-[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree and Archivo (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.
+[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree and Archivo (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`. The Worker bundles the MP3 encoder `@breezystack/lamejs` (LGPL-3.0, unmodified).

@@ -22,6 +22,7 @@ import ch.heimberg.radio.core.Place
 import ch.heimberg.radio.core.PlaceStory
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
+import ch.heimberg.radio.core.ShowFormat
 import ch.heimberg.radio.core.StationDraft
 import ch.heimberg.radio.core.ListeningProfile
 import ch.heimberg.radio.core.Insights
@@ -121,6 +122,9 @@ class ApiClient(private val connection: Connection) {
     suspend fun setUp(timezone: String) {
         withContext(Dispatchers.IO) { request("POST", "api/setup", JSONObject().put("timezone", timezone).toString()) }
     }
+
+    /** The show formats with the lengths the server accepts; [ShowFormat] keeps them for the editor. */
+    suspend fun formats() = withContext(Dispatchers.IO) { ShowFormat.adopt(request("GET", "api/formats")) }
 
     /** The editorial agents with their shipped instructions, and the style presets. */
     suspend fun agents(): Pair<List<AgentInfo>, List<AgentPreset>> = withContext(Dispatchers.IO) { StationDraft.parseAgents(request("GET", "api/agents")) }
