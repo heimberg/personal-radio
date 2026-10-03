@@ -49,6 +49,8 @@ export interface Environment {
   GEMINI_TTS_DAILY_REQUESTS?: string;
   GEMINI_VOICE_A?: string;
   GEMINI_VOICE_B?: string;
+  /** `on` stores speech as MP3; it needs Workers Paid with a higher CPU limit (see wrangler.toml). */
+  SPEECH_MP3?: string;
   /** How the family tab names the owner (default «Papa»). */
   OWNER_NAME?: string;
 }

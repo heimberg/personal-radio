@@ -120,7 +120,7 @@ export function stationDeps(env: Environment, owner: string): StationDeps {
     fetchFeed: url => fetchFeed(url),
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
     reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
-    podcastAvailable: Boolean(env.GEMINI_API_KEY), now: () => new Date(), random: Math.random,
+    podcastAvailable: Boolean(env.GEMINI_API_KEY), compressSpeech: env.SPEECH_MP3 === 'on', now: () => new Date(), random: Math.random,
     generator: (provider, format) => {
       const providers = providersFor(env);
       if (provider === 'ask') return format === 'brief' ? providers.ask : undefined;

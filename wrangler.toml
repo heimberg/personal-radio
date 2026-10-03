@@ -35,11 +35,6 @@ max_retries = 0
 # daily limits are counted atomically in D1; more would mostly meet the providers' per-minute limits.
 max_concurrency = 2
 
-# Encoding speech as MP3 takes about a second of CPU per minute of speech; a music hour has up to
-# fifteen spoken parts, so production may use more than the default 30 seconds (Workers Paid).
-[limits]
-cpu_ms = 120000
-
 # Keeps the program filled while the owner listens.
 [triggers]
 crons = ["*/10 * * * *"]
@@ -54,3 +49,6 @@ crons = ["*/10 * * * *"]
 #   ASK_BASE_URL, ASK_MODEL, ASK_API_KEY: all three set enables ASK; otherwise Gemini writes and verifies.
 #   SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET (secret): track search for artist hours · SPOTIFY_MARKET CH
 #   LISTENERS (secret): further listeners · OWNER_NAME Papa (how the family tab names the owner)
+#   SPEECH_MP3 off: «on» stores speech as MP3 (a tenth of the WAV size). Encoding takes about a second of
+#   CPU per minute of speech, so it needs Workers Paid and a [limits] cpu_ms = 120000 block here; the
+#   Free plan refuses that block (and its 10 ms CPU would stop the encoding).
