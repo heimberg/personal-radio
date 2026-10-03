@@ -1,6 +1,9 @@
 package ch.heimberg.radio
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -66,6 +69,9 @@ private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemD
 @Composable
 fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValues) {
     val sections = state.sections
+    val context = LocalContext.current
+    val hints = remember { UiHints(context) }
+    var showTip by remember { mutableStateOf(!hints.programSeen) }
     PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = actions::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
@@ -83,21 +89,21 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             sections.now?.let { now -> item(key = now.id) { NowRow(now, state, actions) } }
             sections.next?.let { next -> item(key = next.id) { SwipeRow(next, state, actions) } }
             items(sections.later, key = { it.id }) { SwipeRow(it, state, actions) }
-            if (state.open.size > 1) {
-                item(key = "hint") {
-                    Text(
-                        "Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen (rückgängig machbar)",
-                        style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    )
-                }
+            item(key = "outlook") { Outlook(state) }
+            // The gestures are told once; «OK» hides the tip for good.
+            if (showTip && state.open.size > 1) {
+                item(key = "hint") { Tip("Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen") { showTip = false; hints.programSeen = true } }
             }
             val running = state.series.filter { it.active }
             if (running.isNotEmpty()) {
                 section("Serien")
                 items(running, key = { "series-${it.id}" }) { SeriesRow(it, actions) }
             }
-            section("Dranbleiben")
-            item(key = "follows") { FollowedTopics(state, actions) }
+            // Followed topics only when there are some; following one starts from «＋ Einfügen» or a long press.
+            if (state.follows.topics.isNotEmpty()) {
+                section("Dranbleiben")
+                item(key = "follows") { FollowedTopics(state, actions) }
+            }
         }
         // Everything new goes in here: blocks, «Für dich», a song, a topic to follow.
         InsertButton(onClick = { state.catalogOpen = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
@@ -141,18 +147,54 @@ private fun PlanHead(planned: List<TimelineItem>) {
     }
 }
 
+/** Failures as one slim line: a tap shows the details, «Nochmal» retries, ✕ clears them. */
 @Composable
 private fun Failures(state: RadioState, actions: RadioActions) {
     val failures = state.failures
-    val latest = failures.latestError?.let { error ->
-        " · zuletzt " + (failures.latestAt?.let { runCatching { clock.format(Instant.parse(it)) + ": " }.getOrNull() } ?: "") + Labels.error(error)
-    } ?: ""
-    Banner("⚠ ${failures.count} fehlgeschlagen$latest", Nocturne.danger) {
-        Row {
-            TextButton(onClick = actions::retry) { Text("Erneut versuchen") }
-            TextButton(onClick = actions::cleanup) { Text("Aufräumen") }
-        }
+    val at = failures.latestAt?.let { runCatching { clock.format(Instant.parse(it)) }.getOrNull() }
+    val reason = failures.latestError?.let(Labels::error)
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Nocturne.danger.copy(alpha = 0.10f))
+            .clickable {
+                state.detail = "${failures.count} Beitrag/Beiträge fehlgeschlagen." + (reason?.let { "\n\nZuletzt${at?.let { " um $it" } ?: ""}: $it" } ?: "") +
+                    "\n\n«Nochmal» produziert sie neu, ✕ räumt sie weg."
+            }
+            .padding(start = 14.dp, end = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(R.drawable.ic_warning_circle), null, Modifier.size(16.dp), tint = Nocturne.danger)
+        Spacer(Modifier.width(10.dp))
+        Text("${failures.count} fehlgeschlagen" + (reason?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall, color = Nocturne.text,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        TextButton(onClick = actions::retry) { Text("Nochmal") }
+        IconButton(onClick = actions::cleanup) { Text("✕", color = Nocturne.muted, style = MaterialTheme.typography.titleSmall) }
     }
+}
+
+/** A tip shown once, with «OK» to hide it for good. */
+@Composable
+private fun Tip(text: String, onDone: () -> Unit) {
+    Row(Modifier.padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("💡 $text", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.weight(1f))
+        TextButton(onClick = onDone) { Text("OK") }
+    }
+}
+
+/** Below the list: why it is short and what happens next, so an empty program never looks broken. */
+@Composable
+private fun Outlook(state: RadioState) {
+    if (!state.loaded) return
+    val text = when {
+        state.open.isEmpty() -> return
+        !state.playWhenReady -> "⏸ Pausiert – das Radio plant weiter, sobald du wieder hörst."
+        state.open.count { it.state == "ready" } < state.open.size -> "⏳ Weitere Beiträge sind in Arbeit und erscheinen hier, sobald sie fertig sind."
+        else -> "📻 Das Radio plant laufend nach deinem Tagesplan weiter."
+    }
+    Text(text, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
 }
 
 /** A running series: its title, how far it is and the next episode; «Beenden» asks first. */
@@ -189,11 +231,12 @@ private fun SeriesRow(series: SeriesInfo, actions: RadioActions) {
     }
 }
 
-/** The playing item: its time in red, «läuft», and its progress. */
+/** The playing item: its time in red, «läuft» or «pausiert», and its progress. */
 @Composable
 private fun NowRow(item: TimelineItem, state: RadioState, actions: RadioActions) {
     Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        ItemRow(item, state.starts[item.id], onTap = { state.tab = Tab.LISTEN }, onLongPress = { state.actionsFor = item }, live = true, progress = state.progress)
+        ItemRow(item, state.starts[item.id], onTap = { state.tab = Tab.LISTEN }, onLongPress = { state.actionsFor = item }, live = true,
+            progress = state.progress, liveLabel = if (state.playWhenReady) "läuft" else "pausiert")
     }
 }
 
@@ -227,7 +270,7 @@ private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioAction
 @Composable
 fun ItemRow(
     item: TimelineItem, start: Instant?, onTap: () -> Unit, onLongPress: () -> Unit,
-    timeLabel: String? = null, live: Boolean = false, progress: Float? = null,
+    timeLabel: String? = null, live: Boolean = false, progress: Float? = null, liveLabel: String = "läuft",
 ) {
     val look = Looks.of(item)
     val color = Nocturne.kind(look.kind)
@@ -243,7 +286,7 @@ fun ItemRow(
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.width(58.dp)) {
                 Text(timeLabel ?: start?.let(clock::format) ?: "", style = display(22), color = if (live) Nocturne.live else Nocturne.text, maxLines = 1)
-                Text(if (live) "läuft" else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+                Text(if (live) liveLabel else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
             }
             val barHeight = (14 + item.estimatedMinutes * 4).toInt().coerceIn(30, 84).dp
             Box(Modifier.width(6.dp).height(barHeight).background(color, RoundedCornerShape(3.dp)))
