@@ -40,7 +40,7 @@ Decided by the owner: on 29.09.2026 the browser player and the web program view 
 | Studio | Station and host, voices (samples, design, cloning), place, interests, music, station sound, features, own shows of every format, feeds, the editorial team (instructions, freedom, threshold, style presets, trial runs), quality, usage, Spotify listening profile, first setup |
 | Changes ship | Server logic with every Worker deploy; the app as an in-app update |
 
-The app reads the settings (`GET /api/station`), keeps a draft and on «Speichern» reads them again and writes over them only the studio's fields, shows, feeds and agents (`StudioSettings.mergeInto`, `StationDraft.mergeInto` in core), so a day plan saved meanwhile stays; a show removed in the draft also leaves the day plan. `POST /api/setup` creates a new station with the default shows; `GET /api/agents` gives the agents' shipped instructions and the style presets. Rarely used options of a show (music block triggers, further playlist groups, production mode, a show's own voice) keep their values and defaults; the app does not show them.
+The app reads the settings (`GET /api/station`), keeps a draft and on «Speichern» reads them again and writes over them only the studio's fields, shows, feeds and agents (`StudioSettings.mergeInto`, `StationDraft.mergeInto` in core), so a day plan saved meanwhile stays; a show removed in the draft also leaves the day plan. `POST /api/setup` creates a new station with the default shows; `GET /api/agents` gives the agents' shipped instructions and the style presets; `GET /api/formats` gives the show formats with the lengths the config check accepts, which the show editor uses (its built-in values only until the answer arrives). Rarely used options of a show (music block triggers, further playlist groups, production mode, a show's own voice) keep their values and defaults; the app does not show them.
 
 ## System overview
 
@@ -52,9 +52,9 @@ Cloudflare
   Planner (Worker) ── reads schedule, shows, music rules, memory, feedback from D1
         │ creates timeline items (planned)
         ▼
-  Queue consumer (one item per message, one at a time; the item's D1 state drives retries)
+  Queue consumer (one item per message, up to two at a time; the item's D1 state drives retries)
         segment:     collect sources → draft (ASK/Gemini) → verify per show policy
-                     → store script (state voicing) → reserve budget → TTS → R2 → ready
+                     → store script (state voicing) → reserve budget → TTS → MP3 (48 kbps mono) → R2 → ready
         music block: LLM picks tracks → resolve via Spotify search (code, no AI)
                      → moderation for resolved tracks only → TTS → R2 → ready
         │
@@ -198,7 +198,7 @@ Ready-made blocks replace typing prompts for everyday use: each block (`src/doma
 
 ## Final desk: style book, bridges, quality jury, loudness
 
-Every spoken item (briefs, dialogs, blocks) goes through a final desk after the draft (`server/editing.ts`): an editor rewrites it for the ear by a radio style book (one thought per sentence, rounded numbers, abbreviations spelled out, people introduced with their role, a concrete hook, the key point repeated at the end) and connects it to the program: a one-sentence bridge from the item before, the station ident after music or at the start, no announcement of what comes next (the owner may reorder). With live transitions on (default), the script instead starts straight with its subject: the bridge and the station name come from the live transition. A jury then scores hook, clarity, facts, novelty and length from 1 to 5; below its bar (default 3.5, see Redaktion) the script goes back once with the jury's notes and the better version is kept. A rewrite that changes the format, cites unknown sources or grows or shrinks by more than half is discarded in favour of the draft, and the evidence check runs on the final text. The marks are shown in the studio (★) and in the app's text view. Voiced WAV audio (Gemini voices) is brought to one speech level (about −19 dBFS RMS of the voiced parts, soft limiter below full scale) and silent edges are trimmed to 120 ms (`server/audio.ts`); Mistral MP3 passes unchanged.
+Every spoken item (briefs, dialogs, blocks) goes through a final desk after the draft (`server/editing.ts`): an editor rewrites it for the ear by a radio style book (one thought per sentence, rounded numbers, abbreviations spelled out, people introduced with their role, a concrete hook, the key point repeated at the end) and connects it to the program: a one-sentence bridge from the item before, the station ident after music or at the start, no announcement of what comes next (the owner may reorder). With live transitions on (default), the script instead starts straight with its subject: the bridge and the station name come from the live transition. A jury then scores hook, clarity, facts, novelty and length from 1 to 5; below its bar (default 3.5, see Redaktion) the script goes back once with the jury's notes and the better version is kept. A rewrite that changes the format, cites unknown sources or grows or shrinks by more than half is discarded in favour of the draft, and the evidence check runs on the final text. The marks are shown in the studio (★) and in the app's text view. Voiced WAV audio (Gemini voices) is brought to one speech level (about −19 dBFS RMS of the voiced parts, soft limiter below full scale) and silent edges are trimmed to 120 ms (`server/audio.ts`); Mistral MP3 passes unchanged. Items, music hour moderations and answers are then stored as 48 kbps mono MP3 (`wavToMp3`, lamejs), about a tenth of the WAV size; transitions, the hour announcement and voice samples stay WAV. Encoding a long dialog takes a few seconds of CPU, so the Worker allows up to 120 s CPU per invocation (`[limits]` in `wrangler.toml`).
 
 ## Redaktion: configurable agents
 

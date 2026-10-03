@@ -13,6 +13,7 @@
     "build": "npm run check"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "jose": "^6.2.12"
   },
   "devDependencies": {

@@ -1,0 +1,6 @@
+# The app's own code, compiled ahead of time on install: startup (activity, controllers, theme),
+# the program and listening screens, the core model and the playback service.
+HSPLch/heimberg/radio/**->**(**)**
+Lch/heimberg/radio/**;
+HSPLch/heimberg/radio/core/**->**(**)**
+Lch/heimberg/radio/core/**;

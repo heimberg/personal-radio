@@ -31,7 +31,14 @@ queue = "personal-radio-production"
 max_batch_size = 1
 max_batch_timeout = 5
 max_retries = 0
-max_concurrency = 1
+# Two items at a time: a fresh program is ready sooner. Leases keep an item with one producer, and the
+# daily limits are counted atomically in D1; more would mostly meet the providers' per-minute limits.
+max_concurrency = 2
+
+# Encoding speech as MP3 takes about a second of CPU per minute of speech; a music hour has up to
+# fifteen spoken parts, so production may use more than the default 30 seconds (Workers Paid).
+[limits]
+cpu_ms = 120000
 
 # Keeps the program filled while the owner listens.
 [triggers]

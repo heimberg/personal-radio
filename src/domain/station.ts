@@ -189,6 +189,16 @@ export interface TimelineItemView {
 /** Mistral speech is capped at about 280 words, which is roughly two spoken minutes. */
 export const MINUTES_LIMITS: Record<ShowFormat, [number, number]> = { brief: [1, 2], podcast: [2, 10], artist_hour: [20, 90], genre_hour: [20, 90], theme_hour: [20, 90], music_block: [10, 120] };
 export const FORMATS = Object.keys(MINUTES_LIMITS) as ShowFormat[];
+export const FORMAT_NAMES: Record<ShowFormat, string> = {
+  brief: 'Kurzbeitrag', podcast: 'Dialog', artist_hour: 'Künstler-Stunde', genre_hour: 'Genre-Stunde', theme_hour: 'Themen-Stunde', music_block: 'Musikblock',
+};
+/** The length a new show of a format starts with. */
+export const DEFAULT_MINUTES: Record<ShowFormat, number> = { brief: 2, podcast: 5, artist_hour: 60, genre_hour: 60, theme_hour: 60, music_block: 30 };
+
+/** The formats as the app's show editor offers them: name and the lengths the server accepts. */
+export const formatList = () => FORMATS.map(id => ({
+  id, label: FORMAT_NAMES[id], minMinutes: MINUTES_LIMITS[id][0], maxMinutes: MINUTES_LIMITS[id][1], defaultMinutes: DEFAULT_MINUTES[id],
+}));
 
 export class ConfigError extends Error {}
 /** A building block in the day plan; the catalog lives in `blocks.ts`. */

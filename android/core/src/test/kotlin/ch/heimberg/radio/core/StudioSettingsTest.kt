@@ -80,4 +80,23 @@ class StudioSettingsTest {
         assertEquals(VoiceOption("gemini_voice_n", "Mira", "own"), StudioSettings.parseCreatedVoice("""{"voice":{"id":"gemini_voice_n","name":"Mira","group":"own"}}"""))
         assertNull(StudioSettings.parseCreatedVoice("""{"error":"voice_failed"}"""))
     }
+
+    @Test fun formatsTakeTheServersLengthsAndKeepTheirOwnOtherwise() {
+        try {
+            ShowFormat.adopt("""{"formats":[
+                {"id":"podcast","label":"Gespräch","minMinutes":3,"maxMinutes":12,"defaultMinutes":6},
+                {"id":"brief","label":"Kurz","minMinutes":5,"maxMinutes":4,"defaultMinutes":4},
+                {"id":"unknown","label":"?","minMinutes":1,"maxMinutes":2,"defaultMinutes":1}]}""")
+            assertEquals(listOf("Gespräch", 3, 12, 6), ShowFormat.PODCAST.let { listOf(it.label, it.minMinutes, it.maxMinutes, it.defaultMinutes) })
+            // An entry that does not add up keeps the built-in values; so does a format the server did not send.
+            assertEquals(listOf("Kurzbeitrag", 1, 2, 2), ShowFormat.BRIEF.let { listOf(it.label, it.minMinutes, it.maxMinutes, it.defaultMinutes) })
+            assertEquals(60, ShowFormat.ARTIST.defaultMinutes)
+            // A broken answer changes nothing.
+            ShowFormat.adopt("not json")
+            assertEquals(12, ShowFormat.PODCAST.maxMinutes)
+        } finally {
+            ShowFormat.adopt("""{"formats":[]}""")
+        }
+        assertEquals(10, ShowFormat.PODCAST.maxMinutes)
+    }
 }

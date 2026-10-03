@@ -1,5 +1,6 @@
 // Loudness for spoken audio: every segment at the same level, silence at the edges trimmed, peaks kept
 // below full scale. Works on 16-bit PCM WAV (the Gemini voices); anything else passes unchanged.
+import { Mp3Encoder } from '@breezystack/lamejs';
 
 /** Speech level to aim for, as RMS of the voiced parts in dBFS (roughly −16 LUFS for speech). */
 const TARGET_DB = -19;
@@ -203,4 +204,35 @@ function resample(samples: Int16Array, from: number, to: number): Int16Array {
     out[i] = Math.round(a + (b - a) * frac);
   }
   return out;
+}
+
+/** Bit rate for spoken items: plenty for one voice, about an eighth of the WAV. */
+export const SPEECH_KBPS = 48;
+
+/**
+ * A 16-bit PCM WAV as MP3 (mono, [SPEECH_KBPS]), for what the app streams: a minute of Gemini speech is
+ * about 2.9 MB as WAV and 0.36 MB as MP3. Anything that is not such a WAV gives null and stays as it is.
+ */
+export function wavToMp3(bytes: Uint8Array): Uint8Array | null {
+  const wav = readWav(bytes);
+  if (!wav || !wav.samples.length) return null;
+  // Speech is mono; a second channel is mixed in.
+  const mono = wav.channels === 1 ? wav.samples : Int16Array.from({ length: Math.floor(wav.samples.length / wav.channels) }, (_, i) => {
+    let sum = 0;
+    for (let c = 0; c < wav.channels; c++) sum += wav.samples[i * wav.channels + c];
+    return Math.round(sum / wav.channels);
+  });
+  const encoder = new Mp3Encoder(1, wav.sampleRate, SPEECH_KBPS);
+  const chunks: Uint8Array[] = [];
+  const block = 1152 * 16;
+  for (let start = 0; start < mono.length; start += block) {
+    const chunk = encoder.encodeBuffer(mono.subarray(start, start + block));
+    if (chunk.length) chunks.push(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.length));
+  }
+  const tail = encoder.flush();
+  if (tail.length) chunks.push(new Uint8Array(tail.buffer, tail.byteOffset, tail.length));
+  const out = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  return out.length ? out : null;
 }

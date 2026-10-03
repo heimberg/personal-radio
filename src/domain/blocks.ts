@@ -1,6 +1,6 @@
 // Ready-made building blocks for the program: the owner taps one and it is produced, at most with one
 // short word (a topic, an artist). Each block is a show template; nothing needs writing or configuring.
-import { DEFAULT_TRIGGERS, HOUR_FOCUS, SONG_MINUTES, bringsOwnMusic } from './station.ts';
+import { DEFAULT_TRIGGERS, FORMAT_NAMES, HOUR_FOCUS, SONG_MINUTES, bringsOwnMusic } from './station.ts';
 import type { ShowConfig, ShowFormat, StationConfig } from './station.ts';
 import { SERIES_BLOCKS } from './series.ts';
 
@@ -173,9 +173,6 @@ export function blockShow(block: Block, config: StationConfig, subject?: string)
 /** What the app shows for a block: the catalog, one song, and the owner's own shows. */
 export interface BlockView { id: string; name: string; description: string; minutes: number; music: boolean; own: boolean; input?: Block['input'] }
 
-const FORMAT_NAMES: Record<ShowFormat, string> = {
-  brief: 'Kurzbeitrag', podcast: 'Dialog', artist_hour: 'Künstler-Stunde', genre_hour: 'Genre-Stunde', theme_hour: 'Themen-Stunde', music_block: 'Musikblock',
-};
 const OWN_INPUT = {
   artist: { kind: 'artist', label: 'Künstler oder Band', example: 'z. B. Portishead' },
   genre: { kind: 'genre', label: 'Genre', example: 'z. B. Krautrock' },

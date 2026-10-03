@@ -2,7 +2,7 @@
 import { parseProfile, parseScript } from '../src/domain/program.ts';
 import type { Profile, Source, Script, TextGenerator, SpeechSynthesizer, EditorialDirection } from '../src/domain/program.ts';
 import type { VerificationPolicy } from '../src/domain/station.ts';
-import { normalizeSpeech, withBed } from './audio.ts';
+import { normalizeSpeech, wavToMp3, withBed } from './audio.ts';
 import { withoutVoiceTags } from './providers.ts';
 
 export interface EditorialDecision { approved: boolean; reasons: string[] }
@@ -16,7 +16,11 @@ export interface CharacterBudgetStore { reserve(ownerId: string, characters: num
  * [reserve] false: the caller caps the cost itself (live transitions); [bed]: a soft music bed under short
  * speech; [lite]: the cheaper voice model for short, frequent speech.
  */
-export interface VoiceOptions { reserve?: boolean; bed?: boolean; lite?: boolean; /** A dialog's two voices (host, co-host). */ voices?: Array<string | undefined> }
+export interface VoiceOptions {
+  reserve?: boolean; bed?: boolean; lite?: boolean; /** A dialog's two voices (host, co-host). */ voices?: Array<string | undefined>;
+  /** What the app streams is stored as MP3 (about an eighth of the WAV); sounds the Worker builds on stay WAV. */
+  compress?: boolean;
+}
 
 export class PipelineError extends Error {
   readonly code: 'INVALID_INPUT' | 'REJECTED' | 'BUDGET_EXCEEDED' | 'IDEMPOTENCY_CONFLICT' | 'TOO_MANY_REQUESTS';
@@ -153,6 +157,9 @@ export class SegmentPipeline {
     // Mistral returns MP3; Gemini voices return WAV, which is brought to one speech level with trimmed edges.
     const wav = audio.length > 12 && String.fromCharCode(...audio.subarray(0, 4)) === 'RIFF';
     const level = wav ? normalizeSpeech(audio) : audio;
-    return { audio: wav && options.bed && mode === 'brief' ? withBed(level) : level, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
+    const finished = wav && options.bed && mode === 'brief' ? withBed(level) : level;
+    const mp3 = wav && options.compress ? wavToMp3(finished) : null;
+    if (mp3) return { audio: mp3, contentType: 'audio/mpeg', ttsCharacters: characters };
+    return { audio: finished, contentType: wav ? 'audio/wav' : 'audio/mpeg', ttsCharacters: characters };
   }
 }

@@ -8,17 +8,27 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 
-/** A show format as the studio offers it, with the server's length limits (src/domain/station.ts). */
-enum class ShowFormat(val id: String, val label: String, val minMinutes: Int, val maxMinutes: Int, val defaultMinutes: Int, val subject: String? = null) {
+/**
+ * A show format as the studio offers it. Name and lengths come from the server (`GET /api/formats`, the
+ * same limits its config check uses) once [adopt] has read them; until then the values built in here apply.
+ */
+enum class ShowFormat(val id: String, private val builtInLabel: String, private val builtInMin: Int, private val builtInMax: Int, private val builtInDefault: Int, val subject: String? = null) {
     BRIEF("brief", "Kurzbeitrag", 1, 2, 2),
     PODCAST("podcast", "Dialog", 2, 10, 5),
     ARTIST("artist_hour", "Künstler-Stunde", 20, 90, 60, "artist"),
     GENRE("genre_hour", "Genre-Stunde", 20, 90, 60, "genre"),
     THEME("theme_hour", "Themen-Stunde", 20, 90, 60, "theme"),
     BLOCK("music_block", "Musikblock", 10, 120, 30);
+
+    private val served: Served? get() = Served.formats[id]
+    val label: String get() = served?.label ?: builtInLabel
+    val minMinutes: Int get() = served?.min ?: builtInMin
+    val maxMinutes: Int get() = served?.max ?: builtInMax
+    val defaultMinutes: Int get() = served?.default ?: builtInDefault
 
     val musicHour: Boolean get() = subject != null
     val spoken: Boolean get() = this == BRIEF || this == PODCAST
@@ -33,6 +43,28 @@ enum class ShowFormat(val id: String, val label: String, val minMinutes: Int, va
 
     companion object {
         fun of(id: String): ShowFormat = entries.firstOrNull { it.id == id } ?: BRIEF
+
+        /** Takes the formats the server sent; an entry that is unknown or does not add up keeps the built-in values. */
+        fun adopt(body: String) {
+            val list = runCatching { Json.parseToJsonElement(body).jsonObject["formats"] as? JsonArray }.getOrNull() ?: return
+            Served.formats = list.mapNotNull { element ->
+                val f = element as? JsonObject ?: return@mapNotNull null
+                fun number(key: String) = (f[key] as? JsonPrimitive)?.doubleOrNull?.toInt()
+                val id = (f["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val min = number("minMinutes") ?: return@mapNotNull null
+                val max = number("maxMinutes") ?: return@mapNotNull null
+                val default = number("defaultMinutes") ?: return@mapNotNull null
+                if (entries.none { it.id == id } || min < 1 || default !in min..max) return@mapNotNull null
+                id to Served((f["label"] as? JsonPrimitive)?.contentOrNull?.ifBlank { null }, min, max, default)
+            }.toMap()
+        }
+    }
+}
+
+/** A format's name and lengths as the server sent them. */
+private class Served(val label: String?, val min: Int, val max: Int, val default: Int) {
+    companion object {
+        @Volatile var formats: Map<String, Served> = emptyMap()
     }
 }
 
