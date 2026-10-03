@@ -55,6 +55,9 @@ import java.time.format.DateTimeFormatter
 /** How long «Rückgängig» can bring back an item taken out of the program (the snackbar shows about four seconds). */
 private const val UNDO_MS = 5_000L
 
+/** How often an open app asks the Worker for a newer build. */
+private const val UPDATE_CHECK_MS = 10 * 60_000L
+
 /**
  * The app's one screen: «Hören», «Programm», «Archiv» and «Studio» in Compose. This activity connects
  * them to the playback service (Media3) and the private Worker; the screens only read [state].
@@ -139,12 +142,6 @@ class MainActivity : AppCompatActivity(), RadioActions {
             }
         }
 
-        lifecycleScope.launch {
-            updater.available()?.let {
-                state.update = it
-                state.updateNote = "Version ${it.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})."
-            }
-        }
         lifecycleScope.launch { loadBlocks() }
         NoticeWorker.schedule(this)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -155,6 +152,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // A new build shows up whenever the app comes to the front, and while it stays open; the player
+                // service keeps the app alive, so a check at start only would wait for a cold start.
+                launch {
+                    while (true) {
+                        checkUpdate(version)
+                        delay(UPDATE_CHECK_MS)
+                    }
+                }
                 launch {
                     while (true) {
                         renderProgress()
@@ -174,6 +179,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 }
             }
         }
+    }
+
+    private suspend fun checkUpdate(version: String) {
+        if (state.updating) return
+        val build = updater.available() ?: return
+        if (state.update?.versionCode == build.versionCode) return
+        state.update = build
+        state.updateNote = "Version ${build.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})."
     }
 
     override fun onStart() {
