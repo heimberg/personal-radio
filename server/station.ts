@@ -47,6 +47,8 @@ export interface StationDeps {
   reserveFeed(owner: string): Promise<void>;
   reserveGeneration(owner: string): Promise<void>;
   podcastAvailable: boolean;
+  /** Store speech as MP3 (`SPEECH_MP3=on`): about a second of CPU per minute of speech, so Workers Paid only. */
+  compressSpeech?: boolean;
   /** Script writer for a show's provider and format; undefined when that provider is not configured. */
   generator?(provider: TextProvider, format: ShowConfig['format']): TextGenerator | undefined;
   /** Google-Search-grounded research for `web` shows; undefined without Gemini. */
@@ -452,7 +454,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
     // The show's own voice wins; otherwise the host persona speaks.
     // Dialogs speak with the host's and the co-host's voice; a brief with the show's own voice, else the host's.
     const voiced = await deps.pipeline.voice(owner, script, format, format === 'brief' ? show.voiceId ?? config.host.voiceId : undefined, config.host.voiceStyle,
-      { bed: stationSounds(config).musicBed, compress: true, ...(format === 'podcast' ? { voices: [config.host.voiceId, config.host.cohostVoiceId] } : {}) });
+      { bed: stationSounds(config).musicBed, compress: deps.compressSpeech, ...(format === 'podcast' ? { voices: [config.host.voiceId, config.host.cohostVoiceId] } : {}) });
     const key = `segments/${row.id}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
     await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });
     await deps.store.update(owner, row.id, { state: 'ready', lease_until: null, audio_key: key, content_type: voiced.contentType, error: null }, deps.now());
@@ -637,7 +639,7 @@ async function voiceParts(deps: StationDeps, owner: string, config: StationConfi
     const batch = open.slice(start, start + TTS_PARALLEL);
     const settled = await Promise.allSettled(batch.map(async ([index, part]) => {
       const speech = part as SpeechPart;
-      const audio = await deps.pipeline.voice(owner, { title: pkg.title, text: speech.text, sourceIds: speech.sourceIds.length ? speech.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed, compress: true });
+      const audio = await deps.pipeline.voice(owner, { title: pkg.title, text: speech.text, sourceIds: speech.sourceIds.length ? speech.sourceIds : pkg.sourceIds }, 'brief', voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed, compress: deps.compressSpeech });
       const key = `segments/${row.id}-${index}.${audio.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
       await deps.audio.put(key, audio.audio, { httpMetadata: { contentType: audio.contentType } });
       return { part: speech, key, contentType: audio.contentType };
@@ -1162,7 +1164,7 @@ export async function answerAbout(deps: StationDeps, owner: string, itemId: stri
   }
   const text = answer.answerable ? answer.text : `Zu deiner Frage «${question}» habe ich leider nichts Verlässliches gefunden – weder im Beitrag noch bei einer kurzen Suche.`;
   const reply: Script = { title: `Nachgefragt: ${question.slice(0, 80)}`, text, sourceIds: answer.sourceIds.filter(id => sources.some(source => source.id === id)) };
-  const voiced = await deps.pipeline.voice(owner, reply, 'brief', config.host.voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed, compress: true });
+  const voiced = await deps.pipeline.voice(owner, reply, 'brief', config.host.voiceId, config.host.voiceStyle, { bed: stationSounds(config).musicBed, compress: deps.compressSpeech });
   const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
   const key = `segments/${id}.${voiced.contentType === 'audio/wav' ? 'wav' : 'mp3'}`;
   await deps.audio.put(key, voiced.audio, { httpMetadata: { contentType: voiced.contentType } });

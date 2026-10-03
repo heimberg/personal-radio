@@ -309,6 +309,8 @@ class StationSoundTest {
         val steps = StationSound.withSounds(listOf(item("a", false), item("b", true), item("c", false)), sounds, before = item("x", true), stationName = "Radio")
         assertEquals(listOf("a#ident", "a", "b#0", "c#ident", "c"), steps.map { it.mediaId })
         assertFalse(steps.first().last)
+        // The jingle already names the item it leads into, with the station beneath.
+        assertEquals(steps[1].title to "Radio", steps.first().title to steps.first().subtitle)
         assertEquals(listOf("a", "b#0", "c"), StationSound.withSounds(listOf(item("a", false), item("b", true), item("c", false)), StationSounds(), item("x", true)).map { it.mediaId })
     }
 
