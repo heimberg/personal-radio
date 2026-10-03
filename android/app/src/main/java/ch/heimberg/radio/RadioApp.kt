@@ -1,5 +1,7 @@
 package ch.heimberg.radio
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -127,15 +129,18 @@ fun RadioApp(state: RadioState, actions: RadioActions, version: String) {
     CatalogSheet(state, actions)
 }
 
-/** What plays, on every tab but «Hören»; a tap opens the player. */
+/** What plays, on every tab but «Hören», with how far it is; a tap or a swipe up opens the player. */
 @Composable
 private fun MiniPlayer(state: RadioState, actions: RadioActions) {
     val look = state.look
     val color = Nocturne.kind(look?.kind)
-    Column(Modifier.background(Nocturne.surface)) {
+    // A swipe up opens the player, like a tap.
+    Column(Modifier.background(Nocturne.surface).pointerInput(Unit) {
+        detectVerticalDragGestures { _, drag -> if (drag < -12f) state.tab = Tab.LISTEN }
+    }) {
         LinearProgressIndicator(
-            progress = { state.progress }, color = color, trackColor = Nocturne.divider,
-            modifier = Modifier.fillMaxWidth().height(2.dp),
+            progress = { state.progress }, color = color, trackColor = Nocturne.divider, drawStopIndicator = {},
+            modifier = Modifier.fillMaxWidth().height(3.dp),
         )
         Row(
             Modifier.fillMaxWidth().clickable { state.tab = Tab.LISTEN }.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),

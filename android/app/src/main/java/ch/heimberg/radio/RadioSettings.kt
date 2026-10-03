@@ -58,3 +58,12 @@ class CatalogPrefs(context: Context) {
         const val USE = "use:"
     }
 }
+
+/** Tips the app shows once: only on this phone. */
+class UiHints(context: Context) {
+    private val prefs = context.getSharedPreferences("hints", Context.MODE_PRIVATE)
+
+    var programSeen: Boolean
+        get() = prefs.getBoolean("program", false)
+        set(value) { prefs.edit().putBoolean("program", value).apply() }
+}

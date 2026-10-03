@@ -1,5 +1,9 @@
 package ch.heimberg.radio
 
+import java.util.Locale
+import java.time.format.DateTimeFormatter
+import java.time.ZoneId
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,7 +49,6 @@ import ch.heimberg.radio.core.Family
 import ch.heimberg.radio.core.FamilyMember
 import ch.heimberg.radio.core.FamilyMessage
 import ch.heimberg.radio.core.Kind
-import ch.heimberg.radio.core.ago
 import coil.compose.AsyncImage
 import java.time.Instant
 import kotlinx.coroutines.delay
@@ -74,8 +77,11 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         // newest message stays above the input even when the space shrinks (mini player, keyboard).
         LaunchedEffect(family.messages.size) { if (family.messages.isNotEmpty()) list.animateScrollToItem(0) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, reverseLayout = true, contentPadding = PaddingValues(bottom = 12.dp)) {
-            items(family.messages.asReversed(), key = { "message-${it.id}" }) { message ->
-                MessageRow(message, message.from == family.me, family.members.firstOrNull { it.key == message.from }, actions)
+            for (entry in chatEntries(family.messages, Instant.now()).asReversed()) when (entry) {
+                is ChatEntry.Day -> item(key = "day-${entry.label}-${entry.firstId}") { DayDivider(entry.label) }
+                is ChatEntry.Message -> item(key = "message-${entry.message.id}") {
+                    MessageRow(entry, entry.message.from == family.me, family.members.firstOrNull { it.key == entry.message.from }, actions)
+                }
             }
             if (family.messages.isEmpty()) {
                 item(key = "empty") {
@@ -143,38 +149,38 @@ private fun AvatarMenu(self: FamilyMember?, state: RadioState, actions: RadioAct
 /** Each member has a colour of their own, from the rubrics; one's own card is ink. */
 private val MEMBER_KINDS = listOf(Kind.DISCOVER, Kind.MUSIC, Kind.SPECIAL, Kind.STORY, Kind.NEWS)
 
-/** A member as a card in their colour: picture, name big, what they hear, and «Auch hören» and «Gruss». */
+/** A member as a slim card in their colour: picture, name, what they hear, and «Auch hören» and «Gruss». */
 @Composable
 private fun MemberRow(member: FamilyMember, kind: Kind, family: Family, actions: RadioActions, state: RadioState) {
     val color = if (member.me) Nocturne.text else Nocturne.kind(kind)
     val ink = if (member.me) Nocturne.bg else Nocturne.onKind(kind)
-    Column(
+    Row(
         Modifier
-            .padding(horizontal = 16.dp, vertical = 5.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(color)
-            .padding(14.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // One's own picture: a tap changes it.
-            Avatar(member, 48.dp, actions, Modifier.then(if (member.me) Modifier.clickable { state.avatarMenuOpen = true } else Modifier))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text((member.name + if (member.me) " (du)" else "").uppercase(), style = display(24), color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (member.me && state.avatarBusy) Text("Profilbild wird gespeichert …", style = MaterialTheme.typography.bodySmall, color = ink.copy(alpha = 0.8f))
-                else if (member.me && member.avatarUrl == null) Text("Tippe auf den Kreis für ein Profilbild", style = MaterialTheme.typography.bodySmall, color = ink.copy(alpha = 0.8f))
-                Text(
-                    (if (member.nowPlaying != null) "▶ " else "") + member.status(Instant.now()),
-                    style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                )
+        // One's own picture: a tap changes it.
+        Avatar(member, 40.dp, actions, Modifier.then(if (member.me) Modifier.clickable { state.avatarMenuOpen = true } else Modifier))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text((member.name + if (member.me) " (du)" else "").uppercase(), style = display(18), color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val status = when {
+                member.me && state.avatarBusy -> "Profilbild wird gespeichert …"
+                member.me && member.avatarUrl == null -> "Tippe auf den Kreis für ein Profilbild"
+                else -> (if (member.nowPlaying != null) "▶ " else "") + member.status(Instant.now())
             }
+            Text(status, style = MaterialTheme.typography.bodySmall, color = ink.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (!member.me) {
-            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (family.canListenAlong(member)) Pill("🎧 Auch hören", ink) { actions.listenAlong(member) }
-                Pill("💌 Gruss", ink) { state.greetFor = member }
+            if (family.canListenAlong(member)) {
+                Pill("🎧", ink) { actions.listenAlong(member) }
+                Spacer(Modifier.width(6.dp))
             }
+            Pill("💌 Gruss", ink) { state.greetFor = member }
         }
     }
 }
@@ -203,13 +209,54 @@ fun Avatar(member: FamilyMember, extent: Dp, actions: RadioActions, modifier: Mo
     }
 }
 
-/** One chat message: own ones on the right; others' with their picture; shares and greetings with their icon. */
+/** The chat as it is shown: a divider per day, and runs of one sender with the name on the first and the picture on the last. */
+private sealed interface ChatEntry {
+    data class Day(val label: String, val firstId: Long) : ChatEntry
+    data class Message(val message: FamilyMessage, val first: Boolean, val last: Boolean, val time: String) : ChatEntry
+}
+
+private val chatClock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+private val chatDate = DateTimeFormatter.ofPattern("EEEE, d. MMMM", Locale.GERMAN)
+
+private fun chatEntries(messages: List<FamilyMessage>, now: Instant): List<ChatEntry> {
+    val zone = ZoneId.systemDefault()
+    val today = now.atZone(zone).toLocalDate()
+    val at = messages.map { runCatching { Instant.parse(it.at) }.getOrNull() }
+    val day = at.map { it?.atZone(zone)?.toLocalDate() }
+    val entries = mutableListOf<ChatEntry>()
+    for ((index, message) in messages.withIndex()) {
+        val date = day[index]
+        if (index == 0 || date != day[index - 1]) {
+            val label = when {
+                date == null -> "Früher"
+                date == today -> "Heute"
+                date == today.minusDays(1) -> "Gestern"
+                date.isAfter(today.minusDays(7)) -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.GERMAN))
+                else -> date.format(chatDate)
+            }
+            entries += ChatEntry.Day(label, message.id)
+        }
+        val sameAsBefore = index > 0 && messages[index - 1].from == message.from && day[index - 1] == date
+        val sameAsAfter = index < messages.size - 1 && messages[index + 1].from == message.from && day[index + 1] == date
+        entries += ChatEntry.Message(message, first = !sameAsBefore, last = !sameAsAfter, time = at[index]?.let(chatClock::format) ?: "")
+    }
+    return entries
+}
+
 @Composable
-private fun MessageRow(message: FamilyMessage, mine: Boolean, sender: FamilyMember?, actions: RadioActions) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Bottom) {
-        if (!mine && sender != null) {
-            Avatar(sender, 28.dp, actions)
+private fun DayDivider(label: String) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp))
+}
+
+/** One chat message: own ones on the right; others' with their name on the first of a run and their picture on the last. */
+@Composable
+private fun MessageRow(entry: ChatEntry.Message, mine: Boolean, sender: FamilyMember?, actions: RadioActions) {
+    val message = entry.message
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = if (entry.first) 4.dp else 1.dp, bottom = 1.dp),
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
+        if (!mine) {
+            if (entry.last && sender != null) Avatar(sender, 28.dp, actions) else Spacer(Modifier.width(28.dp))
             Spacer(Modifier.width(6.dp))
         }
         Column(
@@ -218,11 +265,15 @@ private fun MessageRow(message: FamilyMessage, mine: Boolean, sender: FamilyMemb
                 .clip(RoundedCornerShape(16.dp))
                 .background(if (mine) Nocturne.text else Nocturne.surface)
                 .then(if (mine) Modifier else Modifier.border(1.dp, Nocturne.divider, RoundedCornerShape(16.dp)))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 7.dp),
         ) {
-            val time = runCatching { ago(Instant.parse(message.at), Instant.now()) }.getOrDefault("")
-            Text(if (mine) "Du · $time" else "${message.fromName} · $time", style = MaterialTheme.typography.labelSmall, color = if (mine) Nocturne.bg.copy(alpha = 0.7f) else Nocturne.muted)
-            Text(listOf(message.icon, message.line).filter { it.isNotEmpty() }.joinToString(" "), style = MaterialTheme.typography.bodyMedium, color = if (mine) Nocturne.bg else Nocturne.text)
+            if (!mine && entry.first) Text(message.fromName, style = MaterialTheme.typography.labelSmall, color = Nocturne.muted)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(listOf(message.icon, message.line).filter { it.isNotEmpty() }.joinToString(" "), style = MaterialTheme.typography.bodyMedium,
+                    color = if (mine) Nocturne.bg else Nocturne.text, modifier = Modifier.weight(1f, fill = false))
+                Spacer(Modifier.width(8.dp))
+                Text(entry.time, style = MaterialTheme.typography.labelSmall, color = if (mine) Nocturne.bg.copy(alpha = 0.6f) else Nocturne.faint)
+            }
         }
     }
 }
