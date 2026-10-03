@@ -445,6 +445,13 @@ class MainActivity private constructor(
 
     override fun shift(item: TimelineItem, offset: Int) = arrange(ProgramClock.shift(state.open, item.id, offset, state.currentItemId))
 
+    override fun reorder(order: List<String>) {
+        val byId = state.open.associateBy { it.id }
+        val items = order.mapNotNull(byId::get)
+        // Items that came in meanwhile keep their place at the end.
+        arrange(items + state.open.filter { it.id !in order })
+    }
+
     /** Saves a new order; the list and the player follow it right away. */
     private fun arrange(items: List<TimelineItem>) {
         if (items.map { it.id } == ProgramClock.playingOrder(state.open, state.currentItemId).map { it.id }) return

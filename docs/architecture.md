@@ -245,7 +245,7 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
 - **Weltpresse** (block `weltpresse`, 4 minutes): how media in many countries report on the topic (or the week's main international story), with outlet, country and translated wording. A block's research template names the topic with `{thema}`.
 - **Ortsgeschichten** (hidden block `ortsgeschichte`, `POST /api/places/story {latitude, longitude}`, `server/places.ts`):
   - **App:** only when `places` is on and the location permission is granted, and only while the app is open. Every two minutes it reads the newest last-known position (at most 15 minutes old). It reports after moving at least 3 km and at most once every 10 minutes (`PlaceTrigger`).
-  - **Worker:** names the place with Nominatim reverse geocoding (village or town with canton). The same place is told once in 30 days, at most six places a day (`addPlaceStory`). Coordinates never reach the AI, only the place name.
+  - **Worker:** names the place with Nominatim reverse geocoding (village or town with canton). The same place is told once in 30 days, at most six places a day, and only one story waits at a time: while one is unheard, new places get none, so a drive does not fill the program with stories back to back (`addPlaceStory`). Coordinates never reach the AI, only the place name.
 
 ### Nachfragen, Dranbleiben, Merken, Konzerte
 

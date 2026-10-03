@@ -66,7 +66,7 @@ test('a switched-off feature stays quiet: no concerts on Friday', async () => {
   assert.equal((await store.recentItems(OWNER, 20)).filter(row => row.show_id === '_block:konzerte').length, 0);
 });
 
-test('Ortsgeschichten: only when switched on, each place once a month, a few a day', async () => {
+test('Ortsgeschichten: only when switched on, each place once a month, one waiting at a time, a few a day', async () => {
   const store = new StationStore(sqliteD1());
   await store.saveConfig(OWNER, config(), FRIDAY);
   const d = deps(store, FRIDAY);
@@ -78,7 +78,14 @@ test('Ortsgeschichten: only when switched on, each place once a month, a few a d
   assert.equal(row.show_id, '_block:ortsgeschichte');
   assert.deepEqual(JSON.parse(row.research_json!), { subjectOverride: 'Melchnau, Bern', place: 'Melchnau, Bern' });
   assert.deepEqual(await addPlaceStory(d, OWNER, 'Melchnau, Bern'), { skipped: 'known' });
-  for (let i = 1; i < PLACES_PER_DAY; i++) assert.ok('itemId' in await addPlaceStory(d, OWNER, `Ort ${i}`));
+  // While one waits, a new place gets none (no stories back to back on a drive).
+  assert.deepEqual(await addPlaceStory(d, OWNER, 'Wynau, Bern'), { skipped: 'waiting' });
+  const heard = async (result: { itemId: string } | { skipped: string }) => {
+    assert.ok('itemId' in result);
+    await store.update(OWNER, result.itemId, { state: 'played' }, FRIDAY);
+  };
+  await heard(first);
+  for (let i = 1; i < PLACES_PER_DAY; i++) await heard(await addPlaceStory(d, OWNER, `Ort ${i}`));
   assert.deepEqual(await addPlaceStory(d, OWNER, 'Noch einer'), { skipped: 'enough' });
 });
 
