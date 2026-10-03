@@ -1,6 +1,7 @@
 package ch.heimberg.radio
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,7 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ch.heimberg.radio.core.Bookmark
+import ch.heimberg.radio.core.Kind
 
 /** «Dranbleiben»: the topic to follow, suggested from an item and editable. */
 @Composable
@@ -78,12 +81,14 @@ fun ReadingListEntry(bookmark: Bookmark, actions: RadioActions) {
         Modifier
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(Nocturne.surface)
+            .border(1.dp, Nocturne.divider, RoundedCornerShape(16.dp))
             .padding(start = 14.dp, top = 12.dp, bottom = 8.dp, end = 4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
+                Text("GEMERKT", style = Kicker.copy(fontSize = 11.sp, letterSpacing = 1.sp), color = Nocturne.kindLabel(Kind.STORY))
                 Text(bookmark.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (bookmark.showName.isNotBlank()) Text(bookmark.showName, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
             }

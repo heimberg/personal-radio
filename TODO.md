@@ -25,7 +25,7 @@ Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 ## Nächste Ausbauschritte
 
-- [ ] **Design «Magazin», Schritt 2:** Einrichtungs- und Textansicht (noch Views, dunkel) auf das helle Design umstellen; Studio, Familie und Archiv mit Rubrik-Farben und grossen Titeln weiter nachziehen; Web-Studio auf dieselben Rubriken.
+- [ ] **Design «Magazin», Schritt 2:** Einrichtungs- und Textansicht (noch Views, dunkel) auf das helle Design umstellen; Web-Studio auf dieselben Rubriken.
 
 - [ ] **App, Schritt 4:** mitlaufendes Transkript, Widget auf dem Startbildschirm (Play und «Anders»), übersichtlichere Android-Auto-Ansicht.
 - [ ] **Überraschungen, Schritt 2:** Zeitfenster ohne Zufall, «heute ohne Überraschungen», Lernen pro Überraschungsart aus 👍/👎.

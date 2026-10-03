@@ -11,8 +11,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -34,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -55,6 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import ch.heimberg.radio.core.Connection
+import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.VoiceGroups
 
@@ -104,29 +111,39 @@ fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, v
 private fun SaveBar(state: RadioState, actions: RadioActions) {
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(Nocturne.accentDark).padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            .background(Nocturne.text).padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Noch nicht gespeichert", style = MaterialTheme.typography.bodyMedium, color = Nocturne.accentLight, modifier = Modifier.weight(1f))
-        TextButton(onClick = actions::discardStudio, enabled = !state.studioSaving) { Text("Verwerfen") }
-        Button(onClick = actions::saveStudio, enabled = !state.studioSaving) { Text(if (state.studioSaving) "Speichert …" else "Speichern") }
+        Text("Noch nicht gespeichert", style = MaterialTheme.typography.bodyMedium, color = Nocturne.bg, modifier = Modifier.weight(1f))
+        TextButton(onClick = actions::discardStudio, enabled = !state.studioSaving) { Text("Verwerfen", color = Nocturne.bg.copy(alpha = 0.8f)) }
+        Button(
+            onClick = actions::saveStudio, enabled = !state.studioSaving,
+            colors = ButtonDefaults.buttonColors(containerColor = Nocturne.bg, contentColor = Nocturne.text),
+        ) { Text(if (state.studioSaving) "Speichert …" else "Speichern") }
     }
 }
 
-/** The station at a glance: its name, who speaks, and in which voice. */
+/** The station at a glance, as an ink card like a magazine cover: its name big, who speaks and in which voice. */
 @Composable
 private fun StationHero(settings: StudioSettings, state: RadioState) {
     val voice = state.voices.firstOrNull { it.id == settings.voiceId }?.name ?: settings.voiceId ?: "Standardstimme"
     Column(
         Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()
-            .kindTile(null, RoundedCornerShape(24.dp), glow = 0.35f).padding(20.dp),
+            .clip(RoundedCornerShape(22.dp))
+            .background(Nocturne.text)
+            .drawBehind {
+                val center = Offset(size.width - 24.dp.toPx(), 24.dp.toPx())
+                for (ring in listOf(24, 50, 78)) drawCircle(Nocturne.bg.copy(alpha = 0.18f), radius = ring.dp.toPx(), center = center, style = Stroke(1.5.dp.toPx()))
+            }
+            .padding(20.dp),
     ) {
-        Text("📻", style = MaterialTheme.typography.headlineMedium)
+        Text("DEIN SENDER", style = Kicker, color = Nocturne.bg.copy(alpha = 0.7f))
+        Spacer(Modifier.height(28.dp))
+        Text(settings.name.ifBlank { "Dein Radio" }.uppercase(), style = display(40), color = Nocturne.bg, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(6.dp))
-        Text(settings.name.ifBlank { "Dein Radio" }.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             listOfNotNull(settings.hostName.ifBlank { null }?.let { "mit $it" }, voice.substringBefore(" ("), settings.place?.name).joinToString(" · "),
-            style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium, color = Nocturne.bg.copy(alpha = 0.8f), maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -135,8 +152,9 @@ private fun StationHero(settings: StudioSettings, state: RadioState) {
 private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioActions) {
     val edit = actions::editStudio
     // What the station does on its own and which blocks the palette shows: one place for all of it.
-    Card("funktionen", "🧩", "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
-    Card("sender", "🎙️", "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
+    Text("EINSTELLUNGEN", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp))
+    Card("funktionen", "🧩", Kind.SPECIAL, "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
+    Card("sender", "🎙️", Kind.NEWS, "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
         Field("Name des Senders", settings.name) { edit(settings.copy(name = it.take(60))) }
         Field("Moderation", settings.hostName) { edit(settings.copy(hostName = it.take(40))) }
         Field("Tonfall", settings.tone, hint = "z. B. ruhig, neugierig, präzise") { edit(settings.copy(tone = it.take(160))) }
@@ -145,7 +163,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Field("Anweisungen an die Moderation", settings.instructions, hint = "Gilt für alle Sendungen.", lines = 3) { edit(settings.copy(instructions = it.take(2000))) }
     }
     val voiceName = state.voices.firstOrNull { it.id == settings.voiceId }?.name ?: settings.voiceId ?: "Standard"
-    Card("stimme", "🗣️", "Stimme", voiceName, state) {
+    Card("stimme", "🗣️", Kind.MUSIC, "Stimme", voiceName, state) {
         Text("Antippen wählt die Stimme, ▶ spielt eine Hörprobe mit deinem Sendernamen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         Field("Sprechstil", settings.voiceStyle, hint = "Gemini-Stimmen folgen ihm, z. B. «warm, lebendig, mit hörbarem Lächeln».", lines = 2) { edit(settings.copy(voiceStyle = it.take(300))) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,7 +185,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         for ((group, label) in VoiceGroups.ORDER) {
             val voices = state.voices.filter { it.group == group }
             if (voices.isEmpty()) continue
-            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(top = 6.dp))
+            Text(label.uppercase(), style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 6.dp))
             for (voice in voices) {
                 // Dialogs use Gemini voices only; Mistral voices stay out of the second voice.
                 if (cohost && !voice.id.startsWith("gemini_")) continue
@@ -179,13 +197,13 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
             }
         }
     }
-    Card("ort", "📍", "Wo du hörst", settings.place?.name ?: "Noch kein Ort – ohne Ort kein Wetter", state) { PlacePicker(settings, state, actions) }
+    Card("ort", "📍", Kind.DISCOVER, "Wo du hörst", settings.place?.name ?: "Noch kein Ort – ohne Ort kein Wetter", state) { PlacePicker(settings, state, actions) }
     val interests = settings.topics + settings.interests
-    Card("interessen", "✨", "Interessen", if (interests.isEmpty()) "Noch keine" else interests.take(4).joinToString(", ") + if (interests.size > 4) " und ${interests.size - 4} weitere" else "", state) {
+    Card("interessen", "✨", Kind.STORY, "Interessen", if (interests.isEmpty()) "Noch keine" else interests.take(4).joinToString(", ") + if (interests.size > 4) " und ${interests.size - 4} weitere" else "", state) {
         Interests(settings, actions)
     }
     val songs = when (settings.between) { 0 -> "Keine Songs zwischen Beiträgen"; 1 -> "1 Song zwischen Beiträgen"; else -> "${settings.between} Songs zwischen Beiträgen" }
-    Card("musik", "🎵", "Musik", songs + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
+    Card("musik", "🎵", Kind.MUSIC, "Musik", songs + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
         Text(if (settings.between == 0) "Songs zwischen Beiträgen: aus" else songs, style = MaterialTheme.typography.bodyMedium)
         Slider(value = settings.between.toFloat(), onValueChange = { edit(settings.between(Math.round(it))) }, valueRange = 0f..3f, steps = 2)
         Field("Musikgeschmack", settings.taste, hint = "Genres, Künstler, Stimmungen – so konkret wie möglich.", lines = 2) { edit(settings.copy(taste = it.take(500))) }
@@ -193,7 +211,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Text("Dein Spotify-Hörprofil verbindest du im Web-Studio unter «Musik».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     }
     val sounds = listOf(settings.ident, settings.hourChange, settings.linker, settings.bed).count { it }
-    Card("sound", "🔊", "Stationssound", "$sounds von 4 an", state) {
+    Card("sound", "🔊", Kind.NEWS, "Stationssound", "$sounds von 4 an", state) {
         Toggle("Jingles", "Zwischen Musik und Wort, der Opener vor den Nachrichten", settings.ident) { edit(settings.copy(ident = it)) }
         Toggle("Zeitzeichen zur vollen Stunde", "Mit der gesprochenen Zeitansage", settings.hourChange) { edit(settings.copy(hourChange = it)) }
         Toggle("Live-Übergänge", "Die Moderation verbindet die Beiträge kurz vor der Sendung", settings.linker) { edit(settings.copy(linker = it)) }
@@ -201,25 +219,30 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
     }
 }
 
-/** A card that opens in place; one is open at a time. */
+/** A card that opens in place; one is open at a time. Its icon sits on a rubric colour, so the cards are told apart at a glance. */
 @Composable
-private fun Card(id: String, icon: String, title: String, summary: String, state: RadioState, content: @Composable () -> Unit) {
+private fun Card(id: String, icon: String, kind: Kind, title: String, summary: String, state: RadioState, content: @Composable () -> Unit) {
     val open = state.studioCard == id
+    val shape = RoundedCornerShape(18.dp)
     Column(
-        Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(if (open) Nocturne.surfaceHigh else Nocturne.surface).animateContentSize(),
+        Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(shape)
+            .background(Nocturne.surface)
+            .border(if (open) 2.dp else 1.dp, if (open) Nocturne.kind(kind) else Nocturne.divider, shape)
+            .animateContentSize(),
     ) {
         Row(
-            Modifier.fillMaxWidth().clickable { state.studioCard = if (open) null else id }.padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable { state.studioCard = if (open) null else id }.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(icon, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.width(14.dp))
+            KindBadge(icon, kind, 40.dp)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleMedium)
                 if (!open) Text(summary, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(if (open) "−" else "+", style = MaterialTheme.typography.titleMedium, color = Nocturne.muted)
+            Box(Modifier.size(28.dp).background(Nocturne.surfaceHigh, CircleShape), contentAlignment = Alignment.Center) {
+                Text(if (open) "−" else "+", style = MaterialTheme.typography.titleMedium, color = Nocturne.text)
+            }
         }
         if (open) Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
     }
@@ -336,7 +359,7 @@ private fun Interests(settings: StudioSettings, actions: RadioActions) {
 /** Everything else: the day plan in the app, the rest in the web studio. */
 @Composable
 private fun More(state: RadioState, actions: RadioActions) {
-    Text("MEHR", style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp))
+    Text("MEHR", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp))
     LinkRow("🗓", "Tagesplan", "Zeitfenster und Überraschungen") {
         state.tab = Tab.PROGRAM
         actions.openDayPlan()
@@ -348,6 +371,7 @@ private fun More(state: RadioState, actions: RadioActions) {
 private fun LinkRow(icon: String, title: String, detail: String, onClick: () -> Unit) {
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Nocturne.surface)
+            .border(1.dp, Nocturne.divider, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
