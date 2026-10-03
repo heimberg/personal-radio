@@ -161,14 +161,17 @@ test('rejections fail permanently, exhausted budgets defer to the next UTC day, 
   assert.equal(gaveUp?.state, 'failed'); assert.equal(gaveUp?.attempts, 3);
 });
 
-test('no fresh articles fails the item; three recent failures pause planning', async () => {
+test('no fresh articles leaves the program quietly; three empty runs still pause planning', async () => {
   const h = harness({ items: [] }); await h.setup();
   const due = (await tick(h.deps, OWNER)).due;
-  for (const id of due.slice(0, 3)) assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
-  assert.equal((await h.store.getItem(OWNER, due[0]))?.error, 'NO_SOURCES');
+  for (const id of due.slice(0, 3)) assert.equal(await produceItem(h.deps, OWNER, id), 'skipped');
+  assert.deepEqual([(await h.store.getItem(OWNER, due[0]))?.state, (await h.store.getItem(OWNER, due[0]))?.error], ['expired', 'NO_SOURCES']);
+  // Nothing new is no failure the app reports.
+  assert.equal((await h.store.failureSummary(OWNER)).count, 0);
   h.db.raw.exec(`DELETE FROM timeline_items WHERE state = 'planned'`);
   assert.equal((await tick(h.deps, OWNER)).planned, 0);
-  h.advance(61);
+  // «Jetzt planen» lifts that pause.
+  await h.store.forgetEmptyRuns(OWNER);
   assert.ok((await tick(h.deps, OWNER)).planned > 0);
 });
 
@@ -292,7 +295,7 @@ test('a rate-limited verifier defers instead of rejecting the draft', async () =
 test('a manual retry produces recent failures again, restarts waiting ones and lifts the failure pause', async () => {
   const h = harness({ items: [] }); await h.setup();
   const due = (await tick(h.deps, OWNER)).due;
-  for (const id of due.slice(0, 3)) assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
+  for (const id of due.slice(0, 3)) h.db.raw.prepare(`UPDATE timeline_items SET state = 'failed', error = 'GEMINI_NOT_CONFIGURED', updated_at = ? WHERE id = ?`).run(NOW.toISOString(), id);
   h.deps.researcher = undefined;
   h.behaviour.voice = () => { throw new ProviderError('Mistral', 429); };
   h.deps.fetchFeed = async () => feedItems(3);
@@ -331,9 +334,9 @@ test('the host persona\'s voice is used unless the show sets its own; rejections
 test('failures are summarised, cleaned up on request and purged automatically after a day', async () => {
   const h = harness({ items: [] }); await h.setup();
   const due = (await tick(h.deps, OWNER)).due;
-  for (const id of due.slice(0, 3)) await produceItem(h.deps, OWNER, id);
+  for (const id of due.slice(0, 3)) h.db.raw.prepare(`UPDATE timeline_items SET state = 'failed', error = 'GEMINI_NOT_CONFIGURED' WHERE id = ?`).run(id);
   const summary = await h.store.failureSummary(OWNER);
-  assert.equal(summary.count, 3); assert.equal(summary.latestError, 'NO_SOURCES');
+  assert.equal(summary.count, 3); assert.equal(summary.latestError, 'GEMINI_NOT_CONFIGURED');
   const visible = await h.store.visibleItems(OWNER);
   assert.ok(visible.every(row => row.state !== 'failed' && row.state !== 'expired'));
   assert.equal(visible.length, due.length - 3);

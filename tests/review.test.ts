@@ -98,7 +98,7 @@ test('the Wochenrückblick can be added any day from the palette; without anythi
   const h = harness(); await h.setup();
   h.at(new Date('2026-10-01T08:00:00Z'));
   const id = (await addBlock(h.deps, OWNER, 'rueckblick'))!;
-  assert.equal(await produceItem(h.deps, OWNER, id), 'failed');
+  assert.equal(await produceItem(h.deps, OWNER, id), 'skipped');
   assert.equal((await h.store.getItem(OWNER, id))?.error, 'NO_SOURCES');
   assert.deepEqual(reviewSources([] as TimelineRow[], { questions: [], stickers: [] }, h.deps.now()), []);
 });
