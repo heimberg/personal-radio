@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The launcher mark in one colour, for themed icons (Android 13 and later); the system tints it. -->
+<!-- The «R» alone in one colour, for themed icons (Android 13 and later); the system tints it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -7,20 +7,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M31.75,27.5h34.5a3.75,3.75 0,0 1,0,7.5h-34.5a3.75,3.75 0,0 1,0,-7.5z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M31.75,39h26.5a3.75,3.75 0,0 1,0,7.5h-26.5a3.75,3.75 0,0 1,0,-7.5z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M31.75,50.5h44.5a3.75,3.75 0,0 1,0,7.5h-44.5a3.75,3.75 0,0 1,0,-7.5z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M31.75,62h18.5a3.75,3.75 0,0 1,0,7.5h-18.5a3.75,3.75 0,0 1,0,-7.5z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M31.75,73.5h32.5a3.75,3.75 0,0 1,0,7.5h-32.5a3.75,3.75 0,0 1,0,-7.5z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M77,26.75a4.5,4.5 0,1 1,0,9.0a4.5,4.5 0,1 1,0,-9.0z" />
+        android:pathData="M40.27 78V33.97H56.21Q61.14 33.97 63.89 35.76Q66.64 37.55 67.76 40.62Q68.88 43.7 68.88 47.47Q68.88 50.93 68.18 53.97Q67.47 57.01 65.3 59.25L70.16 78H58.06L55.06 63.22H51.98V78ZM51.98 53.94H54.67Q56.21 53.94 56.69 52.3Q57.17 50.67 57.17 48.62Q57.17 47.22 56.94 46.1Q56.72 44.98 56.21 44.27Q55.7 43.57 54.67 43.57H51.98Z" />
 </vector>

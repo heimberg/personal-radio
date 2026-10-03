@@ -8,7 +8,7 @@ Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 - [ ] **Sender für die Tochter:** Service-Token anlegen, in die Access-Regel aufnehmen, `LISTENERS` setzen, App auf ihrem Handy einrichten (README, Schritt 11).
 
-- [ ] **Neues Design «Magazin» ansehen:** helles Theme, fünf Rubrik-Farben, «Für dich» und «＋ Einfügen» (Suche, Rubriken, ⭐ Favoriten) im Programm, der grosse farbige Player auf «Hören». 1–2 Screenshots schicken, was noch nicht sitzt.
+- [ ] **Neues Design «Magazin» ansehen:** helles Theme, fünf Rubrik-Farben, ein einziger Knopf «＋ Einfügen» unten rechts im Programm («Für dich», Song, Thema verfolgen, Suche, Rubriken, ⭐ Favoriten), der grosse farbige Player auf «Hören». 1–2 Screenshots schicken, was noch nicht sitzt.
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
 - [ ] **Stimmen ausprobieren:** im Studio unter «Stimme» eine Stimme entwerfen («✨ Entwerfen») oder die eigene klonen («🎤 Meine Stimme»); auf Lachen, Pausen und Zwischenrufe in Dialogen hören.
 - [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
