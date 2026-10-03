@@ -340,17 +340,76 @@ class StationSoundTest {
 
 class LooksTest {
     @Test
-    fun kindsFollowTheWebCockpit() {
+    fun everyItemBelongsToOneOfFiveRubrics() {
         fun item(showId: String, music: Boolean = false, surprise: Boolean = false) = TimelineItem("i", 1, showId, "S", "2026-09-29T08:00:00Z", "ready", 2.0, surprise = surprise,
             parts = if (music) listOf(TimelinePart(kind = "track", spotifyUri = "spotify:track:1")) else emptyList())
         assertEquals(Look(Kind.MUSIC, "🎶"), Looks.of(item("_musik", music = true)))
-        assertEquals(Look(Kind.WEATHER, "☀️"), Looks.of(item("_block:wetter")))
-        assertEquals(Kind.SURPRISE, Looks.of(item("_block:zufallsfund", surprise = true)).kind)
+        assertEquals(Look(Kind.NEWS, "☀️"), Looks.of(item("_block:wetter")))
+        assertEquals(Kind.SPECIAL, Looks.of(item("_block:zufallsfund", surprise = true)).kind)
+        assertEquals(Kind.SPECIAL, Looks.of(item("eigene-stunde", surprise = true)).kind)
         assertEquals(Kind.MUSIC, Looks.of(item("eigene-stunde", music = true)).kind)
         assertEquals(Kind.DISCOVER, Looks.of(item("entdecken")).kind)
-        assertEquals(Kind.SURPRISE, Looks.ofBlock(BlockView("ueberraschung", "Überraschung", "")).kind)
+        assertEquals(Kind.SPECIAL, Looks.ofBlock(BlockView("ueberraschung", "Überraschung", "")).kind)
+        assertEquals(Kind.STORY, Looks.ofBlock(BlockView("mitmach", "Mitmach-Geschichte", "")).kind)
+        assertEquals(Kind.NEWS, Looks.ofBlock(BlockView("weltpresse", "Weltpresse", "")).kind)
         assertEquals(Kind.MUSIC, Looks.ofBlock(BlockView("show:x", "X", "", music = true)).kind)
-        assertEquals(0xFFD06BD8.toInt(), Kind.MUSIC.argb.toInt())
+        assertEquals(5, Kind.entries.size)
+        assertEquals(0xFF16171B.toInt(), Kind.STORY.onArgb.toInt())
+    }
+}
+
+class CatalogTest {
+    private val blocks = listOf(
+        BlockView("morgen", "Morgenbriefing", "Datum, Wetter und Schlagzeilen"),
+        BlockView("weltpresse", "Weltpresse", "Wie die Welt über ein Thema berichtet"),
+        BlockView("hintergrund", "Hintergrund", "Zwei Stimmen ordnen ein Thema ein"),
+        BlockView("musik", "Musikblock", "30 Minuten Musik", music = true),
+        BlockView("song", "Song", "Ein Song", music = true),
+        BlockView("mitmach", "Mitmach-Geschichte", "Du entscheidest"),
+        BlockView("ueberraschung", "Überraschung", "Etwas Unerwartetes"),
+    )
+
+    @Test fun rubricsKeepAllFiveTabsAndPutFavouritesFirst() {
+        val rubrics = Catalog.rubrics(blocks, favorites = setOf("weltpresse"))
+        assertEquals(Kind.entries.toList(), rubrics.map { it.first })
+        assertEquals(listOf("weltpresse", "morgen"), rubrics[0].second.map { it.id })
+        // A single song is not in the catalog: it has its own button.
+        assertEquals(listOf("musik"), rubrics[2].second.map { it.id })
+    }
+
+    @Test fun searchIgnoresCaseAndUmlauts() {
+        assertEquals(listOf("ueberraschung"), Catalog.search(blocks, "uberrasch").map { it.id })
+        assertEquals(listOf("morgen"), Catalog.search(blocks, "WETTER datum").map { it.id })
+        assertEquals(listOf("mitmach"), Catalog.search(blocks, "geschichten").map { it.id })
+        assertEquals(listOf("hintergrund", "weltpresse"), Catalog.search(blocks, "thema", favorites = setOf("hintergrund")).map { it.id })
+        assertEquals(emptyList<BlockView>(), Catalog.search(blocks, "  "))
+    }
+
+    @Test fun forYouMixesTimeOfDayFavouritesHabitsAndSomethingNew() {
+        val picks = ForYou.picks(blocks, hour = 7, weekday = 6, day = 0, usage = mapOf("musik" to 5, "hintergrund" to 3, "weltpresse" to 1), favorites = setOf("mitmach"))
+        assertEquals(listOf("morgen" to "MORGENS", "mitmach" to "FAVORIT", "musik" to "OFT", "hintergrund" to "OFT"), picks.map { it.block.id to it.why })
+        val evening = ForYou.picks(blocks, hour = 20, weekday = 2, day = 1, usage = mapOf("musik" to 1), favorites = emptySet())
+        assertEquals("musik" to "ABENDS", evening.first().let { it.block.id to it.why })
+        assertTrue(evening.any { it.why == "NEU" })
+        assertEquals(ForYou.LIMIT, evening.size)
+        assertEquals(evening.size, evening.map { it.block.id }.distinct().size)
+    }
+
+    @Test fun forYouOnlySuggestsWhatTheStationOffers() {
+        val picks = ForYou.picks(blocks.take(2), hour = 21, weekday = 7, day = 3, usage = mapOf("kuenstler" to 9), favorites = setOf("rueckblick"))
+        assertEquals(setOf("morgen", "weltpresse"), picks.map { it.block.id }.toSet())
+    }
+
+    @Test fun momentNamesDayAndPart() {
+        assertEquals("Samstagmorgen", ForYou.moment(7, 6))
+        assertEquals("Montagnachmittag", ForYou.moment(15, 1))
+        assertEquals("Sonntagnacht", ForYou.moment(23, 7))
+    }
+
+    @Test fun headlineSplitsAtTheFirstBreak() {
+        assertEquals("Kernfusion" to "Was der Durchbruch bedeutet", Headline.split("Kernfusion: Was der Durchbruch bedeutet"))
+        assertEquals("Massive Attack" to "Teardrop", Headline.split("Massive Attack – Teardrop"))
+        assertEquals("Musik nach deinem Geschmack" to null, Headline.split("Musik nach deinem Geschmack"))
     }
 }
 

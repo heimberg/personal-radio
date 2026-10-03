@@ -2,10 +2,9 @@ package ch.heimberg.radio
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -14,70 +13,92 @@ import androidx.compose.ui.unit.sp
 import ch.heimberg.radio.core.Kind
 
 /**
- * Nocturne in Compose: a desaturated blue-grey ground, one blurple accent, and a colour per kind of
- * content. The same tokens as res/values/colors.xml, which the remaining view screens use.
+ * «Magazin»: a light paper ground, ink for text and the main buttons, and one strong colour per rubric
+ * that fills whole cards. The object keeps its old name so every screen picks up the tokens; the view
+ * screens (setup, transcript) still use the dark tokens in res/values/colors.xml.
  */
 object Nocturne {
-    val bg = Color(0xFF161826)
-    val bgGlow = Color(0xFF1E2034)
-    val surface = Color(0xFF232532)
-    val surfaceHigh = Color(0xFF2B2E3D)
-    val text = Color(0xFFE9E9ED)
-    val muted = Color(0xFF9397AB)
-    val faint = Color(0xFF595D6C)
-    val divider = Color(0x29E9E9ED)
-    val accent = Color(0xFF9184D9)
-    val accentLight = Color(0xFFD2CEFD)
-    val accentDeep = Color(0xFF423A6A)
-    val accentDark = Color(0xFF2B2741)
-    val danger = Color(0xFFF08A7E)
+    val bg = Color(0xFFF3F4F0)
+    val bgGlow = Color(0xFFECEDE8)
+    val surface = Color(0xFFFFFFFF)
+    val surfaceHigh = Color(0xFFE6E8E2)
+    val text = Color(0xFF16171B)
+    val muted = Color(0xFF5C5F68)
+    val faint = Color(0xFF74777F)
+    val divider = Color(0xFFDCDED8)
+    /** Ink: the play button, the active tab, the «Einfügen» pill. */
+    val accent = Color(0xFF16171B)
+    /** Links, highlighted labels and active toggles. */
+    val accentLight = Color(0xFF1F5FD0)
+    val accentDeep = Color(0xFFDCE6FA)
+    val accentDark = Color(0xFFE8EEFB)
+    val danger = Color(0xFFC8361F)
+    /** The red dot of «LIVE» and the time of what plays now. */
+    val live = Color(0xFFD93A24)
 
-    fun kind(kind: Kind?): Color = kind?.let { Color(it.argb) } ?: accent
+    fun kind(kind: Kind?): Color = kind?.let { Color(it.argb) } ?: accentLight
 
-    /** The label colour of a kind: its hue, lifted towards the text colour for legibility. */
-    fun kindLabel(kind: Kind?): Color = lerp(kind(kind), text, 0.25f)
+    /** Text on a card filled with the rubric's colour. */
+    fun onKind(kind: Kind?): Color = kind?.let { Color(it.onArgb) } ?: Color.White
+
+    /** The rubric's name on the light ground: its colour, darkened where it would be too pale to read. */
+    fun kindLabel(kind: Kind?): Color = kind?.let { Color(it.labelArgb) } ?: accentLight
 }
 
-private val Inter = FontFamily(Font(R.font.inter_regular, FontWeight.Normal), Font(R.font.inter_medium, FontWeight.Medium))
-
-private val RadioType = Typography(
-    headlineMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 26.sp, lineHeight = 31.sp, letterSpacing = (-0.4).sp),
-    headlineSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 22.sp, lineHeight = 28.sp, letterSpacing = (-0.3).sp),
-    titleLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 19.sp, lineHeight = 24.sp, letterSpacing = (-0.2).sp),
-    titleMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 21.sp),
-    titleSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 19.sp),
-    bodyLarge = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 21.sp),
-    bodyMedium = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp),
-    bodySmall = TextStyle(fontFamily = Inter, fontSize = 12.sp, lineHeight = 16.sp),
-    labelLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 18.sp),
-    labelMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
-    labelSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 0.8.sp),
+/** Figtree: everything that is read rather than looked at. */
+val Figtree = FontFamily(
+    Font(R.font.figtree_regular, FontWeight.Normal), Font(R.font.figtree_medium, FontWeight.Medium),
+    Font(R.font.figtree_semibold, FontWeight.SemiBold), Font(R.font.figtree_bold, FontWeight.Bold),
 )
 
-private val RadioColors = darkColorScheme(
+/** Archivo, condensed and black: the big uppercase titles of the magazine. */
+val Display = FontFamily(Font(R.font.archivo_condensed_black, FontWeight.Black))
+
+/** A display title of [size] sp; set in capitals by the caller. */
+fun display(size: Int): TextStyle = TextStyle(fontFamily = Display, fontWeight = FontWeight.Black, fontSize = size.sp, lineHeight = (size * 0.92f).sp)
+
+/** Small capitals above a section or a card: «FÜR DICH», «SENDEPLAN». */
+val Kicker = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.5.sp)
+
+private val RadioType = Typography(
+    headlineMedium = TextStyle(fontFamily = Display, fontWeight = FontWeight.Black, fontSize = 34.sp, lineHeight = 34.sp),
+    headlineSmall = TextStyle(fontFamily = Display, fontWeight = FontWeight.Black, fontSize = 28.sp, lineHeight = 29.sp),
+    titleLarge = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 24.sp, letterSpacing = (-0.2).sp),
+    titleMedium = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 21.sp),
+    titleSmall = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Bold, fontSize = 15.sp, lineHeight = 19.sp),
+    bodyLarge = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 21.sp),
+    bodyMedium = TextStyle(fontFamily = Figtree, fontSize = 13.sp, lineHeight = 18.sp),
+    bodySmall = TextStyle(fontFamily = Figtree, fontSize = 12.sp, lineHeight = 16.sp),
+    labelLarge = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 18.sp),
+    labelMedium = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, lineHeight = 16.sp),
+    labelSmall = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Bold, fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 0.8.sp),
+)
+
+private val RadioColors = lightColorScheme(
     primary = Nocturne.accent,
     onPrimary = Nocturne.bg,
     primaryContainer = Nocturne.accentDeep,
-    onPrimaryContainer = Color(0xFFF5F4FF),
-    secondary = Nocturne.accent,
-    onSecondary = Nocturne.bg,
-    secondaryContainer = Nocturne.accentDark,
-    onSecondaryContainer = Color(0xFFE7E5FE),
+    onPrimaryContainer = Nocturne.text,
+    secondary = Nocturne.accentLight,
+    onSecondary = Color.White,
+    secondaryContainer = Nocturne.surfaceHigh,
+    onSecondaryContainer = Nocturne.text,
+    tertiary = Nocturne.accentLight,
     background = Nocturne.bg,
     onBackground = Nocturne.text,
     surface = Nocturne.bg,
     onSurface = Nocturne.text,
-    surfaceVariant = Nocturne.surface,
+    surfaceVariant = Nocturne.surfaceHigh,
     onSurfaceVariant = Nocturne.muted,
-    surfaceContainerLowest = Nocturne.bg,
+    surfaceContainerLowest = Nocturne.surface,
     surfaceContainerLow = Nocturne.surface,
     surfaceContainer = Nocturne.surface,
-    surfaceContainerHigh = Nocturne.surfaceHigh,
+    surfaceContainerHigh = Nocturne.surface,
     surfaceContainerHighest = Nocturne.surfaceHigh,
-    outline = Nocturne.divider,
-    outlineVariant = Color(0xFF3F424D),
+    outline = Nocturne.text.copy(alpha = 0.35f),
+    outlineVariant = Nocturne.divider,
     error = Nocturne.danger,
-    onError = Nocturne.bg,
+    onError = Color.White,
 )
 
 @Composable

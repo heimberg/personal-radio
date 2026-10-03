@@ -1,6 +1,6 @@
 # Personal Radio – Stand und nächste Schritte
 
-Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in der Android-App, Musik kommt über Spotify. Jeder Merge nach `main` deployt den Worker und veröffentlicht die App als In-App-Update. Einrichtung von Grund auf: [README](README.md#run-your-own-station).
+Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in der Android-App, Musik kommt über Spotify. Jeder Merge nach `main` deployt den Worker und veröffentlicht die App als In-App-Update. Einrichtung von Grund auf: [README](README.md#run-your-own-station).
 
 > Schlüssel ausschliesslich als Cloudflare-Worker-Secrets bzw. GitHub-Actions-Secrets erfassen, nie im Chat oder im Repository.
 
@@ -8,6 +8,7 @@ Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 - [ ] **Sender für die Tochter:** Service-Token anlegen, in die Access-Regel aufnehmen, `LISTENERS` setzen, App auf ihrem Handy einrichten (README, Schritt 11).
 
+- [ ] **Neues Design «Magazin» ansehen:** helles Theme, fünf Rubrik-Farben, «Für dich» und «＋ Einfügen» (Suche, Rubriken, ⭐ Favoriten) im Programm, der grosse farbige Player auf «Hören». 1–2 Screenshots schicken, was noch nicht sitzt.
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
 - [ ] **Stimmen ausprobieren:** im Studio unter «Stimme» eine Stimme entwerfen («✨ Entwerfen») oder die eigene klonen («🎤 Meine Stimme»); auf Lachen, Pausen und Zwischenrufe in Dialogen hören.
 - [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
@@ -23,6 +24,8 @@ Stand: 01.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - [ ] **ASK / Mistral** (optional): ASK als unabhängige Prüfinstanz, Mistral als zusätzliche Stimmen – nur falls gewünscht.
 
 ## Nächste Ausbauschritte
+
+- [ ] **Design «Magazin», Schritt 2:** Einrichtungs- und Textansicht (noch Views, dunkel) auf das helle Design umstellen; Studio, Familie und Archiv mit Rubrik-Farben und grossen Titeln weiter nachziehen; Web-Studio auf dieselben Rubriken.
 
 - [ ] **App, Schritt 4:** mitlaufendes Transkript, Widget auf dem Startbildschirm (Play und «Anders»), übersichtlichere Android-Auto-Ansicht.
 - [ ] **Überraschungen, Schritt 2:** Zeitfenster ohne Zufall, «heute ohne Überraschungen», Lernen pro Überraschungsart aus 👍/👎.

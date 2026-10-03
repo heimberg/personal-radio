@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +55,9 @@ import java.time.format.DateTimeFormatter
 /** How long «Rückgängig» can bring back an item taken out of the program (the snackbar shows about four seconds). */
 private const val UNDO_MS = 5_000L
 
+/** How often an open app asks the Worker for a newer build. */
+private const val UPDATE_CHECK_MS = 10 * 60_000L
+
 /**
  * The app's one screen: «Hören», «Programm», «Archiv» and «Studio» in Compose. This activity connects
  * them to the playback service (Media3) and the private Worker; the screens only read [state].
@@ -62,6 +66,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private lateinit var api: ApiClient
     private lateinit var connection: Connection
     private val state = RadioState()
+    private lateinit var catalogPrefs: CatalogPrefs
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController? get() = controllerFuture?.takeIf { it.isDone && !it.isCancelled }?.let { runCatching { it.get() }.getOrNull() }
 
@@ -120,22 +125,23 @@ class MainActivity : AppCompatActivity(), RadioActions {
         }
         api = ApiClient(connection)
         spotify = SpotifyLink(this)
+        catalogPrefs = CatalogPrefs(this)
+        state.favorites = catalogPrefs.favorites
+        state.usage = catalogPrefs.usage
         updater = AppUpdater(this, api)
         // Shown so an installed build can be matched to its CI run.
         val version = "Version " + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?")
-        enableEdgeToEdge()
+        // A light ground: dark icons in the status and navigation bars.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             RadioTheme {
                 RadioApp(state, this, studio = { studio ?: studioWebView(this, connection).also { studio = it } }, version = version)
             }
         }
 
-        lifecycleScope.launch {
-            updater.available()?.let {
-                state.update = it
-                state.updateNote = "Version ${it.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})."
-            }
-        }
         lifecycleScope.launch { loadBlocks() }
         NoticeWorker.schedule(this)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -146,6 +152,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // A new build shows up whenever the app comes to the front, and while it stays open; the player
+                // service keeps the app alive, so a check at start only would wait for a cold start.
+                launch {
+                    while (true) {
+                        checkUpdate(version)
+                        delay(UPDATE_CHECK_MS)
+                    }
+                }
                 launch {
                     while (true) {
                         renderProgress()
@@ -165,6 +179,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 }
             }
         }
+    }
+
+    private suspend fun checkUpdate(version: String) {
+        if (state.updating) return
+        val build = updater.available() ?: return
+        if (state.update?.versionCode == build.versionCode) return
+        state.update = build
+        state.updateNote = "Version ${build.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})."
     }
 
     override fun onStart() {
@@ -426,6 +448,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
 
     /** One tap adds the block as the next item; a block that takes a word asks for it, empty lets the AI choose. */
     override fun chooseBlock(block: BlockView) {
+        state.usage = catalogPrefs.used(block.id)
         if (block.music && spotifyClientId != null && !RadioSettings(this).spotifyLinked) state.say(getString(R.string.block_needs_spotify))
         when {
             // A Mitmach-Geschichte starts from picture cards.
@@ -433,6 +456,12 @@ class MainActivity : AppCompatActivity(), RadioActions {
             block.input != null -> state.blockAsk = block
             else -> addBlock(block, "")
         }
+    }
+
+    override fun toggleFavorite(block: BlockView) {
+        val next = if (block.id in state.favorites) state.favorites - block.id else state.favorites + block.id
+        catalogPrefs.favorites = next
+        state.favorites = next
     }
 
     override fun choose(item: TimelineItem, option: Int) {

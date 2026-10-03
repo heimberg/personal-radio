@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,14 +89,15 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
             SnackbarHost(snackbar) { data ->
                 Snackbar(
                     modifier = Modifier.padding(horizontal = 12.dp),
-                    action = data.visuals.actionLabel?.let { label -> { TextButton(onClick = data::performAction) { Text(label, color = Nocturne.accentLight) } } },
-                    containerColor = Nocturne.surfaceHigh, contentColor = Nocturne.text,
+                    action = data.visuals.actionLabel?.let { label -> { TextButton(onClick = data::performAction) { Text(label, color = Color(0xFF9DBBF2)) } } },
+                    containerColor = Nocturne.text, contentColor = Nocturne.bg,
                 ) { Text(data.visuals.message, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         },
         bottomBar = {
             Column {
                 if (state.tab != Tab.LISTEN && state.hasMedia) MiniPlayer(state, actions)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Nocturne.divider))
                 NavigationBar(containerColor = Nocturne.surface, tonalElevation = 0.dp) {
                     // «Familie» appears once there are other listeners on the Worker.
                     for (tab in Tab.entries.filter { it != Tab.FAMILY || state.familyEnabled }) {
@@ -108,8 +110,8 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
                             },
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Nocturne.bg, selectedTextColor = Nocturne.accentLight,
-                                indicatorColor = Nocturne.accent, unselectedIconColor = Nocturne.muted, unselectedTextColor = Nocturne.muted,
+                                selectedIconColor = Nocturne.bg, selectedTextColor = Nocturne.text,
+                                indicatorColor = Nocturne.accent, unselectedIconColor = Nocturne.faint, unselectedTextColor = Nocturne.faint,
                             ),
                         )
                     }
@@ -129,6 +131,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
     DayPlanDialogs(state, actions)
     MitmachenDialogs(state, actions)
     FollowDialog(state, actions)
+    CatalogSheet(state, actions)
 }
 
 /** What plays, on every tab but «Hören»; a tap opens the player. */

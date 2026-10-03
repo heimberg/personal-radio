@@ -77,7 +77,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, v
     val settings = state.studio
     Column(Modifier.fillMaxSize().padding(padding)) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Studio", style = MaterialTheme.typography.headlineSmall)
+            ScreenTitle("Studio")
             Spacer(Modifier.weight(1f))
             Text(version, style = MaterialTheme.typography.bodySmall, color = Nocturne.faint)
             TextButton(onClick = actions::openConnection) { Text("Verbindung") }
@@ -123,7 +123,7 @@ private fun StationHero(settings: StudioSettings, state: RadioState) {
     ) {
         Text("📻", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(6.dp))
-        Text(settings.name.ifBlank { "Dein Radio" }, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(settings.name.ifBlank { "Dein Radio" }.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             listOfNotNull(settings.hostName.ifBlank { null }?.let { "mit $it" }, voice.substringBefore(" ("), settings.place?.name).joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,

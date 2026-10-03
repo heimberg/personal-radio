@@ -1,11 +1,14 @@
 package ch.heimberg.radio
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,23 +32,27 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import ch.heimberg.radio.core.Headline
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.Moods
 import ch.heimberg.radio.core.TimelineItem
@@ -66,6 +73,7 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         Header(state)
         MoodChips(state, actions)
         Banners(state, actions)
+        Spacer(Modifier.height(10.dp))
         PlayerCard(state, actions)
         MitmachenCard(state, actions)
         PlayRow(state, actions)
@@ -75,46 +83,44 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
 
 @Composable
 private fun Header(state: RadioState) {
-    Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        val dot by animateColorAsState(if (state.live) Nocturne.accent else Nocturne.faint, tween(400), label = "live")
-        Box(Modifier.size(8.dp).background(dot, CircleShape))
-        Spacer(Modifier.width(10.dp))
-        Text("personal radio", style = MaterialTheme.typography.titleMedium)
-        Text(".", style = MaterialTheme.typography.titleMedium, color = Nocturne.accent)
-        Spacer(Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("PERSONAL RADIO", style = display(26), letterSpacing = 0.5.sp, modifier = Modifier.weight(1f), maxLines = 1)
         StatusChip(state)
     }
 }
 
-/** One word for what plays; the sleep timer when it is set. The long explanation lives in the player. */
+/** «LIVE» with a red dot while audio plays, otherwise one word for the state; the sleep timer when it is set. */
 @Composable
 private fun StatusChip(state: RadioState) {
-    val (text, color) = when {
-        state.sleepLabel != null -> "🌙 ${state.sleepLabel}" to Nocturne.accentLight
-        state.phase == Phase.ENDED -> "⏳ Wartet" to Nocturne.muted
-        else -> "${state.phase.icon} ${state.phase.label}" to (if (state.phase == Phase.PLAYING) Nocturne.accentLight else Nocturne.muted)
+    val text = when {
+        state.sleepLabel != null -> "🌙 ${state.sleepLabel}"
+        state.live -> "LIVE"
+        state.phase == Phase.ENDED -> "WARTET"
+        else -> state.phase.label.uppercase()
     }
-    Text(
-        text, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1,
-        modifier = Modifier
-            .background(Nocturne.surface, RoundedCornerShape(999.dp))
-            .border(1.dp, if (state.phase == Phase.PLAYING) Nocturne.accent.copy(alpha = 0.5f) else Nocturne.divider, RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
+    val dot by animateColorAsState(if (state.live) Nocturne.live else Nocturne.faint, tween(400), label = "live")
+    Row(
+        Modifier.background(Nocturne.text, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(7.dp).background(dot, CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = Kicker.copy(letterSpacing = 1.sp), color = Nocturne.bg, maxLines = 1)
+    }
 }
 
 /** «Heute»: one tap leans the rest of the day; a second tap on the same chip returns to the plan. */
 @Composable
 private fun MoodChips(state: RadioState, actions: RadioActions) {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        item { Text("HEUTE", style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(start = 4.dp, end = 2.dp)) }
+        item { Text("HEUTE", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 4.dp, end = 2.dp)) }
         items(Moods.ALL, key = { it.id }) { mood ->
             val selected = state.mood == mood.id
             FilterChip(
                 selected = selected,
                 onClick = { actions.setMood(if (selected) null else mood.id) },
                 label = { Text("${mood.icon}  ${mood.label}") },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Nocturne.accentDeep, selectedLabelColor = Nocturne.text),
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Nocturne.text, selectedLabelColor = Nocturne.bg),
             )
         }
     }
@@ -167,114 +173,149 @@ fun Banner(text: String, color: Color, action: (@Composable () -> Unit)? = null)
     }
 }
 
+/**
+ * On air: a big card filled with the rubric's colour, the title set big and condensed, the album or rings
+ * in the corner, and the progress as swaying bars. Below it the controls in ink.
+ */
 @Composable
 private fun PlayerCard(state: RadioState, actions: RadioActions) {
     val look = state.look
+    if (!state.hasMedia) return StartState(state, actions)
     val tint by animateColorAsState(Nocturne.kind(look?.kind), tween(600), label = "kind")
+    val ink by animateColorAsState(Nocturne.onKind(look?.kind), tween(600), label = "ink")
+    val (head, rest) = Headline.split(state.title)
     Column(
         Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(Brush.verticalGradient(listOf(lerp(Nocturne.bgGlow, tint, 0.34f), Nocturne.bgGlow, Nocturne.surface)))
-            .border(1.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(28.dp))
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        if (!state.hasMedia) return@Column StartState(state, actions, tint)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (look != null) KindChip("${look.icon}  ${look.kind.label}", look.kind)
-            Spacer(Modifier.weight(1f))
-            Text(if (state.live) "LIVE" else "", style = MaterialTheme.typography.labelSmall, color = tint)
-        }
-        Cover(look, state.coverUrl, 148.dp, Modifier.padding(vertical = 10.dp))
-        Text(
-            state.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center,
-            maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.clickable(enabled = state.currentItemId != null) { actions.transcript() },
-        )
-        if (state.show.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(state.show, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(12.dp))
-        Waveform(state.progress, state.live, tint, Modifier.fillMaxWidth().height(24.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text(time(state.positionMs), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-            Spacer(Modifier.weight(1f))
-            Text(if (state.durationMs > 0) time(state.durationMs) else "", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            RoundIcon(R.drawable.ic_thumbs_down, "Weniger davon") { actions.rate(false) }
-            Box(
-                Modifier
-                    .size(76.dp)
-                    .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Nocturne.accent, tint)))
-                    .clickable { actions.togglePlay() }
-                    .semantics { contentDescription = if (state.playWhenReady) "Pause" else "Hören" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(painterResource(if (state.playWhenReady) R.drawable.ic_pause else R.drawable.ic_play), null, Modifier.size(30.dp), tint = Nocturne.bg)
+            .clip(RoundedCornerShape(22.dp))
+            .background(tint)
+            .clickable(enabled = state.currentItemId != null) { actions.transcript() }
+            .drawBehind {
+                // Rings to the right, like the station's mark.
+                val center = Offset(size.width - 30.dp.toPx(), size.height * 0.36f)
+                for (ring in listOf(30, 65, 100, 128)) drawCircle(ink.copy(alpha = 0.3f), radius = ring.dp.toPx(), center = center, style = Stroke(2.dp.toPx()))
             }
-            RoundIcon(R.drawable.ic_skip_forward, "Weiter") { actions.next() }
-            RoundIcon(R.drawable.ic_thumbs_up, "Mehr davon") { actions.rate(true) }
+            .padding(22.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Text(
+                listOfNotNull(look?.kind?.label, state.show.ifBlank { null }).joinToString(" · ").uppercase(),
+                style = Kicker.copy(fontSize = 13.sp, letterSpacing = 1.sp), color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            if (state.coverUrl != null) {
+                Spacer(Modifier.width(12.dp))
+                Cover(look, state.coverUrl, 96.dp)
+            }
         }
-        // Five small actions: they scroll sideways on a narrow screen.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp)) {
-            SmallAction(R.drawable.ic_info, "Text") { actions.transcript() }
-            SmallAction(R.drawable.ic_question, "Nachfragen") { actions.askAbout() }
-            SmallAction(R.drawable.ic_plus_circle, "Mehr dazu") { actions.deepen() }
-            val marked = state.bookmarked(state.currentItemId)
-            SmallAction(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
-            SmallAction(R.drawable.ic_moon, if (state.sleepLabel != null) "Timer an" else "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
+        Spacer(Modifier.height(if (state.coverUrl != null) 24.dp else 96.dp))
+        Text(
+            head.uppercase(), style = display(if (head.length <= 12) 72 else if (head.length <= 24) 52 else 38), color = ink,
+            maxLines = 4, overflow = TextOverflow.Ellipsis,
+        )
+        rest?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp), color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
+        Spacer(Modifier.height(18.dp))
+        Waveform(state.progress, state.live, ink, Modifier.fillMaxWidth().height(24.dp), rest = ink.copy(alpha = 0.3f))
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+            Text(time(state.positionMs), style = MaterialTheme.typography.labelMedium, color = ink)
+            Spacer(Modifier.weight(1f))
+            Text(if (state.durationMs > 0) "−" + time((state.durationMs - state.positionMs).coerceAtLeast(0)) else "", style = MaterialTheme.typography.labelMedium, color = ink)
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        RoundIcon(R.drawable.ic_thumbs_down, "Weniger davon") { actions.rate(false) }
+        PlayButton(state, actions, 78.dp)
+        RoundIcon(R.drawable.ic_skip_forward, "Weiter") { actions.next() }
+        RoundIcon(R.drawable.ic_thumbs_up, "Mehr davon") { actions.rate(true) }
+    }
+    // Five small actions: they scroll sideways on a narrow screen.
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+        SmallAction(R.drawable.ic_info, "Text") { actions.transcript() }
+        SmallAction(R.drawable.ic_question, "Nachfragen") { actions.askAbout() }
+        SmallAction(R.drawable.ic_plus_circle, "Mehr dazu") { actions.deepen() }
+        val marked = state.bookmarked(state.currentItemId)
+        SmallAction(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
+        SmallAction(R.drawable.ic_moon, if (state.sleepLabel != null) "Timer an" else "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
+    }
+}
+
+/** The round ink button: play or pause; it grows a little while it is pressed. */
+@Composable
+private fun PlayButton(state: RadioState, actions: RadioActions, extent: Dp) {
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.92f else 1f, tween(120), label = "press")
+    Box(
+        Modifier
+            .size(extent)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(CircleShape)
+            .background(Nocturne.accent)
+            .clickable(interactionSource = press, indication = null) { actions.togglePlay() }
+            .semantics { contentDescription = if (state.playWhenReady) "Pause" else "Hören" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(if (state.playWhenReady) R.drawable.ic_pause else R.drawable.ic_play), null, Modifier.size(extent * 0.36f), tint = Nocturne.bg)
     }
 }
 
 /**
- * Before anything plays: what is ready and what comes first, with one big «Jetzt hören». The waveform
- * and the rating buttons wait until there is something to rate.
+ * Before anything plays: an ink card with what is ready and what comes first, and one big «Jetzt hören».
+ * The rating buttons wait until there is something to rate.
  */
 @Composable
-private fun StartState(state: RadioState, actions: RadioActions, tint: Color) {
+private fun StartState(state: RadioState, actions: RadioActions) {
     val first = state.sections.next ?: state.open.firstOrNull()
     val ready = state.readyCount
-    Orb(false, tint, Modifier.padding(vertical = 8.dp).size(112.dp))
-    Text(
-        if (ready > 0) "Dein Programm ist bereit" else "Dein Programm entsteht",
-        style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center,
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(
-        when {
-            ready > 0 && first != null -> "$ready ${if (ready == 1) "Beitrag" else "Beiträge"} fertig · als Erstes: ${first.displayTitle}"
-            first != null -> "Der erste Beitrag wird gerade produziert – das dauert ein paar Minuten."
-            else -> "Tippe auf «Jetzt hören», dann plant und produziert der Server dein Programm."
-        },
-        style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis,
-    )
-    Spacer(Modifier.height(16.dp))
-    Box(
+    val firstKind = first?.let { Looks.of(it).kind }
+    Column(
         Modifier
+            .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .background(Brush.linearGradient(listOf(Nocturne.accent, tint)))
-            .clickable { actions.togglePlay() },
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(22.dp))
+            .background(Nocturne.text)
+            .padding(22.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.ic_play), null, Modifier.size(20.dp), tint = Nocturne.bg)
+        Text(if (ready > 0) "BEREIT" else "IN ARBEIT", style = Kicker.copy(fontSize = 13.sp), color = Nocturne.bg.copy(alpha = 0.7f))
+        Spacer(Modifier.height(40.dp))
+        Text(
+            (if (ready > 0) "Dein Programm ist bereit" else "Dein Programm entsteht").uppercase(),
+            style = display(52), color = Nocturne.bg,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            when {
+                ready > 0 && first != null -> "$ready ${if (ready == 1) "Beitrag" else "Beiträge"} fertig · als Erstes: ${first.displayTitle}"
+                first != null -> "Der erste Beitrag wird gerade produziert – das dauert ein paar Minuten."
+                else -> "Tippe auf «Jetzt hören», dann plant und produziert der Server dein Programm."
+            },
+            style = MaterialTheme.typography.bodyLarge, color = Nocturne.bg.copy(alpha = 0.85f), maxLines = 3, overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(20.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(firstKind?.let { Nocturne.kind(it) } ?: Nocturne.bg)
+                .clickable { actions.togglePlay() },
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val ink = firstKind?.let { Nocturne.onKind(it) } ?: Nocturne.text
+            Icon(painterResource(R.drawable.ic_play), null, Modifier.size(20.dp), tint = ink)
             Spacer(Modifier.width(10.dp))
-            Text(if (state.playWhenReady) "Startet gleich …" else "Jetzt hören", style = MaterialTheme.typography.titleMedium, color = Nocturne.bg)
+            Text(if (state.playWhenReady) "Startet gleich …" else "Jetzt hören", style = MaterialTheme.typography.titleMedium, color = ink)
         }
     }
 }
 
 @Composable
 private fun RoundIcon(icon: Int, label: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(52.dp).border(1.dp, Nocturne.divider, CircleShape)) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).background(Nocturne.surfaceHigh, CircleShape)) {
         Icon(painterResource(icon), label, Modifier.size(20.dp), tint = Nocturne.text)
     }
 }
@@ -288,34 +329,41 @@ private fun SmallAction(icon: Int, label: String, highlighted: Boolean = false, 
     }
 }
 
-/** «Gleich»: the next item with its start time; «Anders» puts something different in its place. */
+/** «Gleich»: the next item on its rubric's colour, with its start time; «Anders» puts something different in its place. */
 @Composable
 private fun NextCard(item: TimelineItem, state: RadioState, actions: RadioActions) {
     val look = Looks.of(item)
+    val ink = Nocturne.onKind(look.kind)
     Row(
         Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxWidth()
-            .kindTile(look.kind, RoundedCornerShape(20.dp), glow = 0.22f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Nocturne.kind(look.kind))
             .clickable { if (item.isPlayable) actions.play(item) else state.actionsFor = item }
-            .padding(14.dp),
+            .padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cover(look, item.coverUrl, 52.dp)
-        Spacer(Modifier.width(12.dp))
+        state.starts[item.id]?.let {
+            Text(clock.format(it), style = display(22), color = ink)
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
-            Text(
-                "GLEICH" + (state.starts[item.id]?.let { " · ${clock.format(it)}" } ?: ""),
-                style = MaterialTheme.typography.labelSmall, color = Nocturne.kindLabel(look.kind),
-            )
-            Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(item.showName, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("GLEICH · ${look.kind.label.uppercase()}", style = Kicker.copy(fontSize = 11.sp, letterSpacing = 1.sp), color = ink.copy(alpha = 0.85f), maxLines = 1)
+            Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(8.dp))
-        OutlinedButton(onClick = { actions.swap(item) }, contentPadding = PaddingValues(horizontal = 12.dp)) {
-            Icon(painterResource(R.drawable.ic_dice), null, Modifier.size(16.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(ink.copy(alpha = 0.18f))
+                .clickable { actions.swap(item) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_dice), null, Modifier.size(16.dp), tint = ink)
             Spacer(Modifier.width(6.dp))
-            Text("Anders")
+            Text("Anders", style = MaterialTheme.typography.labelLarge, color = ink)
         }
     }
 }

@@ -5,6 +5,8 @@
 -->
 <resources>
     <color name="bg">#161826</color>
+    <!-- The light ground of the Compose screens (RadioTheme.kt); the view screens stay dark. -->
+    <color name="paper">#F3F4F0</color>
     <color name="bg_glow">#1E2034</color>
     <color name="surface">#232532</color>
     <color name="text">#E9E9ED</color>

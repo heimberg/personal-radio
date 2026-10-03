@@ -1,5 +1,5 @@
 // What kind of content something is: news, discovery, weather, music or a surprise. Each kind has a
-// colour, shared with the Android app (core/Kinds.kt), which also gives every block its icon.
+// colour on the dark ground of the web studio. The Android app sorts blocks into five rubrics of its own (core/Kinds.kt).
 
 export type Kind = 'news' | 'discover' | 'weather' | 'music' | 'surprise';
 
