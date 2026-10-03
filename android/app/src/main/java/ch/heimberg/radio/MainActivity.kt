@@ -3,10 +3,10 @@ package ch.heimberg.radio
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.webkit.WebView
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -22,6 +22,9 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import ch.heimberg.radio.core.StationDraft
+import ch.heimberg.radio.core.ListeningProfile
+import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.DayPlan
@@ -75,7 +78,6 @@ class MainActivity : AppCompatActivity(), RadioActions {
     private var spotifyClientId: String? = null
     private lateinit var spotify: SpotifyLink
     private lateinit var updater: AppUpdater
-    private var studio: WebView? = null
     /** The voice sample playing in the studio, and whether the radio was playing before it. */
     private var sample: android.media.MediaPlayer? = null
     private var resumeAfterSample = false
@@ -138,7 +140,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
         )
         setContent {
             RadioTheme {
-                RadioApp(state, this, studio = { studio ?: studioWebView(this, connection).also { studio = it } }, version = version)
+                RadioApp(state, this, version = version)
             }
         }
 
@@ -192,6 +194,8 @@ class MainActivity : AppCompatActivity(), RadioActions {
     override fun onStart() {
         super.onStart()
         if (!::api.isInitialized) return
+        // Back from Spotify's login in the browser: the listening profile shows its new state.
+        if (state.listening?.connected == false) loadListening()
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token)
             .setListener(object : MediaController.Listener {
@@ -227,8 +231,6 @@ class MainActivity : AppCompatActivity(), RadioActions {
     override fun onDestroy() {
         recorder.release()
         stopSample()
-        studio?.destroy()
-        studio = null
         super.onDestroy()
     }
 
@@ -959,10 +961,11 @@ class MainActivity : AppCompatActivity(), RadioActions {
         // Unsaved changes stay until they are saved or discarded.
         if (!force && (state.studio != null || state.studioMissing)) return
         lifecycleScope.launch {
-            runCatching { api.studio() }
-                .onSuccess { settings ->
-                    state.studio = settings
-                    state.studioMissing = settings == null
+            runCatching { api.station() }
+                .onSuccess { config ->
+                    state.studio = config?.let { StudioSettings.of(it) }
+                    state.station = config?.let(::StationDraft)
+                    state.studioMissing = config == null
                     state.studioDirty = false
                 }
                 .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
@@ -980,11 +983,78 @@ class MainActivity : AppCompatActivity(), RadioActions {
         val settings = state.studio ?: return
         state.studioSaving = true
         lifecycleScope.launch {
-            val result = runCatching { api.saveStudio(settings) }
+            val result = runCatching { api.saveStudio(settings, state.station) }
             state.studioSaving = false
             if (result.isSuccess) state.studioDirty = false
             state.say(result.fold({ "Gespeichert. Gilt ab den nächsten Beiträgen." }, { it.message ?: getString(R.string.connection_failed) }))
             if (result.isSuccess) changed()
+        }
+    }
+
+    override fun editStation(draft: StationDraft) {
+        if (draft == state.station) return
+        state.station = draft
+        state.studioDirty = true
+    }
+
+    override fun setUpStation() {
+        if (state.settingUp) return
+        state.settingUp = true
+        lifecycleScope.launch {
+            val result = runCatching { api.setUp(java.util.TimeZone.getDefault().id) }
+            state.settingUp = false
+            state.say(result.fold({ "Dein Radio ist eingerichtet. Das erste Programm wird produziert." }, { it.message ?: getString(R.string.connection_failed) }))
+            if (result.isSuccess) {
+                loadStudio(force = true)
+                changed()
+            }
+        }
+    }
+
+    override fun loadInsights() {
+        lifecycleScope.launch { runCatching { api.insights() }.onSuccess { state.insights = it } }
+    }
+
+    override fun loadAgents() {
+        if (state.agentInfo.isNotEmpty()) return
+        lifecycleScope.launch {
+            runCatching { api.agents() }.onSuccess { (agents, presets) -> state.agentInfo = agents; state.agentPresets = presets }
+        }
+    }
+
+    override fun loadListening() {
+        lifecycleScope.launch { runCatching { api.listening() }.onSuccess { state.listening = it } }
+    }
+
+    /** Spotify's login opens in the browser; back in the app, the card loads the new state. */
+    override fun connectListening() {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.listeningConnectUrl()))) }
+            .onFailure { state.say("Kein Browser gefunden.") }
+    }
+
+    override fun disconnectListening() {
+        lifecycleScope.launch {
+            runCatching { api.disconnectListening() }
+                .onSuccess { state.listening = ListeningProfile(false, emptyList()) }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    override fun clearReasons() {
+        lifecycleScope.launch {
+            runCatching { api.clearReasons() }
+                .onSuccess { state.say("Zurückgesetzt."); loadInsights() }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+        }
+    }
+
+    override fun trialAgent(agent: AgentInfo) {
+        if (state.trials.containsKey(agent.id) && state.trials[agent.id] == null) return
+        state.trials = state.trials + (agent.id to null)
+        lifecycleScope.launch {
+            val result = runCatching { api.trial(agent.id, state.station?.config?.get("agents")) }
+                .getOrElse { TrialResult(false, "", null, null, "FAILED", it.message) }
+            state.trials = state.trials + (agent.id to result)
         }
     }
 
@@ -1132,15 +1202,6 @@ class MainActivity : AppCompatActivity(), RadioActions {
         consentWav = null
     }
 
-    override fun openWebStudio() {
-        state.webStudioOpen = true
-    }
-
-    override fun closeWebStudio() {
-        state.webStudioOpen = false
-        // What was changed on the web shows here too, unless there are unsaved changes in the app.
-        if (!state.studioDirty) loadStudio(force = true)
-    }
 
     // ── Setup ─────────────────────────────────────────────────────────────────────────────────
 

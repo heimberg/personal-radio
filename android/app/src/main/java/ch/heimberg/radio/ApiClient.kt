@@ -22,6 +22,11 @@ import ch.heimberg.radio.core.Place
 import ch.heimberg.radio.core.PlaceStory
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
+import ch.heimberg.radio.core.StationDraft
+import ch.heimberg.radio.core.ListeningProfile
+import ch.heimberg.radio.core.Insights
+import ch.heimberg.radio.core.AgentPreset
+import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.VoiceOption
 import ch.heimberg.radio.core.Timeline
 import ch.heimberg.radio.core.TimelineItem
@@ -35,6 +40,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class ApiException(val status: Int, message: String) : Exception(message)
+
+/** A trial run: the text and the jury's mark before and with the draft's settings, or why it did not run. */
+data class TrialResult(
+    val ok: Boolean, val itemTitle: String, val before: Pair<String, Double?>?, val after: Pair<String, Double?>?,
+    val error: String?, val detail: String?,
+)
 
 /** Talks to the private Worker with the Access service token on every request. */
 class ApiClient(private val connection: Connection) {
@@ -77,17 +88,57 @@ class ApiClient(private val connection: Connection) {
     }
 
     /** The studio's settings; null while the station is not set up. */
-    suspend fun studio(): StudioSettings? = withContext(Dispatchers.IO) { StudioSettings.parse(request("GET", "api/station")) }
+    /** The stored settings as a document; null while the station is not set up. */
+    suspend fun station(): kotlinx.serialization.json.JsonObject? = withContext(Dispatchers.IO) {
+        val body = request("GET", "api/station")
+        if (StudioSettings.parse(body) == null) null else StudioSettings.parseConfig(body)
+    }
 
     /**
-     * Saves the studio: the current settings are read again and only the studio's fields replaced, so
-     * shows, feeds, agents and the day plan stay exactly as they are.
+     * Saves the studio: the current settings are read again, then the studio's fields and the draft's
+     * shows, feeds and agents written over them, so the day plan and the rest stay as they are now.
      */
-    suspend fun saveStudio(settings: StudioSettings) {
+    suspend fun saveStudio(settings: StudioSettings, draft: StationDraft?) {
         withContext(Dispatchers.IO) {
-            val config = StudioSettings.parseConfig(request("GET", "api/station"))
-            request("PUT", "api/station", settings.mergeInto(config).toString())
+            val config = settings.mergeInto(StudioSettings.parseConfig(request("GET", "api/station")))
+            request("PUT", "api/station", (draft?.mergeInto(config) ?: config).toString())
         }
+    }
+
+    /** First start: a station with the default shows in the phone's time zone, planned right away. */
+    suspend fun setUp(timezone: String) {
+        withContext(Dispatchers.IO) { request("POST", "api/setup", JSONObject().put("timezone", timezone).toString()) }
+    }
+
+    /** The editorial agents with their shipped instructions, and the style presets. */
+    suspend fun agents(): Pair<List<AgentInfo>, List<AgentPreset>> = withContext(Dispatchers.IO) { StationDraft.parseAgents(request("GET", "api/agents")) }
+
+    /** Usage, the jury's marks and the owner's complaints. */
+    suspend fun insights(): Insights = withContext(Dispatchers.IO) { Insights.parse(request("GET", "api/insights")) }
+
+    /** Forgets the collected complaints («Zu lang» …). */
+    suspend fun clearReasons() { withContext(Dispatchers.IO) { request("DELETE", "api/insights/reasons") } }
+
+    suspend fun listening(): ListeningProfile = withContext(Dispatchers.IO) { ListeningProfile.parse(request("GET", "api/spotify/profile")) }
+
+    suspend fun disconnectListening() { withContext(Dispatchers.IO) { request("POST", "api/spotify/disconnect") } }
+
+    /** The address that starts Spotify's login for the listening profile (opened in the browser). */
+    fun listeningConnectUrl(): String = connection.resolve("api/spotify/connect")
+
+    /**
+     * A trial run of [agent] with the draft's [agents] on the last item: nothing is saved. Refusals
+     * (no item yet, no model) come back as a result with their reason, not as an error.
+     */
+    suspend fun trial(agent: String, agents: kotlinx.serialization.json.JsonElement?): TrialResult = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("agent", agent).put("agents", JSONObject(agents?.toString() ?: "{}")).toString()
+        val (status, text) = exchange("POST", "api/agents/trial", body)
+        val json = runCatching { JSONObject(text) }.getOrNull() ?: throw ApiException(status, AccessDiagnosis.message(status, null, text))
+        fun side(key: String) = json.optJSONObject(key)?.let { it.optString("text") to it.optJSONObject("quality")?.optDouble("overall")?.takeIf { mark -> !mark.isNaN() } }
+        TrialResult(
+            ok = json.optBoolean("ok"), itemTitle = json.optString("itemTitle"), before = side("before"), after = side("after"),
+            error = json.optString("error").ifBlank { null }, detail = json.optString("detail").ifBlank { null },
+        )
     }
 
     /** Own voices, the prebuilt ones, German library voices matching [search], and Mistral's. */
@@ -309,6 +360,13 @@ class ApiClient(private val connection: Connection) {
     }
 
     private fun request(method: String, path: String, body: String? = null): String {
+        val (status, text, location) = exchange(method, path, body)
+        if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, location, text))
+        return text
+    }
+
+    /** One request: the status, the body and where a redirect points (Access's login), whatever the status. */
+    private fun exchange(method: String, path: String, body: String? = null): Triple<Int, String, String?> {
         val http = URL(connection.resolve(path)).openConnection() as HttpURLConnection
         try {
             http.requestMethod = method
@@ -329,8 +387,7 @@ class ApiClient(private val connection: Connection) {
             }
             val status = http.responseCode
             val text = (if (status in 200..299) http.inputStream else http.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, http.getHeaderField("Location"), text))
-            return text
+            return Triple(status, text, http.getHeaderField("Location"))
         } finally {
             http.disconnect()
         }

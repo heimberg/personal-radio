@@ -180,7 +180,7 @@ object TimelineJson {
     fun parse(body: String): List<TimelineItem> = parseResponse(body).items
 }
 
-/** German labels shared by the app's list and notification texts; the cockpit uses the same wording. */
+/** German labels shared by the app's list and notification texts. */
 object Labels {
     fun state(state: String): String = when (state) {
         "planned" -> "Geplant"

@@ -1,12 +1,8 @@
 # Personal Radio
 
-A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen and steer the program in a native Android app; everyday settings are native in its «Studio» tab (with voice samples); shows, feeds and the editorial team stay in the web studio served by the Worker.
+A private, AI-hosted radio station. A Cloudflare Worker researches, writes, fact-checks and voices spoken segments ahead of time, mixes in music from Spotify and plans a continuous program around a day plan. You listen, steer the program and set everything up in a native Android app: its «Studio» tab holds every setting, from the voice (with samples) to your own shows, feeds and the editorial team. There is no web interface; the Worker only serves the app.
 
 The station speaks German. Everything runs in your own Cloudflare and Google accounts; nothing is shared with other users.
-
-<p>
-  <img src="docs/images/cockpit-settings.png" alt="Studio: settings overview" width="300">
-</p>
 
 ## Features
 
@@ -29,7 +25,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 **Listening (Android)**
 - Background playback with lock screen, Bluetooth, Android Auto and notification controls; offline cache for the next segments.
 - Music plays in the Spotify app (App Remote); the app hands over between speech and songs.
-- Tabs Hören, Programm, Archiv, Studio – and «Familie» when more people listen (chat, sharing, greetings on air) – with a mini player; the program as «Jetzt · Gleich · Später».
+- Tabs Hören, Programm, Archiv, Studio – and «Familie» when more people listen (chat, sharing, greetings on air) – with a mini player; the program as one Sendeplan in the rubric colours, with «＋ Einfügen» for everything new.
 - On «Hören»: the story's choice or the quiz with big buttons, «Frag das Radio» (with speech input) and the sticker album.
 - «Anders» swaps the next item for something different; swipe to remove (with «Rückgängig» for a few seconds), long press to move or play next.
 - 👍/👎 with a reason, «Mehr dazu» for a researched follow-up, archive, sleep timer, transcript with sources.
@@ -44,7 +40,6 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 ```mermaid
 flowchart LR
   app[Android app] -- Access service token --> worker
-  browser[Web studio] -- Access login --> worker
   subgraph Cloudflare
     worker[Worker<br/>API · planner · producer]
     cron((Cron<br/>every 10 min)) --> worker
@@ -70,7 +65,6 @@ The AI picks songs from its own knowledge; Spotify only resolves them to tracks.
 | --- | --- |
 | Backend | Cloudflare Workers (TypeScript), D1, R2, Queues, Cron Triggers, Cloudflare Access |
 | AI | Gemini (text, Google Search grounding, TTS); optional ASK (OpenAI-compatible) as independent verifier, optional Mistral voices |
-| Web studio | React 19, Vite |
 | Android | Kotlin, Jetpack Compose (Material 3), Media3 (ExoPlayer, MediaLibraryService), Spotify App Remote SDK, WorkManager |
 | CI/CD | GitHub Actions: tests, Worker deploy with migrations, signed APK |
 
@@ -149,7 +143,7 @@ Worker → **Settings → Variables and Secrets**, type *Secret* (or `npx wrangl
 | `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL` | no | an OpenAI-compatible endpoint; when all three are set it verifies facts as an independent second model |
 | `MISTRAL_API_KEY` | no | enables Mistral voices in addition to the Gemini voices |
 
-Open `https://personal-radio-private.<your-subdomain>.workers.dev` in the browser, log in through Access and click **Programm einrichten**. The studio works now; the next steps add music and the app.
+The Worker runs now. You set up the station in the app (step 9); opening its address in a browser only shows a short note after the Access login.
 
 ### 6. Connect Spotify (optional, for music)
 
@@ -160,7 +154,7 @@ Open `https://personal-radio-private.<your-subdomain>.workers.dev` in the browse
 3. **Android package:** `ch.heimberg.radio` with the SHA-1 fingerprint of your signing key (step 7; the Android workflow prints it in the step *Prepare signing key*).
 4. **User Management:** while the app is in development mode, add the Spotify account you listen with.
 5. On the Worker, add the variable `SPOTIFY_CLIENT_ID` (type *Text*) and the secret `SPOTIFY_CLIENT_SECRET`. Optionally set `SPOTIFY_MARKET` (default `CH`).
-6. In the studio: **Einstellungen → Musik → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional).
+6. In the app: **Studio → Spotify-Hörprofil → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional). The login opens in the browser behind your Access login; then return to the app.
 
 ### 7. Create the Android signing key
 
@@ -183,13 +177,14 @@ Add these repository secrets: `RADIO_KEYSTORE_B64` (the base64 output), `RADIO_K
 
 1. Open the latest **Actions → Android app** run, download the artifact `personal-radio-android` and install the APK (allow installation from this source when Android asks).
 2. On first start enter the Worker address, the Client ID and the Client Secret. The app tests the connection before it saves.
-3. Tap **Spotify verbinden** once (Spotify app installed and logged in).
+3. In **Studio** tap **Radio einrichten**: the station starts with the default shows in your time zone, and the first program is produced.
+4. Tap **Spotify verbinden** once (Spotify app installed and logged in).
 
 From now on every push to `main` deploys the Worker, and every change to the app publishes a signed APK that the app offers as an update.
 
 ### 10. Make it yours
 
-In **Einstellungen**: station name, host persona and voice, your location (for weather), interests, music taste, the day plan and the surprise level. Under **Redaktion** you can tune every agent; under **Verbrauch** you see what a day costs.
+In **Studio**: station name, host persona and voice, your location (for weather), interests, music taste and station sound; your own **Sendungen** and **Feeds**; under **Redaktion** every agent and the style presets, under **Qualität** the jury's marks, under **Verbrauch** what a day costs. The day plan and the surprise level are in **Programm → Tagesplan**.
 
 ### 11. A station for someone else (optional)
 
@@ -198,7 +193,7 @@ Each further listener gets their own service token and their own station (progra
 1. **Zero Trust → Access → Service Auth → Create Service Token**, e.g. `personal-radio-lea`. Copy Client ID and Client Secret.
 2. Add the token to the **Service Auth** policy of the Worker's Access application (the same policy as the app's token).
 3. Set the Worker secret `LISTENERS` to `<Client ID>=<name>` – for a child `<Client ID>=<name>:kids`. Several listeners are separated by `;`, e.g. `ab12.access=lea:kids; cd34.access=tom`. Then run the deploy workflow again (or save the secret in the dashboard).
-4. Install the APK on their phone and enter the Worker address with *their* Client ID and Secret. The app shows «noch nicht eingerichtet»: set up the station in the studio. Spotify needs their own account on their phone.
+4. Install the APK on their phone and enter the Worker address with *their* Client ID and Secret. The app shows «noch nicht eingerichtet»: **Studio → Radio einrichten**. Spotify needs their own account on their phone.
 
 **Family.** As soon as `LISTENERS` has an entry, the app gets a tab «Familie» for everyone on the Worker:
 - who is there and what they hear right now;
@@ -230,17 +225,14 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral voices |
 | `SPOTIFY_MARKET` | `CH` | Spotify catalogue |
 
-Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The studio's **Verbrauch** page shows calls and tokens per day, and the daily limits above cap spending.
+Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The app's **Studio → Verbrauch** shows productions, speech and calls per day, and the daily limits above cap spending.
 
 ## Development
 
 ```sh
 npm ci
-npm run dev          # web studio on http://localhost:5173 (the API needs a Worker)
 npm run check        # TypeScript
 npm test             # unit and Worker tests, D1 via node:sqlite
-npx playwright test  # browser tests of the studio
-npm run build
 cd android && ./gradlew -p core test   # Android program logic, no SDK needed
 ```
 
@@ -250,10 +242,11 @@ cd android && ./gradlew -p core test   # Android program logic, no SDK needed
 
 ```
 server/        Worker: API, planner, producer, providers (Gemini, ASK, Mistral, Spotify), agents
-src/           web studio (React) and the shared domain model
+src/domain/    the domain model (config, blocks, agents, features …) the Worker uses
 android/       Android app (app/) and its pure-Kotlin logic with tests (core/)
 migrations/    D1 schema
-tests/         Node and Playwright tests
+tests/         Node tests of the domain and the Worker
+public/        static files the Worker serves (the reference voice sample)
 docs/          architecture, deployment and Android details
 ```
 
@@ -269,4 +262,4 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 
 ## License
 
-[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree, Archivo and Inter (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.
+[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree and Archivo (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.

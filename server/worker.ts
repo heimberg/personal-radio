@@ -18,10 +18,11 @@ import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, MusicWriter, PlaylistSource } from './music.ts';
 import type { AudioBucket, StationDeps, TrialAgent } from './station.ts';
-import { ConfigError, MOOD_IDS, parseStationConfig, stationSounds } from '../src/domain/station.ts';
+import { ConfigError, MOOD_IDS, defaultStationConfig, parseStationConfig, stationSounds } from '../src/domain/station.ts';
 import type { MoodId, StationConfig } from '../src/domain/station.ts';
 import { activeMood, endOfDay } from '../src/domain/mood.ts';
 import { AGENTS, parseAgentConfig } from '../src/domain/agents.ts';
+import { AGENT_PRESETS } from '../src/domain/agent-presets.ts';
 import { meteredFetch, usageSummary } from './usage.ts';
 import { PlayStore, albumView } from './play.ts';
 import { BookmarkStore, FollowStore, MAX_FOLLOWED } from './follow.ts';
@@ -591,6 +592,24 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
       throw error;
     }
   }
+  if (url.pathname === '/api/setup') {
+    // The first start in the app: a station with the default shows, planned right away.
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    if (await store.getConfig(owner)) return json({ error: 'already_configured' }, 409);
+    const body = await readJson(request, 1024);
+    if (body.error) return body.error;
+    const timezone = (body.value as { timezone?: unknown } | null)?.timezone;
+    const config = defaultStationConfig({ timezone: typeof timezone === 'string' ? timezone : undefined });
+    await store.saveConfig(owner, config, new Date());
+    await refreshProgram(env, owner, false);
+    return json({ config }, 201);
+  }
+  if (url.pathname === '/api/agents') {
+    // What the app's «Redaktion» shows: every agent with its shipped instructions, and the style presets.
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json({ agents: AGENTS, presets: AGENT_PRESETS }, 200);
+  }
   if (url.pathname === '/api/mood') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
@@ -892,7 +911,7 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     if (body.error) return body.error;
     const order = (body.value as { order?: unknown } | undefined)?.order;
     if (!Array.isArray(order) || !order.every(id => typeof id === 'string')) return json({ error: 'invalid_order' }, 400);
-    // A stale order (the program changed meanwhile) is refused, and the cockpit reloads.
+    // A stale order (the program changed meanwhile) is refused, and the app reloads.
     return await arrangeTimeline(stationDeps(env, owner), owner, order as string[]) ? json({ ok: true }, 200) : json({ error: 'stale_order' }, 409);
   }
   if (url.pathname === '/api/timeline/shuffle') {
@@ -1065,12 +1084,36 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
   return json({ ok: true }, 200);
 }
 
+const SPOTIFY_RESULTS: Record<string, string> = {
+  verbunden: 'Spotify ist verbunden. Die Songauswahl kennt jetzt deine meistgehörten Künstler.',
+  verweigert: 'Die Verbindung mit Spotify wurde abgebrochen.',
+  abgelaufen: 'Die Anmeldung ist abgelaufen. Starte sie in der App noch einmal.',
+  fehler: 'Spotify hat die Anmeldung nicht bestätigt. Prüfe im Spotify-Dashboard Client-ID, Secret und Redirect-URI.',
+};
+
+/**
+ * There is no web interface: everything is set in the app. The root says so, and after Spotify's login
+ * (which runs in the browser) it shows how it went, so the owner can return to the app.
+ */
+function landingPage(url: URL): Response {
+  const result = SPOTIFY_RESULTS[url.searchParams.get('spotify') ?? ''];
+  const status = url.searchParams.get('status');
+  const message = result ? `${result}${status ? ` (Status ${status.replace(/[^0-9]/g, '').slice(0, 3)})` : ''} Du kannst zur App zurückkehren.`
+    : 'Dein Radio läuft auf diesem Server. Hören und einstellen kannst du es in der App.';
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Radio</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F3F4F0;color:#16171B;font:17px/1.5 system-ui,sans-serif}
+main{max-width:30rem;padding:24px}h1{font:900 40px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:-0.5px;margin:0 0 12px}</style></head>
+<body><main><h1>Personal Radio</h1><p>${message}</p></main></body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
 export default {
   async fetch(request: Request, env: Environment): Promise<Response> {
     const url = new URL(request.url);
     const auth = await authenticate(request, env);
     if (auth.owner === null) return json({ error: 'unauthorized', reason: auth.reason }, 401);
     const owner = auth.owner;
+    if (url.pathname === '/') return landingPage(url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     if (url.pathname === '/api/testing/reset-daily-limits') {
       if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);

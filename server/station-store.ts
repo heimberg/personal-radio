@@ -207,7 +207,7 @@ export class StationStore {
     return { retried, retired, restarted };
   }
 
-  /** What the cockpit lists: everything still to come and the last few heard segments. */
+  /** What the app lists: everything still to come and the last few heard segments. */
   async visibleItems(owner: string, recentPlayed = 5): Promise<TimelineRow[]> {
     const open = await this.openItems(owner);
     const played = (await this.db.prepare(`SELECT * FROM timeline_items WHERE owner_id = ? AND state IN ('played', 'skipped')

@@ -1,14 +1,5 @@
 package ch.heimberg.radio
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,25 +52,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.VoiceGroups
 
 /**
- * «Studio»: the station's everyday settings, native – station and host, the voice with a sample,
- * where you listen, interests, music and station sound. Changes stay local until «Speichern». Shows,
- * feeds, the editorial team and usage stay in the web studio, one tap away.
+ * «Studio»: every setting of the station – station and host, the voice with a sample, where you listen,
+ * interests, music and station sound, then shows, feeds, the editorial team, quality, usage and the
+ * Spotify listening profile. Changes stay local until «Speichern».
  */
 @Composable
-fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, version: String, padding: PaddingValues) {
-    if (state.webStudioOpen) return WebStudio(web(), actions, padding)
+fun StudioScreen(state: RadioState, actions: RadioActions, version: String, padding: PaddingValues) {
     LaunchedEffect(Unit) { actions.loadStudio() }
     val settings = state.studio
     Column(Modifier.fillMaxSize().padding(padding)) {
@@ -96,8 +83,8 @@ fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, v
                     StationHero(settings, state)
                     Cards(settings, state, actions)
                 }
-                state.studioMissing -> Note("Das Radio ist noch nicht eingerichtet. Die Einrichtung läuft im Web-Studio.") {
-                    FilledTonalButton(onClick = actions::openWebStudio) { Text("Einrichten") }
+                state.studioMissing -> Note("Das Radio ist noch nicht eingerichtet. Ein Tipp legt es mit den Standardsendungen an; danach passt du hier alles an.") {
+                    FilledTonalButton(onClick = actions::setUpStation, enabled = !state.settingUp) { Text(if (state.settingUp) "Wird eingerichtet …" else "Radio einrichten") }
                 }
                 else -> Text("Einstellungen werden geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
             }
@@ -105,6 +92,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, web: () -> WebView, v
         }
     }
     VoiceDialogs(state, actions)
+    StationSheets(state, actions)
 }
 
 @Composable
@@ -208,7 +196,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Slider(value = settings.between.toFloat(), onValueChange = { edit(settings.between(Math.round(it))) }, valueRange = 0f..3f, steps = 2)
         Field("Musikgeschmack", settings.taste, hint = "Genres, Künstler, Stimmungen – so konkret wie möglich.", lines = 2) { edit(settings.copy(taste = it.take(500))) }
         Toggle("Kurze Ansage vor jedem Song", null, settings.announce) { edit(settings.copy(announce = it)) }
-        Text("Dein Spotify-Hörprofil verbindest du im Web-Studio unter «Musik».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        Text("Dein Spotify-Hörprofil verbindest du unten unter «Spotify-Hörprofil».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     }
     val sounds = listOf(settings.ident, settings.hourChange, settings.linker, settings.bed).count { it }
     Card("sound", "🔊", Kind.NEWS, "Stationssound", "$sounds von 4 an", state) {
@@ -216,6 +204,17 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Toggle("Zeitzeichen zur vollen Stunde", "Mit der gesprochenen Zeitansage", settings.hourChange) { edit(settings.copy(hourChange = it)) }
         Toggle("Live-Übergänge", "Die Moderation verbindet die Beiträge kurz vor der Sendung", settings.linker) { edit(settings.copy(linker = it)) }
         Toggle("Klangteppich", "Leise Musik unter kurzen Moderationen", settings.bed) { edit(settings.copy(bed = it)) }
+    }
+    val station = state.station
+    if (station != null) {
+        Text("PROGRAMM UND REDAKTION", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 4.dp))
+        Card("sendungen", "📻", Kind.DISCOVER, "Sendungen", "${station.shows.count { it.enabled }} aktiv von ${station.shows.size}", state) { ShowsContent(state, actions) }
+        Card("feeds", "📰", Kind.NEWS, "Feeds", if (station.feeds.isEmpty()) "Keine" else station.feeds.joinToString(", ") { it.name }, state) { FeedsContent(state, actions) }
+        val changed = station.agents.size
+        Card("redaktion", "✍️", Kind.STORY, "Redaktion", if (changed == 0) "Alle Agenten wie ausgeliefert" else "$changed ${if (changed == 1) "Agent" else "Agenten"} angepasst", state) { AgentsContent(state, actions) }
+        Card("qualitaet", "★", Kind.SPECIAL, "Qualität", "Noten der Jury und was du bemängelt hast", state) { QualityContent(state, actions) }
+        Card("verbrauch", "📊", Kind.DISCOVER, "Verbrauch", usageSummary(state.insights), state) { UsageContent(state, actions) }
+        Card("spotify", "🎧", Kind.MUSIC, "Spotify-Hörprofil", when (state.listening?.connected) { true -> "Verbunden"; false -> "Nicht verbunden"; null -> "Deine Top-Künstler für die Songauswahl" }, state) { ListeningContent(state, actions) }
     }
 }
 
@@ -356,7 +355,7 @@ private fun Interests(settings: StudioSettings, actions: RadioActions) {
     Slider(value = settings.exploration.toFloat(), onValueChange = { actions.editStudio(settings.exploration(Math.round(it))) }, valueRange = 0f..50f, steps = 9)
 }
 
-/** Everything else: the day plan in the app, the rest in the web studio. */
+/** The day plan, which lives in «Programm». */
 @Composable
 private fun More(state: RadioState, actions: RadioActions) {
     Text("MEHR", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp))
@@ -364,7 +363,6 @@ private fun More(state: RadioState, actions: RadioActions) {
         state.tab = Tab.PROGRAM
         actions.openDayPlan()
     }
-    LinkRow("🧰", "Sendungen, Feeds, Redaktion", "Formate, Quellen, KI-Team, Verbrauch und Hörprofil – im Web-Studio", actions::openWebStudio)
 }
 
 @Composable
@@ -391,42 +389,6 @@ private fun Note(text: String, action: @Composable () -> Unit) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
         action()
     }
-}
-
-/** The web studio for what the app does not edit itself; back returns to the native studio. */
-@Composable
-private fun WebStudio(web: WebView, actions: RadioActions, padding: PaddingValues) {
-    Column(Modifier.fillMaxSize().padding(padding)) {
-        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = actions::closeWebStudio) { Icon(painterResource(R.drawable.ic_arrow_left), "Zurück zum Studio") }
-            Text("Web-Studio", style = MaterialTheme.typography.titleLarge)
-        }
-        AndroidView(
-            factory = { (web.parent as? ViewGroup)?.removeView(web); web },
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-/** The studio's web view; created once, so the page keeps its place while other tabs are open. */
-@SuppressLint("SetJavaScriptEnabled")
-fun studioWebView(context: Context, connection: Connection): WebView = WebView(context).apply {
-    // The ground colour shows while the page loads instead of a white flash.
-    setBackgroundColor(Nocturne.bg.toArgb())
-    CookieManager.getInstance().setAcceptCookie(true)
-    settings.javaScriptEnabled = true
-    settings.domStorageEnabled = true
-    settings.userAgentString = "${settings.userAgentString} PersonalRadioAndroid/1"
-    webViewClient = object : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val host = request.url.host ?: return true
-            if (host == connection.host || host.endsWith(".cloudflareaccess.com")) return false
-            // Source links open in the browser, never with the token.
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.url.toString())))
-            return true
-        }
-    }
-    loadUrl(connection.baseUrl, connection.headers())
 }
 
 /** Searches Google's German voice library by a word, e.g. «warm» or «Erzähler». */

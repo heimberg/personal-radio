@@ -1,6 +1,5 @@
 package ch.heimberg.radio
 
-import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,7 +60,7 @@ private const val LONG_MESSAGE = 90
 
 /** The app: four tabs, a mini player above them, and the dialogs the screens open. */
 @Composable
-fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, version: String) {
+fun RadioApp(state: RadioState, actions: RadioActions, version: String) {
     val snackbar = remember { SnackbarHostState() }
     // Messages stay short on screen; a long one (an error with Spotify's words) opens in full on «Details».
     LaunchedEffect(state.message) {
@@ -73,15 +72,9 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
         )
         if (result == SnackbarResult.ActionPerformed) message.onAction?.invoke() ?: run { state.detail = message.text }
     }
-    // Back goes through the web studio's pages back to the native studio, then to «Hören»; from there it leaves the app.
+    // Back closes the day plan, then returns to «Hören»; from there it leaves the app.
     BackHandler(enabled = state.tab != Tab.LISTEN) {
-        val web = if (state.tab == Tab.STUDIO && state.webStudioOpen) studio() else null
-        when {
-            state.tab == Tab.PROGRAM && state.dayPlanOpen -> actions.closeDayPlan()
-            web != null && web.canGoBack() -> web.goBack()
-            web != null -> actions.closeWebStudio()
-            else -> state.tab = Tab.LISTEN
-        }
+        if (state.tab == Tab.PROGRAM && state.dayPlanOpen) actions.closeDayPlan() else state.tab = Tab.LISTEN
     }
     Scaffold(
         containerColor = Nocturne.bg,
@@ -124,7 +117,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, studio: () -> WebView, ve
             Tab.PROGRAM -> if (state.dayPlanOpen) DayPlanScreen(state, actions, padding) else ProgramScreen(state, actions, padding)
             Tab.ARCHIVE -> ArchiveScreen(state, actions, padding)
             Tab.FAMILY -> FamilyScreen(state, actions, padding)
-            Tab.STUDIO -> StudioScreen(state, actions, studio, version, padding)
+            Tab.STUDIO -> StudioScreen(state, actions, version, padding)
         }
     }
     Dialogs(state, actions)

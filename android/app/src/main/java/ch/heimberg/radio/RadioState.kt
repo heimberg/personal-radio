@@ -26,6 +26,12 @@ import ch.heimberg.radio.core.StickerAlbum
 import ch.heimberg.radio.core.ProgramSections
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.StudioSettings
+import ch.heimberg.radio.core.StationDraft
+import ch.heimberg.radio.core.Show
+import ch.heimberg.radio.core.ListeningProfile
+import ch.heimberg.radio.core.Insights
+import ch.heimberg.radio.core.AgentPreset
+import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.TimelineItem
 import ch.heimberg.radio.core.VoiceOption
 import java.time.Instant
@@ -145,8 +151,20 @@ class RadioState {
     var timeAsk by mutableStateOf<Pair<String, Boolean>?>(null)
     var blockPickFor by mutableStateOf<String?>(null)
 
-    // «Studio»: the native settings; the web studio opens for the rest.
+    // «Studio»: every setting of the station, natively.
     var studio by mutableStateOf<StudioSettings?>(null)
+    /** Shows, feeds and the editorial agents, edited with the rest and saved with «Speichern». */
+    var station by mutableStateOf<StationDraft?>(null)
+    /** The show being edited in its sheet (a new one until «Übernehmen»). */
+    var showEdit by mutableStateOf<Show?>(null)
+    var agentInfo by mutableStateOf<List<AgentInfo>>(emptyList())
+    var agentPresets by mutableStateOf<List<AgentPreset>>(emptyList())
+    /** The agent open in its sheet, and the trial runs so far. */
+    var agentEdit by mutableStateOf<AgentInfo?>(null)
+    var trials by mutableStateOf<Map<String, TrialResult?>>(emptyMap())
+    var insights by mutableStateOf<Insights?>(null)
+    var listening by mutableStateOf<ListeningProfile?>(null)
+    var settingUp by mutableStateOf(false)
     var studioMissing by mutableStateOf(false)
     var studioDirty by mutableStateOf(false)
     var studioSaving by mutableStateOf(false)
@@ -154,7 +172,6 @@ class RadioState {
     var places by mutableStateOf<List<Place>?>(null)
     /** The voice whose sample is playing (or loading). */
     var previewing by mutableStateOf<String?>(null)
-    var webStudioOpen by mutableStateOf(false)
     /** Which studio card is open; one at a time keeps the page short. */
     var studioCard by mutableStateOf<String?>(null)
     var voiceSearch by mutableStateOf("")
@@ -292,13 +309,24 @@ interface RadioActions {
     /** «Studio»: loads the settings (once, or again with [force]), edits them locally, saves them. */
     fun loadStudio(force: Boolean = false)
     fun editStudio(settings: StudioSettings)
+    /** Shows, feeds and agents: a changed draft, saved with the rest. */
+    fun editStation(draft: StationDraft)
+    /** First start: sets up the station with the default shows. */
+    fun setUpStation()
+    /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
+    fun loadInsights()
+    fun loadAgents()
+    fun loadListening()
+    fun connectListening()
+    fun disconnectListening()
+    fun clearReasons()
+    /** A trial run of the agent with the draft's settings; nothing is saved. */
+    fun trialAgent(agent: AgentInfo)
     fun saveStudio()
     fun discardStudio()
     fun searchPlaces(name: String)
     /** Plays the voice sample, or stops it when it is playing. */
     fun previewVoice(voiceId: String)
-    fun openWebStudio()
-    fun closeWebStudio()
 
     /** Own voices: library search, a voice from a description, a cloned voice (two recordings), delete. */
     fun searchVoices(query: String)
