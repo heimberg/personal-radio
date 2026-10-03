@@ -30,7 +30,7 @@ object Moods {
 @Serializable
 data class ScheduleSlot(val id: String, val days: List<Int>, val from: String, val to: String, val showIds: List<String>)
 
-/** A ready-made window, as in the web studio. */
+/** A ready-made window for the day plan. */
 data class SlotPreset(val name: String, val from: String, val to: String, val blocks: List<String>)
 
 /**

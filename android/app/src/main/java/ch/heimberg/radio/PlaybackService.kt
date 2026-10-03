@@ -170,7 +170,7 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * Fetches the timeline and makes the playlist after the current item follow the program order: newly
-     * produced items are added, and items moved, removed or shuffled in the cockpit are rearranged. The
+     * produced items are added, and items moved, removed or shuffled in the program are rearranged. The
      * item that is playing is never touched. Asks the server to plan if nothing is open.
      */
     private suspend fun sync() {

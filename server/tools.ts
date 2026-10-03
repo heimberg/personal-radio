@@ -95,7 +95,7 @@ export class OpenMeteo implements Weather {
     };
   }
 
-  /** Places for the cockpit's location search. */
+  /** Places for the studio's location search. */
   async places(name: string): Promise<Place[]> {
     const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
     url.search = new URLSearchParams({ name, count: '5', language: 'de', format: 'json' }).toString();

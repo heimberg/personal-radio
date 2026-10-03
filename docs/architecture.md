@@ -10,15 +10,15 @@ A private, single-user radio: tune in and hear a continuous program of AI-genera
 
 These two requirements override every other decision in this document:
 
-1. **One app on Android.** Tuning in, listening, feedback, the program and configuration happen in a single Android app; the settings are the web studio shown in its «Studio» tab, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
+1. **One app on Android.** Tuning in, listening, feedback, the program and configuration happen in a single Android app; every setting is native in its «Studio» tab, so the owner never switches apps. The Spotify app must be installed and logged in, because the App Remote SDK plays through it, but our app controls it in the background.
 2. **AI-generated speech in every program.** Generated spoken segments are the reason the station exists; music alone is not a program. The configuration is rejected without at least one enabled speech show (`parseStationConfig`), and music blocks always carry generated moderation.
 
 ## Decisions
 
 1. **AI-generated content is the core.** Short briefs, two-host dialogs, explainers and music moderation are all generated. Existing content (feeds, articles) is source material for generation.
 2. **Conductor, not mixer.** Spotify audio cannot be mixed into our own stream: it is DRM-protected and only plays in Spotify's own players. The backend therefore plans and produces a *timeline*; a player on the device executes it, alternating strictly between our segments and Spotify tracks. Never overlap, crossfade or overlay the two.
-3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. Playback never runs in the web studio. The Spotify Web Playback SDK is not part of the product.
-4. **Everyday settings are native, the rest lives in the web studio.** Station and host, voice (with samples), place, interests, music and station sound are native in the app's «Studio» tab, and so is the day plan; shows, sources, the editorial team and usage are forms in the web studio, opened from the app or used on a computer; YAML is optional for bulk edits. Arranging the program is native in the app. See [Division of work](#division-of-work-app-and-web-studio).
+3. **One native Android app.** Kotlin, Media3 `MediaSessionService` for our segments (reliable screen-off playback) and the Spotify App Remote SDK to control the installed Spotify app. The Spotify Web Playback SDK is not part of the product.
+4. **Every setting is native.** Station and host, voice (with samples), place, interests, music and station sound, the owner's shows and feeds, the editorial team with its style presets, quality and usage, and the Spotify listening profile are all in the app's «Studio» tab; the day plan is in «Programm». The app edits the stored settings as a document and writes back only what it changed. See [App only](#app-only).
 5. **Server-side configuration.** The backend stores configuration, sources, schedule, feedback, production state and memory in D1 so it can produce without the app being open. The device keeps UI preferences and a playback cache. Export and delete remain available.
 6. **Gemini writes, providers stay replaceable.** Gemini is the default text provider for briefs and dialogs and does the web research (Google Search grounding). ASK stays available per show (`textProvider: ask`, OpenAI-compatible) and, when configured, is the independent second model that verifies; without ASK, Gemini verifies. TTS through Mistral (single voice) or Gemini (multi-speaker). Model IDs and voices are configuration; none are hard-coded. Use the paid Gemini tier: on the free tier Google may use prompts and responses to improve its products.
 7. **Verification strictness per show.** `strict`: the current ASK quote verifier, every claim needs a verbatim source quote (news). `light`: source-grounded prompt, no second pass (explainers, dialogs). `off`: creative formats without factual claims (moderation, stories), marked as such. The strict verifier rejects explanatory content often, and a rejected draft is already paid for; so a rejected script gets one repair (the final editor drops or narrows exactly the claims the check could not find, `repairScript`) and one second check before it fails. The «Hintergrund» block (a five-minute dialog) uses `light`.
@@ -29,18 +29,18 @@ These two requirements override every other decision in this document:
 
 Per show, `production: agents` hands a music hour to a team of registered agents instead of a single writer: director, per-song researchers, lyric analyst, optional specialists, segment editor, fact checker and continuity editor, run as a validated plan with durable D1 checkpoints. Details, roles and costs: [agentic-workflow-spike.md](agentic-workflow-spike.md).
 
-## Division of work: app and web studio
+## App only
 
-Decided by the owner on 28.09.2026; on 29.09.2026 the browser player and the web program view were dropped, the web is the studio only; on 30.09.2026 the everyday settings moved into the app (native «Studio»), the web studio keeps shows, feeds, the editorial team and usage.
+Decided by the owner: on 29.09.2026 the browser player and the web program view were dropped, on 30.09.2026 the everyday settings moved into the app, and on 03.10.2026 the web studio was removed altogether. Everything the owner does happens in the Android app; the Worker serves only the API (and, at its root, a short note that also reports how Spotify's login in the browser went).
 
-| | Android app (native, Jetpack Compose) | Web studio (Worker page, behind Access) |
-|---|---|---|
-| Role | The product for listening and steering the program | The workbench for settings |
-| Contents | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over and «Spotify verbinden», feedback (👍/👎, skips), the program («Jetzt · Gleich · Später»: move, remove, «Anders», shuffle, add songs, plan, retry), building blocks, archive, text and sources | Persona and voices, shows of every format, day plan and surprise level, music and playlist groups, feeds, the editorial team, quality and usage, YAML, Spotify listening profile |
-| Where | Phone | The app's «Studio» tab; a browser on a computer |
-| Changes ship | With a new APK | With every Worker deploy, no reinstall |
+| | Android app (native, Jetpack Compose) |
+|---|---|
+| Listening | Playback (screen off, lock screen, Bluetooth, offline cache), Spotify hand-over, feedback (👍/👎, reasons, skips), text and sources |
+| Program | Sendeplan (move, remove, «Anders», shuffle, plan, retry), «＋ Einfügen» with «Für dich», the catalog of blocks, a song and topics to follow, the day plan, archive and reading list |
+| Studio | Station and host, voices (samples, design, cloning), place, interests, music, station sound, features, own shows of every format, feeds, the editorial team (instructions, freedom, threshold, style presets, trial runs), quality, usage, Spotify listening profile, first setup |
+| Changes ship | Server logic with every Worker deploy; the app as an in-app update |
 
-Rules for new features: anything used while listening or often on the phone goes native; settings and anything with larger forms go into the web studio. Both use the same Worker API, so a feature can move between them without duplicating server logic.
+The app reads the settings (`GET /api/station`), keeps a draft and on «Speichern» reads them again and writes over them only the studio's fields, shows, feeds and agents (`StudioSettings.mergeInto`, `StationDraft.mergeInto` in core), so a day plan saved meanwhile stays; a show removed in the draft also leaves the day plan. `POST /api/setup` creates a new station with the default shows; `GET /api/agents` gives the agents' shipped instructions and the style presets. Rarely used options of a show (music block triggers, further playlist groups, production mode, a show's own voice) keep their values and defaults; the app does not show them.
 
 ## System overview
 
@@ -92,7 +92,7 @@ Explicit configuration always wins over learned weights. The existing learning r
 - **Persona** (`host`): every draft is written in the host's voice and tone; in two-host dialogs `host-a` is the host and `host-b` the co-host. Persona and show instructions are owner-written and go into the system prompt; source text never does. `parseStationConfig` rejects unknown references, out-of-range lengths (brief 1–2 min because of the TTS cap, dialog 2–10 min), invalid times and time zones.
 - **Planning** (`server/station.ts`, `planTimeline`) runs on every cron tick and on "Jetzt planen" from the app. It rotates the enabled shows of the schedule slot that is active at each planned time, stops at the horizon and at 12 new items per tick, and plans nothing outside an active slot.
 - **Listener gate:** the cron only plans new content if the owner opened the program or gave feedback within the last 3 hours. Unplayed items expire after 12 hours, so without this gate the station would pay for content nobody hears.
-- **Production** runs in a queue consumer, not in the browser request. Each item moves `planned → voicing → ready` (or `failed` / `expired`); a lease in D1 prevents concurrent production. The approved script is stored before speech synthesis, so a TTS retry never pays for a second draft. Transient provider errors back off (10, 20 min) and give up after 3 attempts; rejections (after the one repair) and invalid drafts fail; an exhausted daily budget defers the item to the next UTC day. Three failures within an hour pause planning. «Erneut versuchen» (`POST /api/timeline/retry`) produces items that failed within the last day again from scratch (a chosen subject is kept), retires older failures and restarts waiting items.
+- **Production** runs in a queue consumer, not in the request. Each item moves `planned → voicing → ready` (or `failed` / `expired`); a lease in D1 prevents concurrent production. The approved script is stored before speech synthesis, so a TTS retry never pays for a second draft. Transient provider errors back off (10, 20 min) and give up after 3 attempts; rejections (after the one repair) and invalid drafts fail; an exhausted daily budget defers the item to the next UTC day. Three failures within an hour pause planning. «Erneut versuchen» (`POST /api/timeline/retry`) produces items that failed within the last day again from scratch (a chosen subject is kept), retires older failures and restarts waiting items.
 - **Sources** come from the show's feeds: articles older than 30 days or already covered are skipped, the rest is ranked with explicit interests and learned weights (ties: newest first). Used articles are recorded in `covered_sources` so they are not retold.
 - **Current execution:** a Cloudflare Queue consumer and D1 state machine produce each timeline item. The approved script and per-part voice progress are persisted, so transient failures resume without repeating completed work. This remains the active production path.
 - **Workflow framework decision:** [the agentic workflow spike](agentic-workflow-spike.md) adds a framework-neutral agent registry and tests a `step.do`-compatible checkpoint adapter. It does not yet register a Cloudflare Workflow or route production through one. Cloudflare Workflows are the candidate durable execution layer for a future multi-agent producer; keep the existing queue path until an end-to-end shadow run demonstrates quality, recovery, latency and cost. Mastra remains an alternative to evaluate, not a dependency.
@@ -366,18 +366,18 @@ Public repository, private application. Cloudflare Access protects the Worker AP
 
 ## Current state and gaps
 
-Built and in daily use: the Worker with Access, D1, R2, Queue and cron; research, writing, final edit, jury and fact check; the building blocks, day plan, surprises and follow-ups; music hours, music blocks and songs through Spotify; configurable agents with trials, quality trend and usage; the Android app (Compose: Hören, Programm, Archiv, Studio) with Media3 playback, Spotify handoff, station sound and in-app updates; the web studio for settings.
+Built and in daily use: the Worker with Access, D1, R2, Queue and cron; research, writing, final edit, jury and fact check; the building blocks, day plan, surprises and follow-ups; music hours, music blocks and songs through Spotify; configurable agents with trials, quality trend and usage; the Android app (Compose: Hören, Programm, Archiv, Studio) with Media3 playback, Spotify handoff, station sound and in-app updates; every setting in the app's «Studio», with no web interface.
 
 Remaining gaps:
 
-- The one-off `POST /api/segments` flow still produces synchronously in the browser request; it stays as a manual single-segment tool, and its frontend error messages are derived from provider error text rather than stable codes.
+- The one-off `POST /api/segments` flow still produces synchronously in the request; it stays as a manual single-segment API without a user interface, and its error messages are derived from provider error text rather than stable codes.
 - Topics are still a fixed list of three next to free interests; shows carry the real editorial direction.
 - The app prefetches the next four segments; a longer offline buffer (30–60 minutes) is planned.
 
 ## Milestones
 
 1. **Program on the server** (done): D1 configuration, timeline, feedback and memory; queue production with R2 audio; cron horizon with listener gate; authenticated timeline API.
-2. **Android app** (done): Media3 service, timeline sync, prefetch, feedback, service-token auth, embedded studio, in-app updates, Compose screens with a mini player.
+2. **Android app** (done): Media3 service, timeline sync, prefetch, feedback, service-token auth, native studio, in-app updates, Compose screens with a mini player.
 3. **Spotify in the app** (done): App Remote, music hours, music blocks with moderation triggers, AI picks and playlist groups, listening profile.
 4. **Customization** (done): tools (date, weather, headlines), building blocks, day plan, configurable agents, station sound, surprises. Open: ElevenLabs as TTS option, MCP tools.
 5. **Learning and memory** (in progress): feedback weights, 👎 reasons as listener notes, quality trend. Open: per-kind learning for surprises, series.

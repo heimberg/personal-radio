@@ -1,6 +1,6 @@
 # Android playback acceptance test
 
-Applies to the [Android app](android.md), the listening product. The web studio has no player.
+Applies to the [Android app](android.md), the only interface of the station.
 
 Status: User confirmed on 2026-09-28 that the Android playback test completed successfully. Device/build details and individual observations were not recorded here. Desktop automation cannot pass this gate.
 
@@ -21,4 +21,4 @@ Record device, Android version, app build, battery saver state, start/end time a
 
 Note the time of every interruption, skipped handoff or unexpected pause, and what you were doing (screen off, call, network change, Bluetooth). Record your listening observations: a clean log does not prove audible output.
 
-If background playback fails, diagnose from the log and reproduce it in the Android app's Media3 service. Browser/PWA behavior is outside this acceptance test.
+If background playback fails, diagnose from the log and reproduce it in the Android app's Media3 service.

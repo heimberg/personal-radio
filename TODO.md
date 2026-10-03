@@ -11,7 +11,7 @@ Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 - [ ] **Neues Design «Magazin» ansehen:** helles Theme, fünf Rubrik-Farben, ein einziger Knopf «＋ Einfügen» unten rechts im Programm («Für dich», Song, Thema verfolgen, Suche, Rubriken, ⭐ Favoriten), der grosse farbige Player auf «Hören». 1–2 Screenshots schicken, was noch nicht sitzt.
 - [ ] **Neue App ausprobieren:** Tabs Hören · Programm · Archiv · Studio, Mini-Player, «Anders», Wischen und langes Drücken im Programm; 1–2 Screenshots schicken, damit nachgeschärft werden kann.
 - [ ] **Stimmen ausprobieren:** im Studio unter «Stimme» eine Stimme entwerfen («✨ Entwerfen») oder die eigene klonen («🎤 Meine Stimme»); auf Lachen, Pausen und Zwischenrufe in Dialogen hören.
-- [ ] **Neues Studio ausprobieren:** Sender, Stimme mit Hörprobe, Ort, Interessen, Musik und Stationssound direkt in der App; Sendungen, Feeds und Redaktion über «Mehr» im Web-Studio.
+- [ ] **Neues Studio ausprobieren:** alles in der App – Sender, Stimme, Ort, Interessen, Musik, Stationssound, dazu jetzt auch Sendungen, Feeds, Redaktion (mit Probelauf), Qualität, Verbrauch und das Spotify-Hörprofil. Das Web-Studio gibt es nicht mehr.
 - [ ] **Familie ausprobieren:** Sobald Leas Token in `LISTENERS` steht, erscheint der Tab «Familie»: Chat, «Teilen mit Lea» im Beitragsmenü, «💌 Gruss» (liest die Moderation bei ihr vor), «🎧 Auch hören». Optional `OWNER_NAME` setzen (Standard «Papa»).
 - [ ] **Funktionen aufräumen:** Studio → «Funktionen»: ausschalten, was du nicht brauchst, und Bausteine ausblenden. Ortsgeschichten einschalten (fragt nach dem Standort) und mit offener App unterwegs testen.
 - [ ] **Nachfragen und Dranbleiben ausprobieren:** im Player «Nachfragen»; lange drücken auf einen Beitrag → «Dranbleiben» (Themen im Programm); «Merken» füllt die Leseliste im Archiv. Konzerte kommen freitags, wenn Spotify verbunden ist.
@@ -25,7 +25,6 @@ Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 ## Nächste Ausbauschritte
 
-- [ ] **Design «Magazin», Schritt 2:** Web-Studio auf dieselben Rubriken und das helle Design.
 
 - [ ] **App, Schritt 4:** mitlaufendes Transkript, Widget auf dem Startbildschirm (Play und «Anders»), übersichtlichere Android-Auto-Ansicht.
 - [ ] **Überraschungen, Schritt 2:** Zeitfenster ohne Zufall, «heute ohne Überraschungen», Lernen pro Überraschungsart aus 👍/👎.
@@ -52,8 +51,8 @@ Stand: 03.10.2026. Das Programm läuft auf dem privaten Worker, gehört wird in 
 
 - KI-generierte Beiträge sind der Kern; jedes Programm hat einen gesprochenen Anteil.
 - Dirigent statt Mischpult: Der Server plant und produziert vor, das Gerät spielt eigene Sprache und Spotify strikt abwechselnd, ohne Sprache über Musik.
-- Die Android-App ist das Produkt zum Hören und Steuern des Programms; das Studio ist nativ für die Alltagseinstellungen, das Web-Studio (über «Mehr») bleibt die Werkbank für Sendungen, Feeds und Redaktion (30.09.2026). Kein Player und keine Programmansicht mehr im Web (29.09.2026).
-- Konfiguration serverseitig in D1, weil der Server ohne offenen Browser produziert.
+- Nur die Android-App (03.10.2026): Hören, Programm und alle Einstellungen – auch Sendungen, Feeds und Redaktion – sind nativ; das Web-Studio ist entfernt, der Worker bedient nur die API.
+- Konfiguration serverseitig in D1, weil der Server ohne offene App produziert.
 - Neuerscheinungen (29.09.2026): Die Moderation von «Neu von deinen Künstlern» nennt Künstler und Titel jeder Neuerscheinung; diese Spotify-Metadaten gehen dafür an die KI und die Sprachausgabe. Playlist-Titel bleiben weiterhin bei Spotify.
 - Kein Radiowecker (verworfen am 29.09.2026).
 - Familie (01.10.2026): alles bleibt auf dem privaten Worker; die Familie sieht nur Namen. Geteilt wird eine Kopie mit Audio, nicht neu produziert. In einen Kinder-Sender teilt nur der Besitzer.

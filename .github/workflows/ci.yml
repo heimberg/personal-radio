@@ -22,27 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-      # The browser comes from Playwright's own download; the runner image already has Chromium's system
-      # libraries (Chrome is preinstalled), so apt – whose mirror sometimes hangs for many minutes – only
-      # runs when a test launch shows that something is missing, and then with its own time limit.
-      - name: Browser for the UI tests
-        run: npx playwright install chromium
-      - name: Check that Chromium starts
-        id: chromium
-        continue-on-error: true
-        run: node --input-type=module -e "import { chromium } from '@playwright/test'; await (await chromium.launch()).close();"
-      - name: System libraries for Chromium (only if missing)
-        if: steps.chromium.outcome == 'failure'
-        timeout-minutes: 5
-        run: npx playwright install-deps chromium
-      - run: npx playwright test
-      - run: npm run build
       - run: npx wrangler deploy --dry-run
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: personal-radio-web
-          path: dist/
-          retention-days: 7
   deploy-private-worker:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check

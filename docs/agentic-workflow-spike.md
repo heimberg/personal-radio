@@ -31,7 +31,7 @@ For the current Cloudflare Worker, Workflows are the shortest path to durable re
 
 The director is a planner, not an unrestricted autonomous agent. It receives the block request and the enabled agent catalog, and returns a structured plan. A deterministic validator rejects anything outside configured policy. Agents get only the tools and credentials granted by the server adapter; a prompt or plan cannot grant itself access. Outputs are schema-checked and cited research is retained as artifacts for later editorial review.
 
-The Android app starts production and shows its progress through the Worker API. Viewing runs in detail or editing the agent catalogue belongs in the web studio, following the [division of work](architecture.md#division-of-work-app-and-web-cockpit).
+The Android app starts production and shows its progress through the Worker API. The agents' instructions and freedom are edited in the app's «Studio → Redaktion»; viewing runs in detail has no interface yet.
 
 | Role | Typical responsibility | Inputs / outputs |
 |---|---|---|

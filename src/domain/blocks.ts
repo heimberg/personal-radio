@@ -170,7 +170,7 @@ export function blockShow(block: Block, config: StationConfig, subject?: string)
   return show;
 }
 
-/** What the app and the cockpit show for a block: the catalog, one song, and the owner's own shows. */
+/** What the app shows for a block: the catalog, one song, and the owner's own shows. */
 export interface BlockView { id: string; name: string; description: string; minutes: number; music: boolean; own: boolean; input?: Block['input'] }
 
 const FORMAT_NAMES: Record<ShowFormat, string> = {

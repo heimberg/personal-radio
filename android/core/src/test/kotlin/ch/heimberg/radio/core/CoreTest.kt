@@ -1,6 +1,8 @@
 package ch.heimberg.radio.core
 
 import kotlin.test.Test
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
@@ -58,7 +60,7 @@ class TimelineTest {
         assertEquals(listOf("a"), queue.upcoming(items, false, null).map { it.id })
         val later = items.map { if (it.id == "b") it.copy(state = "ready", audioUrl = "api/timeline/b/audio") else it }
         assertEquals(listOf("a", "b"), queue.upcoming(later, false, null).map { it.id })
-        // Reordered in the cockpit: the new order wins.
+        // Reordered in the program: the new order wins.
         val reordered = later.map { if (it.id == "b") it.copy(seq = 0) else it }
         assertEquals(listOf("b", "a"), queue.upcoming(reordered, false, null).map { it.id })
         // The current item and those already left are not queued again.
@@ -573,5 +575,104 @@ class FeaturesTest {
         assertTrue(PlaceTrigger.shouldReport(melchnau, langenthal))
         assertFalse(PlaceTrigger.shouldReport(melchnau, langenthal.copy(atMs = 5 * 60_000))) // too soon
         assertFalse(PlaceTrigger.shouldReport(melchnau, Fix(47.19, 7.86, 30 * 60_000))) // barely moved
+    }
+}
+
+class StationEditingTest {
+    private val config = kotlinx.serialization.json.Json.parseToJsonElement("""
+        {"version":1,"name":"R","timezone":"Europe/Zurich","horizonMinutes":20,
+         "feeds":[{"id":"srf","name":"SRF","url":"https://srf.example/rss"}],
+         "shows":[
+           {"id":"kurz","name":"Kurzbeitrag","enabled":true,"format":"brief","feedIds":["srf"],"targetMinutes":2,"verification":"strict","instructions":"","voiceId":"gemini_Kore"},
+           {"id":"block","name":"Abendblock","enabled":false,"format":"music_block","feedIds":[],"targetMinutes":30,"verification":"off","groups":[{"name":"Ruhig","playlists":["abc"],"taste":"Jazz"},{"name":"Laut","playlists":[],"taste":"Rock"}],"triggers":{"blockStart":true}}
+         ],
+         "schedule":[{"id":"a","days":[1],"from":"06:00","to":"09:00","showIds":["kurz","_block:morgen"]},{"id":"b","days":[1],"from":"20:00","to":"22:00","showIds":["block"]}],
+         "agents":{"writer":{"temperature":0.7}}}
+    """).jsonObject
+    private val writer = AgentInfo("writer", "Beiträge", "Autorin", "", "Kennzeichne Unsicherheit.", "", 0.4, trial = true)
+    private val jury = AgentInfo("jury", "Beiträge", "Jury", "", "Streng.", "", 0.1, optional = true, threshold = 3.5)
+
+    @Test fun showsKeepWhatTheAppDoesNotEdit() {
+        val draft = StationDraft(config)
+        val kurz = draft.shows.first()
+        assertEquals("feeds", kurz.sourceMode)
+        val saved = draft.withShow(kurz.copy(name = "Kurz und gut", minutes = 9)).shows.first()
+        assertEquals("Kurz und gut", saved.name)
+        assertEquals(2, saved.minutes) // within the brief's 1–2 minutes
+        assertEquals("gemini_Kore", saved.raw["voiceId"]?.jsonPrimitive?.content)
+        val block = draft.shows[1]
+        assertEquals(listOf("abc"), block.playlists)
+        val groups = draft.withShow(block.copy(playlists = listOf("abc", " def "), taste = "Soul")).shows[1].raw["groups"] as kotlinx.serialization.json.JsonArray
+        assertEquals(2, groups.size)
+        assertEquals("Soul", groups[0].jsonObject["taste"]?.jsonPrimitive?.content)
+        assertEquals("Rock", groups[1].jsonObject["taste"]?.jsonPrimitive?.content)
+    }
+
+    @Test fun formatChangesFitTheNewLimits() {
+        val show = Show.new(ShowFormat.BRIEF, listOf("kurzbeitrag")).copy(subject = "x")
+        assertEquals("kurzbeitrag-2", show.id)
+        val hour = show.withFormat(ShowFormat.ARTIST)
+        assertEquals(20, hour.minutes)
+        assertEquals("", hour.subject)
+        val json = hour.copy(subject = "Portishead").toJson()
+        assertEquals("Portishead", json["artist"]?.jsonPrimitive?.content)
+        assertEquals("gemini", json["textProvider"]?.jsonPrimitive?.content)
+        assertEquals("web", json["sourceMode"]?.jsonPrimitive?.content)
+        assertEquals(null, json["tools"])
+        assertEquals("kunstler-stunde", uniqueId("Künstler-Stunde", emptyList()))
+    }
+
+    @Test fun removingAShowCleansTheDayPlan() {
+        val draft = StationDraft(config).removeShow("block")
+        assertEquals(listOf("kurz"), draft.shows.map { it.id })
+        val schedule = draft.config["schedule"] as kotlinx.serialization.json.JsonArray
+        assertEquals(1, schedule.size)
+        // A fresh document with a changed day plan keeps it; only the removed show leaves it.
+        val fresh = kotlinx.serialization.json.JsonObject(config.toMutableMap().apply {
+            put("schedule", kotlinx.serialization.json.Json.parseToJsonElement("""[{"id":"c","days":[2],"from":"10:00","to":"11:00","showIds":["block","kurz"]}]"""))
+        })
+        val merged = draft.mergeInto(fresh)
+        val slot = (merged["schedule"] as kotlinx.serialization.json.JsonArray)[0].jsonObject
+        assertEquals("c", slot["id"]?.jsonPrimitive?.content)
+        assertEquals(listOf("kurz"), (slot["showIds"] as kotlinx.serialization.json.JsonArray).map { it.jsonPrimitive.content })
+    }
+
+    @Test fun feedsAreHttpsAndLeaveTheirShows() {
+        val draft = StationDraft(config)
+        assertEquals(null, draft.addFeed("Blog", "http://insecure.example/rss"))
+        val added = draft.addFeed("", "https://blog.example/feed.xml")!!
+        assertEquals("blog.example", added.feeds.last().name)
+        val removed = draft.removeFeed("srf")
+        assertTrue(removed.feeds.isEmpty())
+        assertEquals(emptyList<String>(), removed.shows.first().feedIds)
+    }
+
+    @Test fun agentsKeepOnlyTheOwnersChanges() {
+        val draft = StationDraft(config)
+        assertEquals(0.7, draft.agent("writer").temperature)
+        val back = draft.withAgent(writer, AgentSettings(temperature = 0.4))
+        assertEquals(null, back.agents["writer"])
+        assertEquals(null, back.config["agents"])
+        val off = back.withAgent(jury, AgentSettings(enabled = false, threshold = 3.5))
+        assertEquals(AgentSettings(enabled = false), off.agent("jury"))
+        val preset = AgentPreset("p", "P", "", mapOf("writer" to AgentSettings(instructions = "Kurz.")))
+        val styled = off.applyPreset(preset)
+        assertEquals(preset, styled.activePreset(listOf(preset)))
+        assertEquals(AgentSettings(enabled = false), styled.agent("jury"))
+        assertEquals(null, styled.standardAgents().config["agents"])
+        assertEquals(null, styled.resetAgent("writer").activePreset(listOf(preset)))
+    }
+
+    @Test fun parsesAgentsInsightsAndProfile() {
+        val (agents, presets) = StationDraft.parseAgents("""{"agents":[{"id":"jury","group":"Beiträge","name":"Jury","description":"d","instructions":"i","contract":"c","temperature":0.1,"optional":true,"threshold":3.5,"trial":true}],"presets":[{"id":"x","name":"X","description":"","agents":{"writer":{"instructions":"a","temperature":0.5}}}]}""")
+        assertEquals(3.5, agents.single().threshold)
+        assertEquals(AgentSettings(instructions = "a", temperature = 0.5), presets.single().agents["writer"])
+        val insights = Insights.parse("""{"reasons":[{"reason":"long","label":"Zu lang","count":3,"active":true}],"notes":["Kürzer"],"quality":[{"showId":"a","showName":"A","overall":4,"createdAt":"2026-10-02T08:00:00Z"},{"showId":"a","showName":"A","overall":3,"createdAt":"2026-10-02T09:00:00Z"},{"showId":"a","showName":"A","overall":5,"createdAt":"2026-10-01T09:00:00Z"}],"changes":[],
+            "usage":{"days":[{"day":"2026-10-02","generations":5,"ttsCharacters":900,"models":[{"provider":"gemini","model":"gemini-3.8-flash-tts","calls":4,"inputTokens":10,"outputTokens":0},{"provider":"gemini","model":"gemini-3.8-flash-tts:abgelehnt","calls":1,"inputTokens":0,"outputTokens":0}]}],"limits":{"generations":24,"ttsCharacters":12000},"speech":{"model":"m","liteModel":"l","dailyRequests":100}},"timezone":"Europe/Zurich"}""")
+        assertEquals(listOf("2026-10-01" to 5.0, "2026-10-02" to 3.5), insights.qualityByDay)
+        assertEquals(4, insights.days.single().speechRequests)
+        assertEquals(24, insights.generationLimit)
+        assertEquals(100, insights.speechRequestLimit)
+        assertEquals(ListeningProfile(true, listOf("Portishead")), ListeningProfile.parse("""{"connected":true,"artists":["Portishead"]}"""))
     }
 }
