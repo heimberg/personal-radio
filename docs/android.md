@@ -88,7 +88,7 @@ Favourites and how often each block was inserted are kept only on the phone (`Ca
 - The setup and text screens are still views and still dark (Nocturne): their tokens are in `res/values/colors.xml`, `dimens.xml` and `themes.xml`.
 - Assets: Figtree (400, 500, 600, 700) and Archivo Condensed Black (static instances of the variable fonts, Latin subset, SIL OFL 1.1) for the Compose screens, Inter 4.1 (Latin subset, SIL OFL 1.1) for the view screens, all in `res/font`; Phosphor icons (MIT) as vector drawables `ic_*`. License texts are in `app/licenses/`.
 - Motion: the waveform sways only while audio plays; the play button gives way a little under the finger.
-- App icon: five bars in the rubric colours with the live dot on the paper ground (`ic_launcher_foreground`), and a one-colour variant for themed icons (`ic_launcher_monochrome`).
+- App icon: a big «R» in the title face (Archivo Condensed Black, drawn as a path) with rings in the corner, as on the player card, on the rubric red (`ic_launcher_foreground`, background `icon_red`), and the «R» alone for themed icons (`ic_launcher_monochrome`).
 
 ## Build and test
 
