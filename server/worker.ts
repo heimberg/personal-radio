@@ -642,12 +642,12 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
     const kids = isKids(owner, parseListeners(env.LISTENERS)), stickers = (await new PlayStore(env.DB).stickers(owner)).length;
     const play = { play: { stickers, kids, ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
-    return json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family, ...play,
+    return unchangedOr(request, json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family, ...play,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),
         ...(sounds.linker && env.GEMINI_API_KEY ? { linkerUrl: 'api/linker' } : {}),
-      } }, 200);
+      } }, 200));
   }
   if (url.pathname === '/api/linker') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
@@ -1082,6 +1082,20 @@ async function stationRoutes(request: Request, env: Environment, owner: string, 
     return json({ ok: true, sticker: await new PlayStore(env.DB).award(owner, 'episode', now) }, 200);
   }
   return json({ ok: true }, 200);
+}
+
+/**
+ * The app asks for the program every half minute; most of the time nothing changed. The answer carries a
+ * hash of its body as ETag, and a request that names the same one gets «304 Not Modified» without a body.
+ */
+async function unchangedOr(request: Request, response: Response): Promise<Response> {
+  const body = await response.text();
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)));
+  const etag = `"${Array.from(digest.slice(0, 12), byte => byte.toString(16).padStart(2, '0')).join('')}"`;
+  const headers = new Headers(response.headers);
+  headers.set('ETag', etag);
+  if (request.headers.get('If-None-Match') === etag) return new Response(null, { status: 304, headers });
+  return new Response(body, { status: response.status, headers });
 }
 
 const SPOTIFY_RESULTS: Record<string, string> = {

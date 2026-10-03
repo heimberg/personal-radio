@@ -80,7 +80,10 @@ const MAX_NEW_ITEMS = 12;
 const STALE_HOURS = 12;
 /** Time-bound items leave the program when their planned air time is this far in the past. */
 const TIMELY_HOURS = 2;
-const ACTIVE_LISTENER_HOURS = 3;
+/** Without listening for this long, the cron plans nothing new (a paused player does not count). */
+const ACTIVE_LISTENER_HOURS = 2;
+/** How long the day's headlines are reused by the next block. */
+const HEADLINES_CACHE_MINUTES = 90;
 export const AUDIO_RETENTION_DAYS = 7;
 const PURGE_AFTER_HOURS = 24;
 const MAX_SOURCE_AGE_DAYS = 30;
@@ -228,9 +231,15 @@ async function stationContext(deps: StationDeps, owner: string, config: StationC
 
 /**
  * The headlines of the day: the newest items of the owner's feeds (last 36 hours); without feeds, a
- * web search for today's most important news.
+ * web search for today's most important news. Several blocks of a morning use them (Morgenbriefing,
+ * Schlagzeilen, shows with the headlines tool), so a result is reused for [HEADLINES_CACHE_MINUTES].
  */
 async function headlines(deps: StationDeps, owner: string, config: StationConfig, now: Date, date: string): Promise<{ text: string; sources: Source[] }> {
+  const key = `headlines:${now.toISOString().slice(0, 10)}`;
+  const hit = await deps.store.cached(owner, key, HEADLINES_CACHE_MINUTES, now);
+  if (hit) {
+    try { return JSON.parse(hit) as { text: string; sources: Source[] }; } catch { /* A damaged entry is simply researched again. */ }
+  }
   const collected: FeedItem[] = [];
   for (const feed of config.feeds) {
     try { await deps.reserveFeed(owner); } catch { break; }
@@ -244,7 +253,9 @@ async function headlines(deps: StationDeps, owner: string, config: StationConfig
     const found = await deps.researcher.research({ brief: `Die wichtigsten Nachrichten von heute${date ? `, ${date}` : ''}: sechs Schlagzeilen aus der Schweiz und der Welt, jeweils mit einem Satz Einordnung.`, interests: [], avoidTopics: [], now, agent: agentOf(resolveAgents(config.agents), 'research') });
     sources = found.sources.slice(0, 6).map((source, index) => ({ ...source, id: `h${index + 1}` }));
   }
-  return { text: sources.map(source => `– ${source.title}`).join('\n'), sources };
+  const result = { text: sources.map(source => `– ${source.title}`).join('\n'), sources };
+  if (sources.length) await deps.store.cache(owner, key, JSON.stringify(result), now);
+  return result;
 }
 
 /** The owner's repeated reasons for 👎 in the last weeks, as notes for the prompts. */

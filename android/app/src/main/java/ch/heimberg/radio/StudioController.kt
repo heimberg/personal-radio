@@ -1,0 +1,153 @@
+package ch.heimberg.radio
+
+import android.content.Intent
+import android.net.Uri
+import ch.heimberg.radio.core.AgentInfo
+import ch.heimberg.radio.core.ListeningProfile
+import ch.heimberg.radio.core.StationDraft
+import ch.heimberg.radio.core.StudioSettings
+import kotlinx.coroutines.launch
+
+/** «Studio»: the settings with their draft, the first setup, insights, the agents and the listening profile. */
+interface StudioActions {
+    /** Loads the settings (once, or again with [force]), edits them locally, saves them. */
+    fun loadStudio(force: Boolean = false)
+    fun editStudio(settings: StudioSettings)
+    /** Shows, feeds and agents: a changed draft, saved with the rest. */
+    fun editStation(draft: StationDraft)
+    fun saveStudio()
+    fun discardStudio()
+    /** First start: sets up the station with the default shows. */
+    fun setUpStation()
+    /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
+    fun loadInsights()
+    fun loadAgents()
+    fun loadListening()
+    fun connectListening()
+    fun disconnectListening()
+    fun clearReasons()
+    /** A trial run of the agent with the draft's settings; nothing is saved. */
+    fun trialAgent(agent: AgentInfo)
+    fun searchPlaces(name: String)
+}
+
+class StudioController(private val ref: HostRef) : StudioActions {
+    private val host get() = ref.host
+    private val state get() = host.state
+    private val api get() = host.api
+
+    override fun loadStudio(force: Boolean) {
+        // Unsaved changes stay until they are saved or discarded.
+        if (!force && (state.studio != null || state.studioMissing)) return
+        host.scope.launch {
+            runCatching { api.station() }
+                .onSuccess { config ->
+                    state.studio = config?.let { StudioSettings.of(it) }
+                    state.station = config?.let(::StationDraft)
+                    state.studioMissing = config == null
+                    state.studioDirty = false
+                }
+                .onFailure { state.say(host.failure(it)) }
+        }
+        if (state.voices.isEmpty()) host.scope.launch { runCatching { api.voices() }.onSuccess { state.voices = it } }
+    }
+
+    override fun editStudio(settings: StudioSettings) {
+        if (settings == state.studio) return
+        state.studio = settings
+        state.studioDirty = true
+    }
+
+    override fun editStation(draft: StationDraft) {
+        if (draft == state.station) return
+        state.station = draft
+        state.studioDirty = true
+    }
+
+    override fun saveStudio() {
+        val settings = state.studio ?: return
+        state.studioSaving = true
+        host.scope.launch {
+            val result = runCatching { api.saveStudio(settings, state.station) }
+            state.studioSaving = false
+            if (result.isSuccess) state.studioDirty = false
+            state.say(result.fold({ "Gespeichert. Gilt ab den nächsten Beiträgen." }, { host.failure(it) }))
+            if (result.isSuccess) host.changed()
+        }
+    }
+
+    override fun discardStudio() {
+        state.studioDirty = false
+        loadStudio(force = true)
+    }
+
+    override fun setUpStation() {
+        if (state.settingUp) return
+        state.settingUp = true
+        host.scope.launch {
+            val result = runCatching { api.setUp(java.util.TimeZone.getDefault().id) }
+            state.settingUp = false
+            state.say(result.fold({ "Dein Radio ist eingerichtet. Das erste Programm wird produziert." }, { host.failure(it) }))
+            if (result.isSuccess) {
+                loadStudio(force = true)
+                host.changed()
+            }
+        }
+    }
+
+    override fun loadInsights() {
+        host.scope.launch { runCatching { api.insights() }.onSuccess { state.insights = it } }
+    }
+
+    override fun loadAgents() {
+        if (state.agentInfo.isNotEmpty()) return
+        host.scope.launch {
+            runCatching { api.agents() }.onSuccess { (agents, presets) -> state.agentInfo = agents; state.agentPresets = presets }
+        }
+    }
+
+    override fun loadListening() {
+        host.scope.launch { runCatching { api.listening() }.onSuccess { state.listening = it } }
+    }
+
+    /** Spotify's login opens in the browser; back in the app, the card loads the new state. */
+    override fun connectListening() {
+        runCatching { host.activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.listeningConnectUrl()))) }
+            .onFailure { state.say("Kein Browser gefunden.") }
+    }
+
+    override fun disconnectListening() {
+        host.scope.launch {
+            runCatching { api.disconnectListening() }
+                .onSuccess { state.listening = ListeningProfile(false, emptyList()) }
+                .onFailure { state.say(host.failure(it)) }
+        }
+    }
+
+    override fun clearReasons() {
+        host.scope.launch {
+            runCatching { api.clearReasons() }
+                .onSuccess { state.say("Zurückgesetzt."); loadInsights() }
+                .onFailure { state.say(host.failure(it)) }
+        }
+    }
+
+    override fun trialAgent(agent: AgentInfo) {
+        if (state.trials.containsKey(agent.id) && state.trials[agent.id] == null) return
+        state.trials = state.trials + (agent.id to null)
+        host.scope.launch {
+            val result = runCatching { api.trial(agent.id, state.station?.config?.get("agents")) }
+                .getOrElse { TrialResult(false, "", null, null, "FAILED", it.message) }
+            state.trials = state.trials + (agent.id to result)
+        }
+    }
+
+    override fun searchPlaces(name: String) {
+        if (name.trim().length < 2) return
+        host.scope.launch {
+            runCatching { api.places(name.trim()) }
+                .onSuccess { state.places = it }
+                .onFailure { state.say("Die Ortssuche ist gerade nicht erreichbar.") }
+        }
+    }
+}

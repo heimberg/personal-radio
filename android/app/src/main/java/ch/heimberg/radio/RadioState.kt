@@ -232,7 +232,12 @@ class RadioState {
 }
 
 /** What the screens can ask for; the activity does it. */
-interface RadioActions {
+/**
+ * Everything the screens can ask for. The areas with their own controller (studio, voices, family,
+ * Mitmachen, reading list, day plan) have their own interfaces; the activity handles the rest: playback,
+ * the program, the archive, features and setup.
+ */
+interface RadioActions : StudioActions, VoiceActions, FamilyActions, MitmachenActions, ReadingActions, DayPlanActions {
     fun togglePlay()
     fun next()
     fun rate(liked: Boolean)
@@ -252,43 +257,11 @@ interface RadioActions {
     fun addBlock(block: BlockView, subject: String)
     fun stopSeries(series: SeriesInfo)
 
-    /** Nachfragen: opens the question dialog for [item] (or what plays); sends the question. */
-    fun askAbout(item: TimelineItem? = null)
-    fun sendQuestion()
-    /** Merken: on or off the reading list; the list to share. */
-    fun toggleBookmark(item: TimelineItem? = null)
-    fun removeBookmark(itemId: String)
-    fun shareReading()
-    fun openSource(url: String)
-    /** Dranbleiben: follow a topic (the dialog with [suggestion]), stop following one. */
-    fun suggestFollow(suggestion: String)
-    fun follow(topic: String)
-    fun unfollow(id: Long)
-
     /** «Funktionen»: load, switch a feature (Ortsgeschichten asks for the location first), show or hide a block. */
     fun loadFeatures()
     fun setFeature(id: String, on: Boolean)
     fun setBlockVisible(id: String, visible: Boolean)
 
-    /** Mitmachen: how a story goes on, a quiz answer, the album, a question to the radio (typed or spoken). */
-    fun choose(item: TimelineItem, option: Int)
-    fun answer(item: TimelineItem, option: Int)
-    fun openAlbum()
-    fun ask()
-    fun dictate()
-
-    /** «Familie»: loads members and chat (and marks it read while the tab is open). */
-    fun loadFamily()
-    fun sendMessage()
-    fun greet(member: FamilyMember, text: String)
-    fun listenAlong(member: FamilyMember)
-    fun share(item: TimelineItem, member: FamilyMember)
-    /** Profile picture: from the gallery, from the camera, or none. */
-    fun chooseAvatar()
-    fun takeAvatar()
-    fun removeAvatar()
-    /** A picture on the Worker (a profile picture), as Coil loads it: with the connection's headers. */
-    fun workerImage(path: String): Any
     fun shuffle()
     fun addSong()
     fun plan()
@@ -298,44 +271,6 @@ interface RadioActions {
 
     fun loadArchive()
     fun delete(item: TimelineItem)
-
-    /** «Heute»: a mood until midnight, or none. */
-    fun setMood(id: String?)
-    fun openDayPlan()
-    fun editDayPlan(plan: DayPlan)
-    fun saveDayPlan()
-    fun closeDayPlan()
-
-    /** «Studio»: loads the settings (once, or again with [force]), edits them locally, saves them. */
-    fun loadStudio(force: Boolean = false)
-    fun editStudio(settings: StudioSettings)
-    /** Shows, feeds and agents: a changed draft, saved with the rest. */
-    fun editStation(draft: StationDraft)
-    /** First start: sets up the station with the default shows. */
-    fun setUpStation()
-    /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
-    fun loadInsights()
-    fun loadAgents()
-    fun loadListening()
-    fun connectListening()
-    fun disconnectListening()
-    fun clearReasons()
-    /** A trial run of the agent with the draft's settings; nothing is saved. */
-    fun trialAgent(agent: AgentInfo)
-    fun saveStudio()
-    fun discardStudio()
-    fun searchPlaces(name: String)
-    /** Plays the voice sample, or stops it when it is playing. */
-    fun previewVoice(voiceId: String)
-
-    /** Own voices: library search, a voice from a description, a cloned voice (two recordings), delete. */
-    fun searchVoices(query: String)
-    fun designVoice(name: String, description: String, gender: String?)
-    /** Starts or stops a recording: the speech sample, or with [consent] the spoken consent. */
-    fun toggleRecording(consent: Boolean)
-    fun cloneVoice(name: String)
-    fun deleteVoice(voice: VoiceOption)
-    fun closeVoiceDialogs()
 
     fun connectSpotify()
     fun installUpdate()

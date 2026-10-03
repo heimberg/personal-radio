@@ -175,13 +175,16 @@ class PlaybackService : MediaLibraryService() {
      */
     private suspend fun sync() {
         val api = api ?: return
-        val timeline = runCatching { api.response() }.getOrElse { return }
+        // Only while it plays does the service count as listening: a paused player in the background must
+        // not keep the server planning (and paying for) new items.
+        val playing = player.playWhenReady
+        val timeline = runCatching { api.response(peek = !playing) }.getOrElse { return }
         val items = timeline.items
         items.forEach { known[it.id] = it }
         notices.update(timeline)
         spotifyClientId = timeline.spotify?.clientId
         sounds = timeline.sounds
-        if (items.none { it.isOpen }) runCatching { api.plan() }
+        if (playing && items.none { it.isOpen }) runCatching { api.plan() }
         if (items.any { it.isPlayable && it.hasMusic }) connectSpotify()
         val currentItem = player.currentMediaItem?.mediaId?.let(Program::itemIdOf)
         val wanted = queue.upcoming(items, musicAvailable = spotify.connected, current = currentItem)

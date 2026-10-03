@@ -196,7 +196,7 @@ test('the cron plans new content only while the owner has listened recently', as
   const h = harness(); await h.setup();
   assert.equal((await tick(h.deps, OWNER, { requireListener: true })).planned, 0);
   await h.store.touch(OWNER, NOW);
-  h.advance(179);
+  h.advance(119);
   assert.equal((await tick(h.deps, OWNER, { requireListener: true })).planned, 10);
   h.db.raw.exec('DELETE FROM timeline_items');
   h.advance(2);
@@ -693,4 +693,17 @@ test('a music hour produced by the editorial team: same parts for the app, team 
   assert.deepEqual(view.team, { songs: 3, specialists: 0, corrections: 0 });
   assert.deepEqual(view.parts!.map(part => part.kind), ['speech', 'speech', 'track', 'speech', 'track', 'speech', 'track', 'speech']);
   assert.equal(view.verification, 'light');
+});
+
+test('the day\'s headlines are researched once and reused by the next block', async () => {
+  const h = harness(); await h.setup();
+  const store = h.store;
+  const now = new Date('2026-10-03T07:00:00Z');
+  assert.equal(await store.cached(OWNER, 'headlines:2026-10-03', 90, now), null);
+  await store.cache(OWNER, 'headlines:2026-10-03', '{"text":"– A","sources":[]}', now);
+  assert.equal(await store.cached(OWNER, 'headlines:2026-10-03', 90, new Date(now.getTime() + 60 * 60_000)), '{"text":"– A","sources":[]}');
+  assert.equal(await store.cached(OWNER, 'headlines:2026-10-03', 90, new Date(now.getTime() + 91 * 60_000)), null);
+  // Older entries go when a new one is kept.
+  await store.cache(OWNER, 'headlines:2026-10-05', '{}', new Date('2026-10-05T07:00:00Z'));
+  assert.equal(h.db.raw.prepare('SELECT COUNT(*) AS n FROM research_cache').get()!.n, 1);
 });
