@@ -406,7 +406,11 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
       // Tool results are evidence too; a show can live on them alone (a weather report).
       sources = [...toolSources, ...sources];
-      if (!sources.length) return fail('NO_SOURCES');
+      // Nothing new to talk about is no fault: the item leaves the program quietly (the circuit breaker still counts it).
+      if (!sources.length) {
+        await deps.store.update(owner, row.id, { state: 'expired', lease_until: null, error: 'NO_SOURCES' }, deps.now());
+        return 'skipped';
+      }
       // Dranbleiben says nothing when there is nothing new: the check leaves the program quietly.
       if (followed) {
         const novelty = deps.agentModel ? parseNovelty(await deps.agentModel.askJson(NOVELTY_PROMPT, {

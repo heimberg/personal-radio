@@ -141,6 +141,8 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
     await store.touch(owner, new Date());
+    // Asked for explicitly: runs that only found nothing new do not hold planning back.
+    await store.forgetEmptyRuns(owner);
     const result = await refreshProgram(env, owner, false);
     return json({ planned: result.planned, queued: result.due.length, expired: result.expired }, 200);
   }

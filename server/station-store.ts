@@ -248,8 +248,14 @@ export class StationStore {
     return { removed: rows.length, audioKeys: rows.flatMap(row => audioKeysOf(row)) };
   }
 
+  /** «Jetzt planen»: runs that found nothing new no longer pause planning. */
+  async forgetEmptyRuns(owner: string): Promise<void> {
+    await this.db.prepare(`UPDATE timeline_items SET error = NULL WHERE owner_id = ? AND state = 'expired' AND error = 'NO_SOURCES'`).bind(owner).run();
+  }
+
   async recentFailures(owner: string, since: Date): Promise<number> {
-    const row = await this.db.prepare(`SELECT COUNT(*) AS failures FROM timeline_items WHERE owner_id = ? AND state = 'failed' AND updated_at >= ?`)
+    const row = await this.db.prepare(`SELECT COUNT(*) AS failures FROM timeline_items WHERE owner_id = ?
+      AND (state = 'failed' OR state = 'expired' AND error = 'NO_SOURCES') AND updated_at >= ?`)
       .bind(owner, since.toISOString()).first<{ failures: number }>();
     return Number(row?.failures ?? 0);
   }
