@@ -23,8 +23,8 @@
             android:paddingBottom="@dimen/space_3">
 
             <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/brand_mark" />
 
@@ -32,11 +32,11 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_2"
-                android:fontFamily="@font/inter_medium"
-                android:letterSpacing="-0.01"
+                android:fontFamily="@font/archivo_condensed_black"
                 android:text="@string/brand"
+                android:textAllCaps="true"
                 android:textColor="@color/text"
-                android:textSize="15sp" />
+                android:textSize="24sp" />
         </LinearLayout>
 
         <TextView

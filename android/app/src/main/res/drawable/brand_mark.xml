@@ -1,21 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The brand mark: an accent ring around a dot, the orb reduced to a signet. -->
+<!-- The brand mark: the app icon in small, a white «R» (Archivo Condensed Black) on the rubric red. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="18dp"
-    android:height="18dp"
-    android:viewportWidth="18"
-    android:viewportHeight="18">
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@color/accent_800"
-        android:strokeWidth="3"
-        android:pathData="M9,1.5a7.5,7.5 0,1 1,0 15a7.5,7.5 0,1 1,0 -15z" />
+        android:fillColor="@color/icon_red"
+        android:pathData="M54,6a48,48 0,1 1,0 96a48,48 0,1 1,0 -96z" />
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@color/accent"
-        android:strokeWidth="1.5"
-        android:pathData="M9,1.75a7.25,7.25 0,1 1,0 14.5a7.25,7.25 0,1 1,0 -14.5z" />
-    <path
-        android:fillColor="@color/accent"
-        android:pathData="M9,6a3,3 0,1 1,0 6a3,3 0,1 1,0 -6z" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40.27 78V33.97H56.21Q61.14 33.97 63.89 35.76Q66.64 37.55 67.76 40.62Q68.88 43.7 68.88 47.47Q68.88 50.93 68.18 53.97Q67.47 57.01 65.3 59.25L70.16 78H58.06L55.06 63.22H51.98V78ZM51.98 53.94H54.67Q56.21 53.94 56.69 52.3Q57.17 50.67 57.17 48.62Q57.17 47.22 56.94 46.1Q56.72 44.98 56.21 44.27Q55.7 43.57 54.67 43.57H51.98Z" />
 </vector>

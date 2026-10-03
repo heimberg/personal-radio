@@ -269,4 +269,4 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 
 ## License
 
-[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree, Archivo and Inter (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.
+[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree and Archivo (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.

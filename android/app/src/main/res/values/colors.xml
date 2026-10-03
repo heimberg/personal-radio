@@ -1,42 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Nocturne design system: a desaturated blue-grey ground with one blurple accent used as a line and a
-    glow, never as a flood. Every colour in the app comes from these tokens and their 100–900 ramps.
+    «Magazin» for the view screens (setup, transcript): the same light paper ground, ink and link blue
+    as the Compose screens (RadioTheme.kt). The names stay from Nocturne so the layouts keep working;
+    the neutral ramp runs from ink (100) to paper (900), the accent ramp from ink to the palest blue.
 -->
 <resources>
-    <color name="bg">#161826</color>
-    <!-- The light ground of the Compose screens (RadioTheme.kt); the view screens stay dark. -->
+    <color name="bg">#F3F4F0</color>
+    <color name="bg_glow">#ECEDE8</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="text">#16171B</color>
+    <!-- Ink: outlined primary buttons, the cursor, the focused field. -->
+    <color name="accent">#16171B</color>
+    <color name="divider">#DCDED8</color>
+    <!-- The paper ground of every screen. -->
     <color name="paper">#F3F4F0</color>
     <!-- The rubric red «Aktuell», ground of the app icon. -->
     <color name="icon_red">#D93A24</color>
-    <color name="bg_glow">#1E2034</color>
-    <color name="surface">#232532</color>
-    <color name="text">#E9E9ED</color>
-    <color name="accent">#9184D9</color>
-    <!-- The text colour at 16 %. -->
-    <color name="divider">#29E9E9ED</color>
 
-    <color name="neutral_100">#F3F5FE</color>
-    <color name="neutral_200">#E4E7F5</color>
-    <color name="neutral_300">#CFD3E5</color>
-    <color name="neutral_400">#B2B6CA</color>
-    <color name="neutral_500">#9397AB</color>
-    <color name="neutral_600">#75798C</color>
-    <color name="neutral_700">#595D6C</color>
-    <color name="neutral_800">#3F424D</color>
-    <color name="neutral_900">#292B31</color>
+    <color name="neutral_100">#16171B</color>
+    <color name="neutral_200">#2A2C33</color>
+    <color name="neutral_300">#44474F</color>
+    <color name="neutral_400">#5C5F68</color>
+    <color name="neutral_500">#74777F</color>
+    <color name="neutral_600">#9A9DA4</color>
+    <color name="neutral_700">#C2C4C8</color>
+    <color name="neutral_800">#E2E4DE</color>
+    <color name="neutral_900">#ECEDE8</color>
 
-    <color name="accent_100">#F5F4FF</color>
-    <color name="accent_200">#E7E5FE</color>
-    <color name="accent_300">#D2CEFD</color>
-    <color name="accent_400">#B5ABFC</color>
-    <color name="accent_500">#968AE0</color>
-    <color name="accent_600">#796CBF</color>
-    <color name="accent_700">#5D5294</color>
-    <color name="accent_800">#423A6A</color>
-    <color name="accent_900">#2B2741</color>
+    <color name="accent_100">#16171B</color>
+    <color name="accent_200">#16171B</color>
+    <!-- Links, eyebrows and song lines in the transcript. -->
+    <color name="accent_300">#1F5FD0</color>
+    <color name="accent_400">#4A7FDB</color>
+    <color name="accent_500">#7FA3E6</color>
+    <color name="accent_600">#A9C1EF</color>
+    <color name="accent_700">#C7D7F5</color>
+    <color name="accent_800">#DCE6FA</color>
+    <color name="accent_900">#E8EEFB</color>
 
-    <!-- Pressed tints for outlined and ghost buttons: the accent at 22 %, the text at 14 %. -->
-    <color name="accent_ripple">#389184D9</color>
-    <color name="text_ripple">#24E9E9ED</color>
+    <!-- Pressed tints: ink at 16 % and 12 %. -->
+    <color name="accent_ripple">#2916171B</color>
+    <color name="text_ripple">#1F16171B</color>
 </resources>

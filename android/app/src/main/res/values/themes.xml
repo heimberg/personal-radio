@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Nocturne is dark only: the ground, surfaces and ramps are tuned for it. -->
-    <style name="Theme.PersonalRadio" parent="Theme.Material3.Dark.NoActionBar">
+    <!-- «Magazin»: light paper, ink and one link blue; the same tokens as RadioTheme.kt. -->
+    <style name="Theme.PersonalRadio" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/bg</item>
         <item name="colorPrimaryContainer">@color/accent_800</item>
-        <item name="colorOnPrimaryContainer">@color/accent_100</item>
+        <item name="colorOnPrimaryContainer">@color/text</item>
         <item name="colorSecondary">@color/accent</item>
         <item name="colorOnSecondary">@color/bg</item>
         <item name="colorSecondaryContainer">@color/accent_900</item>
-        <item name="colorOnSecondaryContainer">@color/accent_200</item>
+        <item name="colorOnSecondaryContainer">@color/text</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/text</item>
         <item name="colorSurfaceVariant">@color/surface</item>
@@ -32,26 +32,22 @@
         <item name="android:textColorHint">@color/neutral_500</item>
         <item name="android:textColorHighlight">@color/accent_ripple</item>
 
-        <item name="fontFamily">@font/inter</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/figtree</item>
+        <item name="android:fontFamily">@font/figtree</item>
 
         <item name="android:windowBackground">@drawable/window_background</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
 
         <item name="materialButtonStyle">@style/Widget.PersonalRadio.Button</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.PersonalRadio.Button</item>
         <item name="editTextStyle">@style/Widget.PersonalRadio.Input</item>
     </style>
 
-    <!-- The Compose screens are light («Magazin»): the paper ground shows while the app starts, with dark bar icons. -->
-    <style name="Theme.PersonalRadio.Paper">
-        <item name="android:windowBackground">@color/paper</item>
-        <item name="android:statusBarColor">@color/paper</item>
-        <item name="android:navigationBarColor">@color/paper</item>
-        <item name="android:windowLightStatusBar">true</item>
-    </style>
+    <!-- The main activity: the same light theme (kept as its own name for the manifest). -->
+    <style name="Theme.PersonalRadio.Paper" />
 
     <!-- Buttons are outlined, never filled: a divider edge, or the accent for the primary action. -->
     <style name="Widget.PersonalRadio.Button" parent="Widget.Material3.Button.OutlinedButton">
@@ -61,7 +57,7 @@
         <item name="android:textSize">14sp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:letterSpacing">0</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">@font/figtree_semibold</item>
         <item name="android:textColor">@color/button_text</item>
         <item name="cornerRadius">@dimen/radius_md</item>
         <item name="strokeWidth">1dp</item>
@@ -124,45 +120,47 @@
     </style>
 
     <!-- Type, applied with style= (not textAppearance) so tabular figures work on every API level.
-         Inter at 400 and 500: hierarchy comes from size and space, never from heavier weights. -->
+         Figtree at 400 and 600: hierarchy comes from size and space. -->
     <style name="Widget.PersonalRadio.Text.Eyebrow" parent="">
         <item name="android:textSize">10sp</item>
         <item name="android:letterSpacing">0.12</item>
         <item name="android:textAllCaps">true</item>
-        <item name="android:textColor">@color/accent_300</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textColor">@color/neutral_400</item>
+        <item name="android:fontFamily">@font/figtree_bold</item>
     </style>
 
+    <!-- Titles as in the Compose screens: Archivo Condensed Black in capitals. -->
     <style name="Widget.PersonalRadio.Text.Headline" parent="">
-        <item name="android:textSize">20sp</item>
-        <item name="android:letterSpacing">-0.015</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:lineSpacingMultiplier">0.92</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">@font/archivo_condensed_black</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Section" parent="">
         <item name="android:textSize">17sp</item>
         <item name="android:letterSpacing">-0.015</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">@font/figtree_semibold</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Title" parent="">
         <item name="android:textSize">16sp</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">@font/figtree_semibold</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.ItemTitle" parent="">
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFamily">@font/figtree_semibold</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Body" parent="">
         <item name="android:textSize">12sp</item>
         <item name="android:textColor">@color/neutral_400</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/figtree</item>
     </style>
 
     <!-- Longer text to read, such as a transcript. -->
@@ -170,20 +168,20 @@
         <item name="android:textSize">15sp</item>
         <item name="android:lineSpacingMultiplier">1.35</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/figtree</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Meta" parent="">
         <item name="android:textSize">11sp</item>
         <item name="android:textColor">@color/neutral_500</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/figtree</item>
         <item name="android:fontFeatureSettings">tnum</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Status" parent="">
         <item name="android:textSize">10sp</item>
         <item name="android:textColor">@color/neutral_400</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/figtree</item>
     </style>
 
     <style name="Widget.PersonalRadio.Text.Tag" parent="">
@@ -191,7 +189,7 @@
         <item name="android:letterSpacing">0.08</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:textColor">@color/neutral_100</item>
-        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:fontFamily">@font/figtree</item>
         <item name="android:fontFeatureSettings">tnum</item>
     </style>
 </resources>
