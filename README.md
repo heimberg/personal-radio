@@ -14,7 +14,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Spoken segments from web research (Google Search grounding) or your RSS/Atom feeds, written for the ear, every claim checked against its sources.
 - A final desk rewrites each script for radio, connects it to the item before, and a quality jury scores it (★) and sends weak scripts back once.
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
-- Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
+- Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise». In the app they are sorted into five colour-coded rubrics (Aktuell, Wissen, Musik, Geschichten, Spezial): «Für dich» suggests four that fit the time of day and your habits, «＋ Einfügen» opens the whole catalog with search and ⭐ favourites.
 - Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
 - More formats: «Streitgespräch» (two voices, pro and contra, with sources, neutral summary), «Weltpresse» (how media around the world report on a topic), and «Ortsgeschichten» (the story of a place you pass, while the app is open).
 - «Funktionen» in the studio: every automatic feature (live transitions, weekly review, followed topics, concerts, quiz, place stories) switched on or off in one place, with what it costs, and the building blocks the palette shows.
@@ -269,4 +269,4 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 
 ## License
 
-[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the Inter font (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.
+[MIT](LICENSE). Bundled third-party components keep their own licenses: the Spotify App Remote SDK (Apache 2.0, `android/app/libs/`), the fonts Figtree, Archivo and Inter (SIL OFL 1.1) and Phosphor icons (MIT); see `android/app/licenses/`.

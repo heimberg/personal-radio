@@ -1,6 +1,5 @@
 package ch.heimberg.radio
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -20,78 +19,36 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.Look
 import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.clip
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sin
 
 /** 0 → 1 → 0 over one turn of [phase], eased like CSS ease-in-out keyframes. */
 private fun breathe(phase: Float): Float = (0.5 - 0.5 * cos(2 * PI * phase)).toFloat()
 
-/**
- * The glowing orb that stands for the station: three thin rings around a lit core in the colour of
- * what plays. While audio plays the rings and the core breathe; paused, the orb dims and rests.
- */
-@Composable
-fun Orb(active: Boolean, tint: Color, modifier: Modifier = Modifier) {
-    val color by animateColorAsState(tint, tween(600), label = "orb colour")
-    val time by rememberInfiniteTransition(label = "orb").animateFloat(
-        0f, 1f, infiniteRepeatable(tween(7_200, easing = LinearEasing), RepeatMode.Restart), label = "orb time",
-    )
-    Canvas(modifier) {
-        val size = min(this.size.width, this.size.height)
-        val center = Offset(this.size.width / 2f, this.size.height / 2f)
-        val stroke = 1.dp.toPx()
-        listOf(1f, 0.72f, 0.46f).forEachIndexed { index, ring ->
-            // Periods of 2.4, 3.0 and 3.6 seconds fit the 7.2-second loop a whole number of times.
-            val breath = if (active) breathe((time * 7_200f / (2_400f + index * 600f) + index * 0.12f) % 1f) else 0.5f
-            val scale = if (active) 0.9f + 0.15f * breath else 1f
-            drawCircle(
-                color = lerp(Nocturne.accentDeep, color, if (index == 0) 0.25f else 0.45f).copy(alpha = if (active) 0.7f + 0.3f * breath else 0.6f),
-                radius = (ring * size / 2f / 1.05f - stroke / 2f) * scale, center = center, style = Stroke(stroke),
-            )
-        }
-        val coreBreath = if (active) breathe((time * 4f) % 1f) else 0.5f
-        val core = size * 0.14f * (if (active) 0.9f + 0.15f * coreBreath else 1f)
-        val glow = core + size * 0.25f
-        val glowColor = if (active) lerp(color, Color.Black, 0.3f) else Nocturne.accentDeep
-        drawCircle(
-            Brush.radialGradient(0f to glowColor, core / glow to glowColor.copy(alpha = 0.8f), 1f to Color.Transparent, center = center, radius = glow),
-            radius = glow, center = center,
-        )
-        drawCircle(
-            Brush.radialGradient(
-                0f to Nocturne.accentLight, 0.55f to (if (active) color else lerp(Nocturne.accentDeep, color, 0.4f)), 1f to Nocturne.accentDeep,
-                center = Offset(center.x - core * 0.2f, center.y - core * 0.3f), radius = core * 1.4f,
-            ),
-            radius = core, center = center,
-        )
-    }
-}
-
 private val BARS = FloatArray(48) { i -> 0.25f + 0.75f * abs(sin(i * 0.55f) * cos(i * 0.17f + 1f)) }
 
-/** The item's progress as a row of bars: heard in the kind's colour, ahead in a neutral; they sway while playing. */
+/** The item's progress as a row of bars: heard in [tint], ahead in [rest]; they sway while playing. */
 @Composable
-fun Waveform(progress: Float, active: Boolean, tint: Color, modifier: Modifier = Modifier) {
+fun Waveform(progress: Float, active: Boolean, tint: Color, modifier: Modifier = Modifier, rest: Color = Nocturne.faint) {
     val time by rememberInfiniteTransition(label = "wave").animateFloat(
         0f, 1f, infiniteRepeatable(tween(4_000, easing = LinearEasing), RepeatMode.Restart), label = "wave time",
     )
@@ -104,40 +61,34 @@ fun Waveform(progress: Float, active: Boolean, tint: Color, modifier: Modifier =
             val height = max(3.dp.toPx(), value * maxHeight) * sway
             val left = i * (barWidth + gap)
             drawRoundRect(
-                color = if (i.toFloat() / BARS.size < progress) tint else Nocturne.faint,
+                color = if (i.toFloat() / BARS.size < progress) tint else rest,
                 topLeft = Offset(left, (size.height - height) / 2f), size = Size(barWidth, height), cornerRadius = CornerRadius(2.dp.toPx()),
             )
         }
     }
 }
 
-/** A surface whose top corner glows in the kind's colour, edged in it. */
-fun Modifier.kindTile(kind: Kind?, shape: Shape = RoundedCornerShape(20.dp), glow: Float = 0.3f): Modifier {
+/** A white card, edged in the rubric's colour; selected or on air, it is filled with a tint of it. */
+fun Modifier.kindTile(kind: Kind?, shape: Shape = RoundedCornerShape(20.dp), glow: Float = 0f): Modifier {
     val color = Nocturne.kind(kind)
     return this
-        .background(Brush.linearGradient(listOf(lerp(Nocturne.surface, color, glow), Nocturne.surface, Nocturne.surface), start = Offset(Float.POSITIVE_INFINITY, 0f), end = Offset(0f, Float.POSITIVE_INFINITY)), shape)
-        .border(1.dp, color.copy(alpha = 0.45f), shape)
+        .background(lerp(Nocturne.surface, color, glow * 0.4f), shape)
+        .border(if (glow > 0.2f) 2.dp else 1.dp, if (glow > 0.2f) color else Nocturne.divider, shape)
 }
 
 /**
- * The cover of an item: its album image when it has songs, otherwise a tile in the kind's colour with
- * soft rings and the icon, so every item has a face. The tile shows while an image loads or if it fails.
+ * The cover of an item: its album image when it has songs, otherwise a tile filled with the rubric's
+ * colour, rings in one corner and the icon, so every item has a face. The tile shows while an image loads or if it fails.
  */
 @Composable
 fun Cover(look: Look?, imageUrl: String?, extent: Dp, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(extent * 0.22f)
     val color = Nocturne.kind(look?.kind)
-    Box(
-        modifier
-            .size(extent)
-            .clip(shape)
-            .background(Brush.linearGradient(listOf(lerp(Nocturne.bgGlow, color, 0.7f), lerp(Nocturne.bg, color, 0.22f))))
-            .border(1.dp, color.copy(alpha = 0.5f), shape),
-        contentAlignment = Alignment.Center,
-    ) {
+    val on = Nocturne.onKind(look?.kind)
+    Box(modifier.size(extent).clip(shape).background(color), contentAlignment = Alignment.Center) {
         Canvas(Modifier.matchParentSize()) {
-            val corner = Offset(size.width * 0.85f, size.height * 0.15f)
-            for (ring in 1..3) drawCircle(Color.White.copy(alpha = 0.07f), radius = size.width * 0.28f * ring, center = corner, style = Stroke(1.dp.toPx()))
+            val corner = Offset(size.width * 0.9f, size.height * 0.1f)
+            for (ring in 1..3) drawCircle(on.copy(alpha = 0.22f), radius = size.width * 0.26f * ring, center = corner, style = Stroke(1.dp.toPx()))
         }
         Text(look?.icon ?: "📻", fontSize = (extent.value * 0.4f).sp)
         if (imageUrl != null) {
@@ -146,28 +97,37 @@ fun Cover(look: Look?, imageUrl: String?, extent: Dp, modifier: Modifier = Modif
     }
 }
 
-/** An emoji icon on a round badge in the kind's colour. */
+/** An emoji icon on a rounded square filled with the rubric's colour. */
 @Composable
 fun KindBadge(icon: String, kind: Kind?, size: Dp = 36.dp, modifier: Modifier = Modifier) {
-    val color = Nocturne.kind(kind)
     Box(
-        modifier
-            .size(size)
-            .background(lerp(Nocturne.surface, color, 0.32f), RoundedCornerShape(size * 0.36f))
-            .border(1.dp, color.copy(alpha = 0.6f), RoundedCornerShape(size * 0.36f)),
+        modifier.size(size).background(Nocturne.kind(kind), RoundedCornerShape(size * 0.28f)),
         contentAlignment = Alignment.Center,
     ) { Text(icon, fontSize = (size.value * 0.46f).sp) }
 }
 
-/** The kind's name as a small pill, e.g. «☕ Aktuell». */
+/** A small pill filled with the rubric's colour, e.g. «☕ Aktuell». */
 @Composable
 fun KindChip(text: String, kind: Kind?, modifier: Modifier = Modifier) {
-    val color = Nocturne.kind(kind)
     Text(
-        text, style = MaterialTheme.typography.labelMedium, color = Nocturne.text,
+        text, style = MaterialTheme.typography.labelMedium, color = Nocturne.onKind(kind),
         modifier = modifier
-            .background(color.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
-            .border(1.dp, color.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
+            .background(Nocturne.kind(kind), RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+/** The big uppercase title at the top of a tab: «PROGRAMM», «ARCHIV». */
+@Composable
+fun ScreenTitle(text: String, modifier: Modifier = Modifier) {
+    Text(text.uppercase(), style = display(44), color = Nocturne.text, maxLines = 1, modifier = modifier)
+}
+
+/** The rubric's name in small capitals, in its label colour. */
+@Composable
+fun RubricLabel(kind: Kind?, extra: String? = null, color: Color = Nocturne.kindLabel(kind)) {
+    Text(
+        listOfNotNull(kind?.label, extra).joinToString(" · ").uppercase(),
+        style = Kicker.copy(fontSize = 11.sp, letterSpacing = 1.sp), color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
     )
 }

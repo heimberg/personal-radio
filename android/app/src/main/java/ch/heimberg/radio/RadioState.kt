@@ -74,6 +74,12 @@ class RadioState {
     var starts by mutableStateOf<Map<String, Instant>>(emptyMap())
     var failures by mutableStateOf(FailureSummary())
     var blocks by mutableStateOf<List<BlockView>>(emptyList())
+    // «＋ Einfügen» and «Für dich»: favourites and how often each block was inserted, kept on this phone only.
+    var catalogOpen by mutableStateOf(false)
+    var catalogQuery by mutableStateOf("")
+    var catalogRubric by mutableStateOf(Kind.NEWS)
+    var favorites by mutableStateOf<Set<String>>(emptySet())
+    var usage by mutableStateOf<Map<String, Int>>(emptyMap())
     /** Running series (and recently ended ones), shown in «Programm». */
     var series by mutableStateOf<List<SeriesInfo>>(emptyList())
     var loaded by mutableStateOf(false)
@@ -224,6 +230,8 @@ interface RadioActions {
     fun playNext(item: TimelineItem)
     fun shift(item: TimelineItem, offset: Int)
     fun chooseBlock(block: BlockView)
+    /** ⭐ in the catalog: favourites come first there and in «Für dich». */
+    fun toggleFavorite(block: BlockView)
     fun addBlock(block: BlockView, subject: String)
     fun stopSeries(series: SeriesInfo)
 

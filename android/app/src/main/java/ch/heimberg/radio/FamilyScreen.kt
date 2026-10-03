@@ -69,7 +69,7 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(bottom = 12.dp)) {
             item(key = "head") {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
-                    Text("Familie", style = MaterialTheme.typography.headlineSmall)
+                    ScreenTitle("Familie")
                     Text("Beiträge teilst du über ihr Menü im Programm oder Archiv.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 }
             }

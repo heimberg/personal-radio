@@ -45,6 +45,14 @@
         <item name="editTextStyle">@style/Widget.PersonalRadio.Input</item>
     </style>
 
+    <!-- The Compose screens are light («Magazin»): the paper ground shows while the app starts, with dark bar icons. -->
+    <style name="Theme.PersonalRadio.Paper">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
     <!-- Buttons are outlined, never filled: a divider edge, or the accent for the primary action. -->
     <style name="Widget.PersonalRadio.Button" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:minHeight">@dimen/touch_target</item>

@@ -42,7 +42,7 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "head") {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
-                    Text("Archiv", style = MaterialTheme.typography.headlineSmall)
+                    ScreenTitle("Archiv")
                     // The productions, or the reading list (what was kept with «Merken»).
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         FilterChip(selected = !state.readingList, onClick = { state.readingList = false }, label = { Text("Gehört") })

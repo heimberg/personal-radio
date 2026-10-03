@@ -1,29 +1,38 @@
 package ch.heimberg.radio.core
 
 /**
- * What kind of content an item or block is, with its colour and icon, so the program reads at a
- * glance. The colours are shared with the web studio (src/domain/kinds.ts); they are always paired with an icon.
+ * The five rubrics of the program, each with its colour, the colour of text on it ([onArgb]) and a
+ * darker shade for labels on the light ground ([labelArgb]). Every block and item belongs to one, so the
+ * program and the catalog read at a glance; the colour always comes with a name or an icon.
  */
-enum class Kind(val label: String, val argb: Long) {
-    NEWS("Aktuell", 0xFFD08A2A),
-    DISCOVER("Wissen", 0xFF2BA57A),
-    WEATHER("Wetter", 0xFF5B95F5),
-    MUSIC("Musik", 0xFFD06BD8),
-    SURPRISE("Überraschung", 0xFFF0704F),
+enum class Kind(val label: String, val hint: String, val argb: Long, val onArgb: Long, val labelArgb: Long) {
+    NEWS("Aktuell", "Was heute passiert", 0xFFD93A24, 0xFFFFFFFF, 0xFFB32E1B),
+    DISCOVER("Wissen", "Verstehen und entdecken", 0xFF1F5FD0, 0xFFFFFFFF, 0xFF1F5FD0),
+    MUSIC("Musik", "Über Spotify", 0xFF7A3FD1, 0xFFFFFFFF, 0xFF7A3FD1),
+    STORY("Geschichten", "Erzählt in Folgen", 0xFFF2A900, 0xFF16171B, 0xFF8A6100),
+    SPECIAL("Spezial", "Überraschend und persönlich", 0xFF0B7F5E, 0xFFFFFFFF, 0xFF0B7F5E),
 }
 
 data class Look(val kind: Kind, val icon: String)
 
 object Looks {
     private val BLOCKS = mapOf(
-        "morgen" to Look(Kind.NEWS, "☕"), "schlagzeilen" to Look(Kind.NEWS, "📰"), "wetter" to Look(Kind.WEATHER, "☀️"),
+        // Aktuell
+        "morgen" to Look(Kind.NEWS, "☕"), "schlagzeilen" to Look(Kind.NEWS, "📰"), "wetter" to Look(Kind.NEWS, "☀️"),
+        "weltpresse" to Look(Kind.NEWS, "🌐"), "streitgespraech" to Look(Kind.NEWS, "⚖️"), "dranbleiben" to Look(Kind.NEWS, "📌"),
+        // Wissen
         "entdeckung" to Look(Kind.DISCOVER, "🔭"), "hintergrund" to Look(Kind.DISCOVER, "🎙️"), "vertiefung" to Look(Kind.DISCOVER, "🔍"),
+        "serie" to Look(Kind.DISCOVER, "📚"), "konzerte" to Look(Kind.DISCOVER, "🎟️"), "nachfrage" to Look(Kind.DISCOVER, "❓"),
+        "ortsgeschichte" to Look(Kind.DISCOVER, "🏰"),
+        // Musik
         "kuenstler" to Look(Kind.MUSIC, "🎸"), "genre" to Look(Kind.MUSIC, "🎛️"), "themenstunde" to Look(Kind.MUSIC, "🌙"),
         "musik" to Look(Kind.MUSIC, "🎵"), "neu" to Look(Kind.MUSIC, "✨"), "song" to Look(Kind.MUSIC, "🎶"),
-        "ueberraschung" to Look(Kind.SURPRISE, "🎲"), "zufallsfund" to Look(Kind.SURPRISE, "🧭"), "heute-vor" to Look(Kind.SURPRISE, "📜"),
-        "um-die-ecke" to Look(Kind.SURPRISE, "📍"), "wort-des-tages" to Look(Kind.SURPRISE, "🔤"), "frage-des-tages" to Look(Kind.SURPRISE, "❓"),
-        "musik-wildcard" to Look(Kind.SURPRISE, "🌍"), "ueberraschungsstunde" to Look(Kind.SURPRISE, "🎭"),
-        "serie" to Look(Kind.DISCOVER, "📚"), "geschichte" to Look(Kind.DISCOVER, "📖"),
+        // Geschichten
+        "geschichte" to Look(Kind.STORY, "📖"), "mitmach" to Look(Kind.STORY, "🧩"),
+        // Spezial
+        "ueberraschung" to Look(Kind.SPECIAL, "🎲"), "rueckblick" to Look(Kind.SPECIAL, "🗓️"), "zufallsfund" to Look(Kind.SPECIAL, "🧭"),
+        "heute-vor" to Look(Kind.SPECIAL, "📜"), "um-die-ecke" to Look(Kind.SPECIAL, "📍"), "wort-des-tages" to Look(Kind.SPECIAL, "🔤"),
+        "frage-des-tages" to Look(Kind.SPECIAL, "💡"), "musik-wildcard" to Look(Kind.SPECIAL, "🌍"), "ueberraschungsstunde" to Look(Kind.SPECIAL, "🎭"),
     )
     private val SPOKEN = Look(Kind.DISCOVER, "🗞️")
     private val MUSIC = Look(Kind.MUSIC, "🎵")
@@ -31,8 +40,14 @@ object Looks {
     /** A program item: songs and blocks by their ID, the owner's own shows by whether they bring music. */
     fun of(item: TimelineItem): Look = when {
         item.showId == "_musik" -> BLOCKS.getValue("song")
-        item.showId.startsWith("_series:") -> BLOCKS.getValue(if (item.series?.kind == "geschichte") "geschichte" else "serie")
-        item.surprise && !item.showId.startsWith("_block:") -> Look(Kind.SURPRISE, "🎲")
+        item.showId.startsWith("_series:") -> BLOCKS.getValue(
+            when {
+                item.series?.kind != "geschichte" -> "serie"
+                item.choice != null -> "mitmach"
+                else -> "geschichte"
+            },
+        )
+        item.surprise && !item.showId.startsWith("_block:") -> BLOCKS.getValue("ueberraschung")
         item.showId.startsWith("_block:") -> BLOCKS[item.showId.removePrefix("_block:")] ?: if (item.hasMusic) MUSIC else SPOKEN
         item.hasMusic -> MUSIC
         else -> SPOKEN

@@ -35,3 +35,26 @@ class RadioSettings(context: Context) {
         const val KEY_SPOTIFY = "spotifyLinked"
     }
 }
+
+/** The catalog's favourites and how often each block was inserted: only on this phone, for «Für dich». */
+class CatalogPrefs(context: Context) {
+    private val prefs = context.getSharedPreferences("catalog", Context.MODE_PRIVATE)
+
+    var favorites: Set<String>
+        get() = prefs.getStringSet(KEY_FAVORITES, emptySet())?.toSet() ?: emptySet()
+        set(value) { prefs.edit().putStringSet(KEY_FAVORITES, value).apply() }
+
+    val usage: Map<String, Int>
+        get() = prefs.all.mapNotNull { (key, value) -> if (key.startsWith(USE) && value is Int) key.removePrefix(USE) to value else null }.toMap()
+
+    /** Counts one insertion of [blockId]; returns the new counts. */
+    fun used(blockId: String): Map<String, Int> {
+        prefs.edit().putInt(USE + blockId, prefs.getInt(USE + blockId, 0) + 1).apply()
+        return usage + (blockId to prefs.getInt(USE + blockId, 0))
+    }
+
+    private companion object {
+        const val KEY_FAVORITES = "favorites"
+        const val USE = "use:"
+    }
+}

@@ -53,7 +53,7 @@ fun DayPlanScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = actions::closeDayPlan) { Icon(painterResource(R.drawable.ic_arrow_left), "Zurück zum Programm") }
-            Text("Tagesplan", style = MaterialTheme.typography.headlineSmall)
+            ScreenTitle("Tagesplan")
             Spacer(Modifier.weight(1f))
             Button(onClick = actions::saveDayPlan, enabled = plan != null && state.dayPlanDirty && !state.dayPlanSaving) { Text("Speichern") }
         }

@@ -2,7 +2,7 @@ package ch.heimberg.radio
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,18 +46,22 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.BlockView
+import ch.heimberg.radio.core.ForYou
 import ch.heimberg.radio.core.Labels
 import ch.heimberg.radio.core.Looks
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.TimelineItem
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
 
 /**
- * «Programm»: the building blocks to insert, then «Jetzt · Gleich · Später». Tap: hear it now (or its options); long press: options;
+ * «Programm»: «＋ Einfügen» for the whole catalog, «Für dich» with four blocks that fit now, then the
+ * Sendeplan as one list in the rubrics' colours. Tap: hear it now (or its options); long press: options;
  * swipe to the left: out of the program.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,15 +71,10 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
     PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = actions::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
-            if (state.blocks.isNotEmpty()) item(key = "blocks") { Blocks(state.blocks, actions) }
-            val running = state.series.filter { it.active }
-            if (running.isNotEmpty()) {
-                section("Serien")
-                items(running, key = { "series-${it.id}" }) { SeriesRow(it, actions) }
-            }
-            section("Dranbleiben")
-            item(key = "follows") { FollowedTopics(state, actions) }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
+            if (state.blocks.isNotEmpty()) item(key = "for-you") { ForYouRow(state, actions) }
+            val planned = listOfNotNull(sections.now, sections.next) + sections.later
+            item(key = "plan-head") { PlanHead(planned) }
             if (state.open.isEmpty()) {
                 item(key = "empty") {
                     Text(
@@ -83,33 +83,31 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                     )
                 }
             }
-            sections.now?.let { now ->
-                section("Jetzt")
-                item(key = now.id) { NowRow(now, state) }
-            }
-            sections.next?.let { next ->
-                section("Gleich")
-                item(key = next.id) { SwipeRow(next, state, actions) }
-            }
-            if (sections.later.isNotEmpty()) {
-                section("Später")
-                items(sections.later, key = { it.id }) { SwipeRow(it, state, actions) }
-            }
+            sections.now?.let { now -> item(key = now.id) { NowRow(now, state, actions) } }
+            sections.next?.let { next -> item(key = next.id) { SwipeRow(next, state, actions) } }
+            items(sections.later, key = { it.id }) { SwipeRow(it, state, actions) }
             if (state.open.size > 1) {
                 item(key = "hint") {
                     Text(
                         "Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen (rückgängig machbar)",
-                        style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(20.dp),
+                        style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     )
                 }
             }
+            val running = state.series.filter { it.active }
+            if (running.isNotEmpty()) {
+                section("Serien")
+                items(running, key = { "series-${it.id}" }) { SeriesRow(it, actions) }
+            }
+            section("Dranbleiben")
+            item(key = "follows") { FollowedTopics(state, actions) }
         }
     }
 }
 
 private fun LazyListScope.section(title: String) {
     item(key = "section-$title") {
-        Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.accentLight, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp))
+        Text(title.uppercase(), style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
     }
 }
 
@@ -117,15 +115,56 @@ private fun LazyListScope.section(title: String) {
 private fun ProgramHead(state: RadioState, actions: RadioActions) {
     val ready = state.open.count { it.state == "ready" }
     Column {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
-            Text("Programm", style = MaterialTheme.typography.headlineSmall)
-            Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                ScreenTitle("Programm")
+                Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+            }
+            InsertPill(onClick = { state.catalogOpen = true }, modifier = Modifier.padding(bottom = 4.dp))
         }
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { AssistChip(onClick = actions::openDayPlan, label = { Text("🗓  Tagesplan") }) }
             item { AssistChip(onClick = actions::shuffle, label = { Text("🔀  Mischen") }, enabled = state.open.size > 1) }
             item { AssistChip(onClick = actions::addSong, label = { Text("♫  Song anhängen") }) }
             item { AssistChip(onClick = actions::plan, label = { Text("⚡  Jetzt planen") }) }
+        }
+    }
+}
+
+/** «Für dich · Samstagmorgen»: four blocks for now, from the time of day, favourites and habits. */
+@Composable
+private fun ForYouRow(state: RadioState, actions: RadioActions) {
+    val now = LocalDateTime.now()
+    val picks = remember(state.blocks, state.usage, state.favorites, now.hour, now.dayOfYear) {
+        ForYou.picks(state.blocks, now.hour, now.dayOfWeek.value, now.dayOfYear, state.usage, state.favorites)
+    }
+    if (picks.isEmpty()) return
+    Column {
+        Text(
+            "FÜR DICH · ${ForYou.moment(now.hour, now.dayOfWeek.value).uppercase()}", style = Kicker, color = Nocturne.muted,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+        )
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (pick in picks) {
+                PickTile(pick.block.name, pick.why, Looks.ofBlock(pick.block).kind, Modifier.weight(1f)) { actions.chooseBlock(pick.block) }
+            }
+            // Fewer than four: the tiles keep their width.
+            repeat(ForYou.LIMIT - picks.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** «Sendeplan» with a bar of what comes, each rubric as long as its minutes. */
+@Composable
+private fun PlanHead(planned: List<TimelineItem>) {
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("SENDEPLAN", style = Kicker, color = Nocturne.muted)
+        Spacer(Modifier.width(10.dp))
+        Row(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (item in planned.take(24)) {
+                Box(Modifier.weight(item.estimatedMinutes.toFloat().coerceAtLeast(1f)).fillMaxHeight().background(Nocturne.kind(Looks.of(item).kind)))
+            }
+            if (planned.isEmpty()) Box(Modifier.weight(1f).fillMaxHeight().background(Nocturne.divider))
         }
     }
 }
@@ -153,15 +192,13 @@ private fun SeriesRow(series: SeriesInfo, actions: RadioActions) {
         Modifier
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(Nocturne.surface)
             .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(3.dp).height(40.dp).background(Nocturne.kind(look.kind), RoundedCornerShape(2.dp)))
-        Spacer(Modifier.width(10.dp))
-        Text(look.icon, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(10.dp))
+        KindBadge(look.icon, look.kind, 40.dp)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(series.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val current = series.episodes.getOrNull((series.scheduled - 1).coerceAtLeast(0))
@@ -180,30 +217,11 @@ private fun SeriesRow(series: SeriesInfo, actions: RadioActions) {
     }
 }
 
-/** The playing item: highlighted, with its progress. */
+/** The playing item: its time in red, «läuft», and its progress. */
 @Composable
-private fun NowRow(item: TimelineItem, state: RadioState) {
-    val look = Looks.of(item)
-    Column(
-        Modifier
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .fillMaxWidth()
-            .kindTile(look.kind, RoundedCornerShape(18.dp), glow = 0.35f)
-            .padding(14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Cover(look, state.coverUrl.takeIf { item.id == state.currentItemId } ?: item.coverUrl, 48.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(meta(item), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        LinearProgressIndicator(
-            progress = { state.progress }, color = Nocturne.kind(look.kind), trackColor = Nocturne.faint.copy(alpha = 0.4f),
-            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-        )
+private fun NowRow(item: TimelineItem, state: RadioState, actions: RadioActions) {
+    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        ItemRow(item, state.starts[item.id], onTap = { state.tab = Tab.LISTEN }, onLongPress = { state.actionsFor = item }, live = true, progress = state.progress)
     }
 }
 
@@ -222,49 +240,71 @@ private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioAction
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         backgroundContent = {
             Box(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(Nocturne.danger.copy(alpha = 0.25f)).padding(horizontal = 20.dp),
+                Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Nocturne.danger.copy(alpha = 0.18f)).padding(horizontal = 20.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) { Text("Entfernen", style = MaterialTheme.typography.labelLarge, color = Nocturne.danger) }
         },
     ) { ItemRow(item, state.starts[item.id], onTap = { if (item.isPlayable) actions.play(item) else state.actionsFor = item }, onLongPress = { state.actionsFor = item }) }
 }
 
-/** One row of the program or the archive: time, kind, title, show and state. */
+/**
+ * One row of the program or the archive: the time big, the rubric as a bar as long as the item, its name,
+ * the title and what it is. [live]: what plays now, with its [progress].
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ItemRow(item: TimelineItem, start: Instant?, onTap: () -> Unit, onLongPress: () -> Unit, timeLabel: String? = null) {
+fun ItemRow(
+    item: TimelineItem, start: Instant?, onTap: () -> Unit, onLongPress: () -> Unit,
+    timeLabel: String? = null, live: Boolean = false, progress: Float? = null,
+) {
     val look = Looks.of(item)
-    Row(
+    val color = Nocturne.kind(look.kind)
+    Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(Nocturne.surface)
+            .then(if (live) Modifier.border(2.dp, color, RoundedCornerShape(16.dp)) else Modifier)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Box(Modifier.width(3.dp).height(40.dp).background(Nocturne.kind(look.kind), RoundedCornerShape(2.dp)))
-        Spacer(Modifier.width(10.dp))
-        Text(timeLabel ?: start?.let(clock::format) ?: "", style = MaterialTheme.typography.labelMedium, color = Nocturne.text, modifier = Modifier.width(42.dp))
-        Cover(look, item.coverUrl, 40.dp)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(look.kind.label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Nocturne.kindLabel(look.kind))
-            Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(meta(item), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            item.error?.let { Text(Labels.error(it), style = MaterialTheme.typography.bodySmall, color = Nocturne.danger, maxLines = 2) }
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.width(58.dp)) {
+                Text(timeLabel ?: start?.let(clock::format) ?: "", style = display(22), color = if (live) Nocturne.live else Nocturne.text, maxLines = 1)
+                Text(if (live) "läuft" else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+            }
+            val barHeight = (14 + item.estimatedMinutes * 4).toInt().coerceIn(30, 84).dp
+            Box(Modifier.width(6.dp).height(barHeight).background(color, RoundedCornerShape(3.dp)))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                RubricLabel(look.kind)
+                Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(meta(item), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                item.error?.let { Text(Labels.error(it), style = MaterialTheme.typography.bodySmall, color = Nocturne.danger, maxLines = 2) }
+            }
+            item.coverUrl?.let {
+                Spacer(Modifier.width(8.dp))
+                Cover(look, it, 40.dp)
+            }
+            Spacer(Modifier.width(6.dp))
+            StateIcon(item)
         }
-        Spacer(Modifier.width(6.dp))
-        StateIcon(item)
+        if (progress != null) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { progress }, color = color, trackColor = Nocturne.divider, drawStopIndicator = {},
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            )
+        }
     }
 }
 
 @Composable
 private fun StateIcon(item: TimelineItem) {
     val (icon, color) = when {
-        item.isPlayable || (!item.isOpen && item.hasAudio) -> R.drawable.ic_play to Nocturne.accentLight
+        item.isPlayable || (!item.isOpen && item.hasAudio) -> R.drawable.ic_play to Nocturne.text
         item.state == "voicing" -> R.drawable.ic_waveform to Nocturne.accentLight
-        item.state == "ready" -> R.drawable.ic_check_circle to Nocturne.accentLight
+        item.state == "ready" -> R.drawable.ic_check_circle to Nocturne.text
         else -> R.drawable.ic_clock to Nocturne.faint
     }
     Icon(painterResource(icon), Labels.state(item.state), Modifier.size(18.dp), tint = color)
@@ -274,32 +314,6 @@ private fun meta(item: TimelineItem): String {
     val tracks = item.parts.count { it.isTrack }.takeIf { it > 0 }?.let { " · $it Songs" } ?: ""
     val surprise = if (item.surprise) " · 🎲" else ""
     val shared = item.sharedBy?.let { " · von $it" } ?: ""
-    return "${item.showName} · ${Labels.state(item.state)}$tracks$surprise$shared"
-}
-
-/** The building blocks: one tap puts one at the end of the program. */
-@Composable
-private fun Blocks(blocks: List<BlockView>, actions: RadioActions) {
-    if (blocks.isEmpty()) return
-    Text("Einfügen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 8.dp))
-    Text("Antippen – kommt ans Ende. Lange drücken auf einen Beitrag: vorziehen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(blocks, key = { it.id }) { block ->
-            val look = Looks.ofBlock(block)
-            Column(
-                Modifier
-                    .width(148.dp)
-                    .height(132.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .kindTile(look.kind, RoundedCornerShape(18.dp))
-                    .clickable { actions.chooseBlock(block) }
-                    .padding(12.dp),
-            ) {
-                KindBadge(look.icon, look.kind)
-                Spacer(Modifier.height(8.dp))
-                Text(if (block.music) "${block.name} ♫" else block.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(block.description, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
+    val minutes = item.estimatedMinutes.roundToInt().takeIf { it > 0 }?.let { " · $it Min." } ?: ""
+    return "${item.showName}$minutes$tracks$surprise$shared"
 }

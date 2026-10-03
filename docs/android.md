@@ -20,7 +20,7 @@ The product for listening: native playback of the server-produced program, lock-
 - **👍/👎 without opening the app:** the media notification, the lock screen and Android Auto show thumbs next to the transport controls (custom session commands `LIKE`/`DISLIKE`).
 - **Android Auto:** the playback service is a `MediaLibraryService`. Android Auto browses "Als Nächstes" (ready items) and "Archiv"; a chosen production plays at once and the program continues after it.
 - **Pull to refresh** in the program, the archive and the text view; light haptic feedback when rating, adding and swapping.
-- **Arranging the program:** «Programm» shows «Jetzt · Gleich · Später». Swiping a row to the left takes it out of the program (`POST /api/timeline/{id}/remove`); a long press opens its options: «Jetzt hören», «Als Nächstes», «Nach vorne», «Nach hinten», «Anders», «Text und Quellen», «Aus dem Programm nehmen». A new order goes to the server (`POST /api/timeline/arrange`) and the player follows it at once. The times next to the rows say when each item would start from now (the rest of the playing item, then the estimated lengths), and move on every minute. «Mischen», «Song anhängen» and «Jetzt planen» sit above the list; failed productions show there with «Erneut versuchen» (produces them again from scratch) and «Aufräumen» (removes them).
+- **Arranging the program:** «Programm» shows the Sendeplan as one list: what plays now (time in red, «läuft», progress), then everything that follows, each row with its start time, a bar in its rubric colour as long as the item, the rubric, title and minutes; a coloured strip next to «SENDEPLAN» shows the coming program at a glance. Swiping a row to the left takes it out of the program (`POST /api/timeline/{id}/remove`); a long press opens its options: «Jetzt hören», «Als Nächstes», «Nach vorne», «Nach hinten», «Anders», «Text und Quellen», «Aus dem Programm nehmen». A new order goes to the server (`POST /api/timeline/arrange`) and the player follows it at once. The times next to the rows say when each item would start from now (the rest of the playing item, then the estimated lengths), and move on every minute. «Mischen», «Song anhängen» and «Jetzt planen» sit above the list; failed productions show there with «Erneut versuchen» (produces them again from scratch) and «Aufräumen» (removes them).
 - **Cleaning up the archive:** the options of a production in the archive delete it with its audio (`POST /api/timeline/{id}/delete`).
 - **Listen freely:** a tap on a finished item in the program plays it right away. «Archiv» lists everything that can still be heard, grouped by day: new, unheard (left the program after 12 hours) and heard productions, for 7 days after they left the program. The chosen production plays after the current step; the program then continues, and an interrupted item comes back later from the start. Listening again does not count as a new "complete" or "skip"; 👍/👎 still count.
 - **«Heute» (mood):** a row of chips under the header on «Hören»: 😌 Eher ruhig, 🧠 Mehr Wissen, 🎵 Mehr Musik, 📰 Was läuft?, 🎲 Überrasch mich. One tap sets the mood until midnight (`POST /api/mood`), a second tap clears it. The planner reads the day plan through the mood (`src/domain/mood.ts`); the saved plan is not changed, and items already planned stay.
@@ -65,21 +65,28 @@ Repository secrets: `RADIO_KEYSTORE_B64`, `RADIO_KEYSTORE_PASSWORD`, `RADIO_KEY_
 
 ## Design
 
-The app follows «Nocturne Spektrum»: the Nocturne ground (dark blue-grey, Inter at 400/500, a blurple accent for the station itself, outlined buttons) plus one colour per kind of content, always paired with an icon and a name:
+The app follows «Magazin»: a light paper ground (`#F3F4F0`), ink (`#16171B`) for text, the play button, the active tab and the «Einfügen» pill, big condensed uppercase titles (Archivo Condensed Black) over Figtree for everything that is read, and five rubrics whose colours fill whole cards, always with a name or an icon:
 
-| Kind | Colour | Examples |
-| --- | --- | --- |
-| Aktuell | `#D08A2A` | Morgenbriefing ☕, Schlagzeilen 📰 |
-| Wissen | `#2BA57A` | Entdeckung 🔭, Hintergrund 🎙️, Vertiefung 🔍, Wissensserie 📚, Fortsetzungsgeschichte 📖 |
-| Wetter | `#5B95F5` | Wetter ☀️ |
-| Musik | `#D06BD8` | Song 🎶, music hours, Musikblock 🎵, Neu ✨ |
-| Überraschung | `#F0704F` | 🎲 and the surprise blocks |
+| Rubric | Colour | Text on it | Blocks |
+| --- | --- | --- | --- |
+| Aktuell | `#D93A24` | white | Morgenbriefing ☕, Schlagzeilen 📰, Wetter ☀️, Weltpresse 🌐, Streitgespräch ⚖️, Dranbleiben 📌 |
+| Wissen | `#1F5FD0` | white | Entdeckung 🔭, Hintergrund 🎙️, Vertiefung 🔍, Wissensserie 📚, Konzerte 🎟️, Nachgefragt ❓, Ortsgeschichte 🏰, own spoken shows |
+| Musik | `#7A3FD1` | white | Song 🎶, Musikblock 🎵, Künstler-, Genre- and Themen-Stunde, Neu ✨, own music shows |
+| Geschichten | `#F2A900` | ink | Mitmach-Geschichte 🧩, Fortsetzungsgeschichte 📖 |
+| Spezial | `#0B7F5E` | white | Überraschung 🎲 and the surprise blocks, Wochenrückblick 🗓️ |
 
-The mapping lives in `core/Kinds.kt` (the colours are shared with `src/domain/kinds.ts` of the web studio); `Visuals.kt` turns a kind into tinted tiles, badges and chips. The player is a card tinted in the playing item's colour, with a glowing orb (`Orb`) and a waveform of the item's progress (`Waveform`, display only) in the same colour, and a chip naming the kind. Every item has a cover (`Cover` in `Visuals.kt`): the album image of its song or its first song (Spotify's image CDN, `imageUrl` on track parts, loaded with Coil without any token), otherwise a tile in the kind's colour with soft rings and the icon. The playing song's cover also goes into the media metadata, so the notification and the lock screen show it. Blocks are tinted tiles with an icon badge; every program row has a colour bar, an icon badge and the kind above its title.
+The mapping lives in `core/Kinds.kt` (`Kind` with its colour, the colour of text on it and a darker label colour for the light ground). The web studio keeps its own kinds on its dark ground (`src/domain/kinds.ts`). `Visuals.kt` turns a rubric into filled badges, chips and covers, and has `ScreenTitle` and `RubricLabel`. The player is a big card in the playing item's rubric colour: rubric and show at the top, the title split at its first «:» or «–» (`Headline` in core) with the head set big and condensed, rings or the album cover in the corner, and a waveform of the progress (`Waveform`, display only) in the card's text colour; below it the controls with a round ink play button that gives way a little under the finger. Before anything plays, an ink card says what is ready. «Gleich» is a card in the next item's rubric colour with its time and «Anders». Every item has a cover (`Cover`): the album image of its song or its first song (Spotify's image CDN, `imageUrl` on track parts, loaded with Coil without any token), otherwise a tile filled with the rubric's colour, rings and the icon. The playing song's cover also goes into the media metadata, so the notification and the lock screen show it.
 
-- Screens: Jetpack Compose with Material 3 (`MainActivity`, `RadioApp.kt` and one file per tab). The tokens are in `RadioTheme.kt` (`Nocturne`: ground, surface, text, accent, the kind colours from `core/Kinds.kt`) and the type scale (Inter 400 and 500). Take colours from there instead of hard-coding them.
-- The setup and text screens are still views: their tokens are in `res/values/colors.xml`, `dimens.xml` and `themes.xml` (same values).
-- Assets: Inter 4.1 (Latin subset, SIL OFL 1.1) in `res/font`, Phosphor icons (MIT) as vector drawables `ic_*`. License texts are in `app/licenses/`.
+**Finding a block.** «Programm» has two ways in, instead of a long strip of tiles:
+
+- **«Für dich · Samstagmorgen»:** four tiles in their rubric colours that fit now (`ForYou` in `core/Catalog.kt`): one for the time of day (mornings the Morgenbriefing, evenings music or a story, Sundays the Wochenrückblick), up to two ⭐ favourites, the blocks inserted most often («OFT»), and one not tried yet («NEU», changing daily). Each tile says why it is there; one tap inserts the block.
+- **«＋ Einfügen»:** the whole catalog in a sheet (`CatalogUi.kt`): a search over name, description and rubric (case and umlauts do not matter, `Catalog.search`), five rubric tabs with their number of blocks, and a list per rubric with icon, description, minutes and a ⭐. Favourites come first. A tap closes the sheet and inserts the block (asking for its word first where it takes one).
+
+Favourites and how often each block was inserted are kept only on the phone (`CatalogPrefs`, shared preferences «catalog»); nothing of it goes to the server. Blocks switched off under «Funktionen» do not appear: the server leaves them out of `GET /api/blocks`.
+
+- Screens: Jetpack Compose with Material 3 (`MainActivity`, `RadioApp.kt` and one file per tab). The tokens are in `RadioTheme.kt` (the object is still called `Nocturne`: ground, surface, ink, links, the rubric colours from `core/Kinds.kt`), with the type scale (Figtree 400–700), `display(size)` for the condensed titles and `Kicker` for small capitals above sections. Take colours from there instead of hard-coding them. `MainActivity` uses the light window theme `Theme.PersonalRadio.Paper` and dark system bar icons.
+- The setup and text screens are still views and still dark (Nocturne): their tokens are in `res/values/colors.xml`, `dimens.xml` and `themes.xml`.
+- Assets: Figtree (400, 500, 600, 700) and Archivo Condensed Black (static instances of the variable fonts, Latin subset, SIL OFL 1.1) for the Compose screens, Inter 4.1 (Latin subset, SIL OFL 1.1) for the view screens, all in `res/font`; Phosphor icons (MIT) as vector drawables `ic_*`. License texts are in `app/licenses/`.
 - Motion: the orb breathes and the waveform sways only while audio plays.
 
 ## Build and test
