@@ -75,6 +75,21 @@ export class StationStore {
       ON CONFLICT(owner_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`).bind(owner, now.toISOString()).run();
   }
 
+  /** A cached research result no older than [maxMinutes], or null. */
+  async cached(owner: string, key: string, maxMinutes: number, now: Date): Promise<string | null> {
+    const row = await this.db.prepare('SELECT value_json, created_at FROM research_cache WHERE owner_id = ? AND cache_key = ?').bind(owner, key)
+      .first<{ value_json: string; created_at: string }>();
+    return row && now.getTime() - Date.parse(row.created_at) <= maxMinutes * 60_000 ? row.value_json : null;
+  }
+
+  /** Keeps a research result; entries older than a day go at the same time. */
+  async cache(owner: string, key: string, value: string, now: Date) {
+    await this.db.prepare('DELETE FROM research_cache WHERE owner_id = ? AND created_at < ?').bind(owner, new Date(now.getTime() - 86_400_000).toISOString()).run();
+    await this.db.prepare(`INSERT INTO research_cache (owner_id, cache_key, created_at, value_json) VALUES (?, ?, ?, ?)
+      ON CONFLICT(owner_id, cache_key) DO UPDATE SET created_at = excluded.created_at, value_json = excluded.value_json`)
+      .bind(owner, key, now.toISOString(), value).run();
+  }
+
   async lastSeen(owner: string): Promise<Date | null> {
     const row = await this.db.prepare('SELECT last_seen_at FROM station_activity WHERE owner_id = ?').bind(owner).first<{ last_seen_at: string }>();
     return row ? new Date(row.last_seen_at) : null;

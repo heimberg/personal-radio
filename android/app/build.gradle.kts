@@ -37,7 +37,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 drops what the libraries do not use (Compose, Media3 …), which makes the APK smaller and
+            // starts faster; our own code and the Spotify SDK stay whole (proguard-rules.pro).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("owner") ?: signingConfigs.getByName("debug")
         }
     }

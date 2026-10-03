@@ -60,7 +60,8 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
     LaunchedEffect(Unit) {
         while (true) {
             actions.loadFamily()
-            delay(10_000)
+            // Chat and «wer hört was» every half minute; sending a message reloads at once.
+            delay(30_000)
         }
     }
     val family = state.family

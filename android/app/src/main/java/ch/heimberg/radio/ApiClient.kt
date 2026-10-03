@@ -57,8 +57,20 @@ class ApiClient(private val connection: Connection) {
     /** The timeline plus the public Spotify client ID, when the Worker has one. */
     suspend fun response(peek: Boolean = false): Timeline = withContext(Dispatchers.IO) {
         // A peek (the background check for notifications) does not count as listening on the server.
-        TimelineJson.parseResponse(request("GET", if (peek) "api/timeline?peek=1" else "api/timeline"))
+        val path = if (peek) "api/timeline?peek=1" else "api/timeline"
+        // Unchanged since the last call: the Worker answers 304, and the copy from then is read again.
+        val known = timelineCache[path]
+        val reply = exchange("GET", path, extra = known?.let { mapOf("If-None-Match" to it.first) }.orEmpty())
+        val body = when {
+            reply.status == 304 && known != null -> known.second
+            reply.status in 200..299 -> reply.text.also { text -> reply.etag?.let { timelineCache[path] = it to text } }
+            else -> throw ApiException(reply.status, AccessDiagnosis.message(reply.status, reply.location, reply.text))
+        }
+        TimelineJson.parseResponse(body)
     }
+
+    /** The last program per address with its ETag. */
+    private val timelineCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>()
 
     /** Productions that can still be heard, newest first. */
     suspend fun library(): Library = withContext(Dispatchers.IO) { TimelineJson.parseLibrary(request("GET", "api/library")) }
@@ -132,7 +144,7 @@ class ApiClient(private val connection: Connection) {
      */
     suspend fun trial(agent: String, agents: kotlinx.serialization.json.JsonElement?): TrialResult = withContext(Dispatchers.IO) {
         val body = JSONObject().put("agent", agent).put("agents", JSONObject(agents?.toString() ?: "{}")).toString()
-        val (status, text) = exchange("POST", "api/agents/trial", body)
+        val (status, text) = exchange("POST", "api/agents/trial", body).let { it.status to it.text }
         val json = runCatching { JSONObject(text) }.getOrNull() ?: throw ApiException(status, AccessDiagnosis.message(status, null, text))
         fun side(key: String) = json.optJSONObject(key)?.let { it.optString("text") to it.optJSONObject("quality")?.optDouble("overall")?.takeIf { mark -> !mark.isNaN() } }
         TrialResult(
@@ -360,13 +372,16 @@ class ApiClient(private val connection: Connection) {
     }
 
     private fun request(method: String, path: String, body: String? = null): String {
-        val (status, text, location) = exchange(method, path, body)
-        if (status !in 200..299) throw ApiException(status, AccessDiagnosis.message(status, location, text))
-        return text
+        val reply = exchange(method, path, body)
+        if (reply.status !in 200..299) throw ApiException(reply.status, AccessDiagnosis.message(reply.status, reply.location, reply.text))
+        return reply.text
     }
 
-    /** One request: the status, the body and where a redirect points (Access's login), whatever the status. */
-    private fun exchange(method: String, path: String, body: String? = null): Triple<Int, String, String?> {
+    /** What came back: the status, the body, where a redirect points (Access's login) and the ETag. */
+    private data class Reply(val status: Int, val text: String, val location: String?, val etag: String?)
+
+    /** One request, whatever the status; [extra] are further headers. */
+    private fun exchange(method: String, path: String, body: String? = null, extra: Map<String, String> = emptyMap()): Reply {
         val http = URL(connection.resolve(path)).openConnection() as HttpURLConnection
         try {
             http.requestMethod = method
@@ -376,6 +391,7 @@ class ApiClient(private val connection: Connection) {
             http.instanceFollowRedirects = false
             connection.headers().forEach { (name, value) -> http.setRequestProperty(name, value) }
             http.setRequestProperty("Accept", "application/json")
+            extra.forEach { (name, value) -> http.setRequestProperty(name, value) }
             // The Worker only accepts writes whose Origin is its own.
             if (method != "GET") http.setRequestProperty("Origin", connection.origin)
             if (body != null) {
@@ -387,7 +403,7 @@ class ApiClient(private val connection: Connection) {
             }
             val status = http.responseCode
             val text = (if (status in 200..299) http.inputStream else http.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            return Triple(status, text, http.getHeaderField("Location"))
+            return Reply(status, text, http.getHeaderField("Location"), http.getHeaderField("ETag"))
         } finally {
             http.disconnect()
         }
