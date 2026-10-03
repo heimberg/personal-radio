@@ -251,6 +251,8 @@ interface RadioActions : StudioActions, VoiceActions, FamilyActions, MitmachenAc
     fun remove(item: TimelineItem)
     fun playNext(item: TimelineItem)
     fun shift(item: TimelineItem, offset: Int)
+    /** A new order of the open items (by id), from dragging in the program. */
+    fun reorder(order: List<String>)
     fun chooseBlock(block: BlockView)
     /** ⭐ in the catalog: favourites come first there and in «Für dich». */
     fun toggleFavorite(block: BlockView)

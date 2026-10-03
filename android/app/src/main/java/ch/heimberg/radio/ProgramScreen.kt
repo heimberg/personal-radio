@@ -1,6 +1,12 @@
 package ch.heimberg.radio
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import sh.calvin.reorderable.ReorderableItem
+import androidx.compose.ui.draw.shadow
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.clickable
@@ -70,10 +76,22 @@ private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemD
 fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValues) {
     val sections = state.sections
     val context = LocalContext.current
+    val view = LocalView.current
     val hints = remember { UiHints(context) }
     var showTip by remember { mutableStateOf(!hints.programSeen) }
+    // Drag and drop: the coming items in a local order while a handle is dragged; on release it is saved.
+    val coming = listOfNotNull(sections.next) + sections.later
+    var order by remember { mutableStateOf(coming) }
+    var dragging by remember { mutableStateOf(false) }
+    if (!dragging && order.map { it.id } != coming.map { it.id }) order = coming
+    val list = rememberLazyListState()
+    val reorder = rememberReorderableLazyListState(list) { from, to ->
+        val fromAt = order.indexOfFirst { it.id == from.key }
+        val toAt = order.indexOfFirst { it.id == to.key }
+        if (fromAt >= 0 && toAt >= 0) order = order.toMutableList().apply { add(toAt, removeAt(fromAt)) }
+    }
     PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = actions::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 96.dp)) {
             item(key = "head") { ProgramHead(state, actions) }
             if (state.failures.count > 0) item(key = "failures") { Failures(state, actions) }
             val planned = listOfNotNull(sections.now, sections.next) + sections.later
@@ -87,12 +105,23 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                 }
             }
             sections.now?.let { now -> item(key = now.id) { NowRow(now, state, actions) } }
-            sections.next?.let { next -> item(key = next.id) { SwipeRow(next, state, actions) } }
-            items(sections.later, key = { it.id }) { SwipeRow(it, state, actions) }
+            items(order, key = { it.id }) { item ->
+                ReorderableItem(reorder, key = item.id) { moving ->
+                    val handle = Modifier.draggableHandle(
+                        onDragStarted = { dragging = true; view.performHapticFeedback(HapticFeedbackConstants.GESTURE_START) },
+                        onDragStopped = {
+                            dragging = false
+                            view.performHapticFeedback(HapticFeedbackConstants.GESTURE_END)
+                            actions.reorder(listOfNotNull(sections.now?.id) + order.map { it.id })
+                        },
+                    )
+                    SwipeRow(item, state, actions, handle, lifted = moving)
+                }
+            }
             item(key = "outlook") { Outlook(state) }
             // The gestures are told once; «OK» hides the tip for good.
             if (showTip && state.open.size > 1) {
-                item(key = "hint") { Tip("Antippen: sofort hören · lange drücken: verschieben und mehr · nach links wischen: entfernen") { showTip = false; hints.programSeen = true } }
+                item(key = "hint") { Tip("Antippen: sofort hören · ⠿ ziehen: verschieben · lange drücken: mehr · nach links wischen: entfernen") { showTip = false; hints.programSeen = true } }
             }
             val running = state.series.filter { it.active }
             if (running.isNotEmpty()) {
@@ -242,7 +271,7 @@ private fun NowRow(item: TimelineItem, state: RadioState, actions: RadioActions)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioActions) {
+private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioActions, handle: Modifier, lifted: Boolean) {
     val swipe = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
         if (value == SwipeToDismissBoxValue.EndToStart) {
             actions.remove(item)
@@ -259,7 +288,10 @@ private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioAction
                 contentAlignment = Alignment.CenterEnd,
             ) { Text("Entfernen", style = MaterialTheme.typography.labelLarge, color = Nocturne.danger) }
         },
-    ) { ItemRow(item, state.starts[item.id], onTap = { if (item.isPlayable) actions.play(item) else state.actionsFor = item }, onLongPress = { state.actionsFor = item }) }
+    ) {
+        ItemRow(item, state.starts[item.id], onTap = { if (item.isPlayable) actions.play(item) else state.actionsFor = item }, onLongPress = { state.actionsFor = item },
+            handle = handle, lifted = lifted)
+    }
 }
 
 /**
@@ -271,12 +303,14 @@ private fun SwipeRow(item: TimelineItem, state: RadioState, actions: RadioAction
 fun ItemRow(
     item: TimelineItem, start: Instant?, onTap: () -> Unit, onLongPress: () -> Unit,
     timeLabel: String? = null, live: Boolean = false, progress: Float? = null, liveLabel: String = "läuft",
+    handle: Modifier? = null, lifted: Boolean = false,
 ) {
     val look = Looks.of(item)
     val color = Nocturne.kind(look.kind)
     Column(
         Modifier
             .fillMaxWidth()
+            .then(if (lifted) Modifier.shadow(8.dp, RoundedCornerShape(16.dp)) else Modifier)
             .clip(RoundedCornerShape(16.dp))
             .background(Nocturne.surface)
             .then(if (live) Modifier.border(2.dp, color, RoundedCornerShape(16.dp)) else Modifier)
@@ -302,7 +336,15 @@ fun ItemRow(
                 Cover(look, it, 40.dp)
             }
             Spacer(Modifier.width(6.dp))
-            StateIcon(item)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                StateIcon(item)
+                // The handle reacts on touch: drag it to move the item.
+                if (handle != null) {
+                    Box(handle.padding(top = 6.dp).size(36.dp), contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_dots_six), "Verschieben", Modifier.size(22.dp), tint = Nocturne.faint)
+                    }
+                }
+            }
         }
         if (progress != null) {
             Spacer(Modifier.height(10.dp))
