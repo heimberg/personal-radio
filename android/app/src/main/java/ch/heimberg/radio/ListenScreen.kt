@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -200,7 +202,9 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Text(
-                listOfNotNull(look?.kind?.label, state.show.ifBlank { null }).joinToString(" · ").uppercase(),
+                // The show's name only when it says more than the title below.
+                listOfNotNull(look?.kind?.label, state.show.ifBlank { null }?.takeUnless { it.equals(head, ignoreCase = true) })
+                    .joinToString(" · ").uppercase(),
                 style = Kicker.copy(fontSize = 13.sp, letterSpacing = 1.sp), color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
             if (state.coverUrl != null) {
@@ -209,10 +213,7 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
             }
         }
         Spacer(Modifier.height(if (state.coverUrl != null) 24.dp else 96.dp))
-        Text(
-            head.uppercase(), style = display(if (head.length <= 12) 72 else if (head.length <= 24) 52 else 38), color = ink,
-            maxLines = 4, overflow = TextOverflow.Ellipsis,
-        )
+        HeadTitle(head.uppercase(), ink)
         rest?.let {
             Spacer(Modifier.height(10.dp))
             Text(it, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp), color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -239,6 +240,25 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
         val marked = state.bookmarked(state.currentItemId)
         SmallAction(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
         SmallAction(R.drawable.ic_moon, if (state.sleepLabel != null) "Timer an" else "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
+    }
+}
+
+/**
+ * The title big and condensed: short ones very big, longer ones smaller, and never so big that a word
+ * breaks in the middle («ORTSGESCHICHT-E»): the size shrinks until the longest word fits on one line.
+ */
+@Composable
+private fun HeadTitle(text: String, ink: Color) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val measurer = rememberTextMeasurer()
+        val width = constraints.maxWidth
+        val size = remember(text, width) {
+            val longest = text.split(' ').maxByOrNull { it.length } ?: text
+            var size = if (text.length <= 12) 72 else if (text.length <= 24) 52 else 38
+            while (size > 22 && measurer.measure(longest, display(size), softWrap = false, maxLines = 1).size.width > width) size -= 2
+            size
+        }
+        Text(text, style = display(size), color = ink, maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
 }
 
