@@ -116,7 +116,7 @@ private fun ProgramHead(state: RadioState, actions: RadioActions) {
     Column {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
             ScreenTitle("Programm")
-            Text("$ready bereit · ${state.open.size} geplant", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+            Text(listOfNotNull("$ready bereit".takeIf { ready > 0 }, "${state.open.size - ready} in Arbeit".takeIf { state.open.size > ready }).joinToString(" · ").ifEmpty { "Nichts geplant" }, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { AssistChip(onClick = actions::openDayPlan, label = { Text("🗓  Tagesplan") }) }

@@ -74,15 +74,16 @@ object StationSound {
             val after = previous
             previous = item
             if (steps.isEmpty() || item.hasMusic) return@flatMap steps
+            // The sounds already show the item they lead into: its title, and the station (or show) beneath.
             val name = stationName.ifBlank { item.showName }
             val news = Looks.of(item).kind == Kind.NEWS && sounds.newsUrl != null
             val ident = sounds.identFor(item.id)?.takeIf { !news && after?.hasMusic == true }
-                ?.let { SpeechStep(item.id, "${item.id}$IDENT", it, name, item.showName, last = false) }
+                ?.let { SpeechStep(item.id, "${item.id}$IDENT", it, item.displayTitle, name, last = false) }
             val link = sounds.linkerUrl?.let { url ->
                 val query = (after?.let { "after=${it.id}&" } ?: "") + "next=${item.id}"
-                SpeechStep(item.id, "${item.id}$LINK", "$url?$query", name, item.showName, last = false)
+                SpeechStep(item.id, "${item.id}$LINK", "$url?$query", item.displayTitle, name, last = false)
             }
-            val opener = sounds.newsUrl?.takeIf { news }?.let { SpeechStep(item.id, "${item.id}$NEWS", it, name, item.showName, last = false) }
+            val opener = sounds.newsUrl?.takeIf { news }?.let { SpeechStep(item.id, "${item.id}$NEWS", it, item.displayTitle, name, last = false) }
             listOfNotNull(ident, link, opener) + steps
         }
     }
