@@ -16,6 +16,8 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise».
 - Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
+- More formats: «Streitgespräch» (two voices, pro and contra, with sources, neutral summary), «Weltpresse» (how media around the world report on a topic), and «Ortsgeschichten» (the story of a place you pass, while the app is open).
+- «Funktionen» in the studio: every automatic feature (live transitions, weekly review, followed topics, concerts, quiz, place stories) switched on or off in one place, with what it costs, and the building blocks the palette shows.
 - For the owner: «Nachfragen» – a question about the item that plays, answered from its sources (with a search when needed), voiced and played right after it; «Dranbleiben» – up to five topics checked daily, reported only when something is new; «Merken» – a reading list with the sources, to open or share; «Konzerte in der Nähe» – on Friday afternoon, where your Spotify top artists play soon in Switzerland.
 - Wochenrückblick: on Sunday morning a personal look back on the week – the best of what was heard, what mattered in the news, questions to the radio, story choices and new stickers; also a block for any day.
 - Mitmachen (above all for a child's station): a «Mitmach-Geschichte» started from picture cards ends every episode with a choice of two ways, chosen in the app; knowledge items on a child's station end with a quiz question (A/B/C); right answers, choices and episodes heard to the end fill a sticker album; «Frag das Radio» sends a question (typed or spoken) that the host answers in the next live transition.
@@ -262,6 +264,7 @@ More detail: [architecture](docs/architecture.md) · [Cloudflare deployment](doc
 - Keys live only in Worker secrets and GitHub Actions secrets; never commit keys, `radio.jks`, exports or generated audio.
 - The Worker is closed to everyone but you: Cloudflare Access in front, and the Worker verifies the Access token itself.
 - Spotify data stays out of AI prompts (see *How it works*); the listening profile is opt-in and can be disconnected at any time.
+- Ortsgeschichten are off by default. When on, the app reads the phone's last known position while it is open; the Worker asks OpenStreetMap (Nominatim) for the place name, and only that name goes to the AI.
 - Voices you add (e.g. Mistral) must be authorized for this use. Check the terms of any feed you add.
 
 ## License

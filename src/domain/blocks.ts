@@ -58,10 +58,23 @@ export const BLOCKS: readonly Block[] = [
       instructions: 'Stelle jeden Song als Neuerscheinung eines Künstlers vor, den der Hörer gern hört: Künstler und Titel nennen, erfinde keine Details zum Album.',
       groups: [{ name: 'Neuerscheinungen', playlists: [], taste: '', releases: true }], switchAfterTracks: 0, switchAfterMinutes: 0, talkSeconds: 20,
       triggers: { ...DEFAULT_TRIGGERS, beforeTrack: 1, afterTrack: 0, everyMinutes: 0 } } },
+  { id: 'streitgespraech', name: 'Streitgespräch', description: 'Zwei Stimmen, Pro und Contra, mit Quellen', input: { kind: 'topic', label: 'Worüber?', example: 'z. B. Tempo 30 in Städten' },
+    show: { ...spoken, format: 'podcast', targetMinutes: 6, verification: 'light', sourceMode: 'web',
+      researchPrompt: 'Die stärksten, belegten Argumente dafür und dagegen zu: {thema}. Fakten, Zahlen, Studien und wer welche Position vertritt; gern mit Bezug zur Schweiz.',
+      instructions: 'Ein faires Streitgespräch: die erste Stimme vertritt Pro, die zweite Contra, beide mit belegten Argumenten aus den Quellen, respektvoll und auf den Punkt; sie gehen auf die Argumente der anderen ein. ' +
+        'Zum Schluss fasst die erste Stimme die stärksten Argumente beider Seiten neutral zusammen, ohne Partei zu ergreifen und ohne Empfehlung.' } },
+  { id: 'weltpresse', name: 'Weltpresse', description: 'Wie die Welt über ein Thema berichtet', input: { kind: 'topic', label: 'Thema', example: 'z. B. die Wahlen in den USA' },
+    show: { ...spoken, format: 'brief', targetMinutes: 4, verification: 'light', sourceMode: 'web',
+      researchPrompt: 'Wie berichten Medien aus verschiedenen Ländern und Regionen (z. B. Deutschland, Frankreich, Grossbritannien, USA, Russland, China, Japan, Indien, arabische Welt, Lateinamerika, Afrika) über {thema}? Konkrete Medien mit ihrer Sicht, Schwerpunkten und Formulierungen, auch in anderen Sprachen.',
+      instructions: 'Eine Presseschau aus aller Welt: wie Medien aus mehreren Ländern über das Thema berichten. Nenne Medium und Land, übersetze prägnante Formulierungen ins Deutsche, zeige Unterschiede in Sicht und Gewichtung und ordne kurz ein, woher sie kommen könnten. Bleib neutral.' } },
   { id: 'konzerte', name: 'Konzerte in der Nähe', description: 'Wo deine Spotify-Künstler bald auftreten',
     show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'light', sourceMode: 'web',
       instructions: 'Nenne die gefundenen Konzerte mit Datum, Stadt und Halle, die nächsten zuerst, und sag zu jedem Künstler einen Satz, warum es sich lohnt. Erfinde keine Termine; nenne nur, was die Quellen belegen.' } },
-  // Hidden: an answer to the listener's question about an item, and the daily check of a followed topic.
+  // Hidden: a place the listener passes (the app asks for it), an answer to a question about an item, the daily check of a followed topic.
+  { id: 'ortsgeschichte', name: 'Ortsgeschichte', description: 'Die Geschichte eines Ortes, an dem du vorbeikommst', hidden: true,
+    show: { ...spoken, format: 'brief', targetMinutes: 2, verification: 'light', sourceMode: 'web',
+      researchPrompt: 'Geschichte, Besonderheiten und überraschende Fakten zu {thema}: Herkunft des Namens, Geschichte, bekannte Personen, Bauwerke, Natur, Kurioses.',
+      instructions: 'Erzähle kurz und lebendig die Geschichte des Ortes, an dem die Hörerin oder der Hörer gerade vorbeikommt, mit ein, zwei überraschenden Details. Beginne mit dem Ortsnamen, etwa «Du bist gerade in …».' } },
   { id: 'nachfrage', name: 'Nachgefragt', description: 'Die Antwort auf deine Frage zu einem Beitrag', hidden: true,
     show: { ...spoken, format: 'brief', targetMinutes: 1, verification: 'light', sourceMode: 'feeds', instructions: '' } },
   { id: 'dranbleiben', name: 'Dranbleiben', description: 'Was es Neues gibt zu einem Thema, an dem du dranbleibst', hidden: true,
@@ -149,7 +162,11 @@ export function blockShow(block: Block, config: StationConfig, subject?: string)
   const show: ShowConfig = { ...structuredClone(block.show), id: `${BLOCK_PREFIX}${block.id}`, name: block.name, enabled: true };
   if (show.groups) show.groups = show.groups.map(group => ({ ...group, taste: block.id === WILDCARD ? subject?.trim() || WILDCARD_TASTES[0] : config.music.taste }));
   const topic = subject?.trim();
-  if (topic && block.input?.kind === 'topic') show.researchPrompt = `Recherchiere zum Thema «${topic}»: aktuelle, konkrete und überprüfbare Entwicklungen und Geschichten.`;
+  // A block with its own research template names the topic in it; without one the AI picks it.
+  if (show.researchPrompt.includes('{thema}')) {
+    const fallback = block.id === 'ortsgeschichte' ? 'den Ort' : block.id === 'weltpresse' ? 'das wichtigste internationale Thema dieser Woche' : 'ein aktuelles, umstrittenes Thema in der Schweiz (zum Beispiel eine anstehende Abstimmung)';
+    show.researchPrompt = show.researchPrompt.replace('{thema}', topic ? `«${topic}»` : fallback);
+  } else if (topic && block.input?.kind === 'topic') show.researchPrompt = `Recherchiere zum Thema «${topic}»: aktuelle, konkrete und überprüfbare Entwicklungen und Geschichten.`;
   return show;
 }
 
@@ -165,7 +182,14 @@ const OWN_INPUT = {
   theme: { kind: 'theme', label: 'Thema', example: 'z. B. Der Mond' },
 } as const;
 
+/** The palette: every block, without those the owner hid. */
 export function blockViews(config: StationConfig): BlockView[] {
+  const hidden = new Set(config.hiddenBlocks ?? []);
+  return allBlockViews(config).filter(block => !hidden.has(block.id));
+}
+
+/** Every block the palette can show, hidden or not (for managing the palette). */
+export function allBlockViews(config: StationConfig): BlockView[] {
   return [
     ...BLOCKS.filter(block => !block.hidden).map(({ show, hidden: _hidden, surprise: _surprise, ...block }) => ({ ...block, minutes: show.targetMinutes, music: !!block.music, own: false })),
     { id: SURPRISE_ID, name: 'Überraschung', description: 'Etwas, das du nicht erwartest', minutes: 2, music: false, own: false },

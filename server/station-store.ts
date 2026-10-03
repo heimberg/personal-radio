@@ -158,6 +158,12 @@ export class StationStore {
       ORDER BY updated_at`).bind(owner, since.toISOString()).all<TimelineRow>()).results;
   }
 
+  /** Items of a show created since [since], newest first. */
+  async ofShowSince(owner: string, showId: string, since: Date): Promise<TimelineRow[]> {
+    return (await this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? AND show_id = ? AND created_at >= ? ORDER BY created_at DESC')
+      .bind(owner, showId, since.toISOString()).all<TimelineRow>()).results;
+  }
+
   /** The newest timeline item of a show (a series' latest episode), whatever its state. */
   async latestOfShow(owner: string, showId: string): Promise<TimelineRow | null> {
     return this.db.prepare('SELECT * FROM timeline_items WHERE owner_id = ? AND show_id = ? ORDER BY seq DESC LIMIT 1').bind(owner, showId).first<TimelineRow>();

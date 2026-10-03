@@ -236,6 +236,15 @@ Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms 
   - Pictures never go to an AI.
 - **Kids:** a child's station only takes what the owner shares, and a child cannot listen along to others (`mayCopyInto`). Only members' own messages and greeting texts reach the AI, in the live transition.
 
+### Funktionen, Streitgespräch, Weltpresse, Ortsgeschichten
+
+- **Funktionen** (`src/domain/features.ts`, `GET/PUT /api/features`): one catalog of what the station does on its own. The features are `linker` (stored as `sounds.linker`), `review`, `follow`, `concerts` (not on a child's station), `quiz` (only on a child's station) and `places` (default off). Each has a name, a description and its cost. `StationConfig.features` keeps only the switched values; missing keys use the defaults. `hiddenBlocks` lists the blocks the palette leaves out (`blockViews`); `allBlockViews` lists them all for managing, and a hidden block still runs when the day plan schedules it. The app shows all of it in the studio card «Funktionen» and saves each switch at once.
+- **Streitgespräch** (block `streitgespraech`, dialog, 6 minutes): research of the strongest arguments for and against the topic, or a current Swiss controversy when none is given. Host A argues pro, host B contra, and host A closes with a neutral summary.
+- **Weltpresse** (block `weltpresse`, 4 minutes): how media in many countries report on the topic (or the week's main international story), with outlet, country and translated wording. A block's research template names the topic with `{thema}`.
+- **Ortsgeschichten** (hidden block `ortsgeschichte`, `POST /api/places/story {latitude, longitude}`, `server/places.ts`):
+  - **App:** only when `places` is on and the location permission is granted, and only while the app is open. Every two minutes it reads the newest last-known position (at most 15 minutes old). It reports after moving at least 3 km and at most once every 10 minutes (`PlaceTrigger`).
+  - **Worker:** names the place with Nominatim reverse geocoding (village or town with canton). The same place is told once in 30 days, at most six places a day (`addPlaceStory`). Coordinates never reach the AI, only the place name.
+
 ### Nachfragen, Dranbleiben, Merken, Konzerte
 
 `server/follow.ts`, migration 0014.

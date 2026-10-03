@@ -134,6 +134,8 @@ private fun StationHero(settings: StudioSettings, state: RadioState) {
 @Composable
 private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioActions) {
     val edit = actions::editStudio
+    // What the station does on its own and which blocks the palette shows: one place for all of it.
+    Card("funktionen", "🧩", "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
     Card("sender", "🎙️", "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
         Field("Name des Senders", settings.name) { edit(settings.copy(name = it.take(60))) }
         Field("Moderation", settings.hostName) { edit(settings.copy(hostName = it.take(40))) }

@@ -25,6 +25,8 @@ import ch.heimberg.radio.core.BlockView
 import ch.heimberg.radio.core.Connection
 import ch.heimberg.radio.core.DayPlan
 import ch.heimberg.radio.core.FamilyMember
+import ch.heimberg.radio.core.Fix
+import ch.heimberg.radio.core.PlaceTrigger
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Moods
@@ -98,6 +100,14 @@ class MainActivity : AppCompatActivity(), RadioActions {
         val spoken = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!spoken.isNullOrBlank()) state.askDraft = (state.askDraft.trim() + " " + spoken.trim()).trim().take(200)
     }
+    /** Ortsgeschichten: the location permission, asked when the feature is switched on; then it is switched on. */
+    private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.any { it }) setFeature("places", true)
+        else state.say("Ohne Standort gibt es keine Ortsgeschichten.")
+    }
+    /** Where the last place story was asked for (in memory; the server tells each place once a month anyway). */
+    private var lastPlaceFix: Fix? = null
+    private var lastPlaceCheck = 0L
     /** Stickers known from the last timeline: more of them means one was earned (e.g. an episode heard to the end). */
     private var stickersSeen = -1
 
@@ -150,6 +160,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
                 }
                 while (true) {
                     refreshTimeline()
+                    checkPlace()
                     delay(30_000)
                 }
             }
@@ -587,6 +598,71 @@ class MainActivity : AppCompatActivity(), RadioActions {
         }
     }
 
+    override fun loadFeatures() {
+        lifecycleScope.launch { runCatching { api.features() }.onSuccess { state.features = it }.onFailure { state.say(it.message ?: getString(R.string.connection_failed)) } }
+    }
+
+    override fun setFeature(id: String, on: Boolean) {
+        // Ortsgeschichten need the location first; the permission answer switches them on.
+        if (id == "places" && on && !hasLocation()) {
+            locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            return
+        }
+        state.featuresBusy = true
+        lifecycleScope.launch {
+            runCatching { api.setFeature(id, on) }
+                .onSuccess { catalog ->
+                    state.features = catalog
+                    // Live transitions are also a station-sound setting: keep the studio's copy in step.
+                    if (id == "linker") state.studio = state.studio?.copy(linker = on)
+                    if (id == "places" && on) { lastPlaceFix = null; lastPlaceCheck = 0 }
+                }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            state.featuresBusy = false
+        }
+    }
+
+    override fun setBlockVisible(id: String, visible: Boolean) {
+        val catalog = state.features ?: return
+        val hidden = catalog.blocks.filter { if (it.id == id) !visible else !it.visible }.map { it.id }
+        state.featuresBusy = true
+        lifecycleScope.launch {
+            runCatching { api.setHiddenBlocks(hidden) }
+                .onSuccess { state.features = it; loadBlocks() }
+                .onFailure { state.say(it.message ?: getString(R.string.connection_failed)) }
+            state.featuresBusy = false
+        }
+    }
+
+    private fun hasLocation(): Boolean = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        .any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
+
+    /**
+     * Ortsgeschichten: every two minutes while the app is open, where the phone is (the freshest position
+     * Android already has). After moving a few kilometres, the Worker names the place and plans its story.
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private suspend fun checkPlace() {
+        if (state.features?.on("places") != true || !hasLocation()) return
+        val now = System.currentTimeMillis()
+        if (now - lastPlaceCheck < 2 * 60_000) return
+        lastPlaceCheck = now
+        val manager = getSystemService(LOCATION_SERVICE) as android.location.LocationManager
+        val location = manager.getProviders(true).mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.time } ?: return
+        // Older than a quarter of an hour: not where the listener is now.
+        if (now - location.time > 15 * 60_000) return
+        val fix = Fix(location.latitude, location.longitude, now)
+        if (!PlaceTrigger.shouldReport(lastPlaceFix, fix)) return
+        lastPlaceFix = fix
+        runCatching { api.placeStory(fix.latitude, fix.longitude) }.onSuccess { story ->
+            if (story.itemId != null) {
+                state.say("📍 Gleich im Radio: die Geschichte von ${story.place}.")
+                changed()
+            }
+        }
+    }
+
     private suspend fun loadBookmarks() { runCatching { api.bookmarks() }.getOrNull()?.let { state.bookmarks = it } }
 
     private suspend fun loadFollows() { runCatching { api.follows() }.getOrNull()?.let { state.follows = it } }
@@ -727,6 +803,7 @@ class MainActivity : AppCompatActivity(), RadioActions {
         loadSeries()
         loadFollows()
         loadBookmarks()
+        if (state.features == null) runCatching { api.features() }.getOrNull()?.let { state.features = it }
     }
 
     private suspend fun loadSeries() {

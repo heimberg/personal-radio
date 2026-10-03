@@ -1,3 +1,5 @@
+import { parseFeatures, parseHiddenBlocks } from './features.ts';
+import type { FeatureSettings } from './features.ts';
 import { defaultProfile, parseProfile } from './program.ts';
 import type { HostPersona, Profile } from './program.ts';
 import { parseAgentConfig } from './agents.ts';
@@ -121,6 +123,10 @@ export interface StationConfig {
   surprise?: number;
   /** «Heute»: a mood for the rest of the day, set in the app; it shapes what the planner adds. */
   mood?: StationMood;
+  /** What the station does on its own (Wochenrückblick, Konzerte, …); missing keys use the defaults in features.ts. */
+  features?: FeatureSettings;
+  /** Building blocks the palette does not show (they can still be planned). */
+  hiddenBlocks?: string[];
 }
 
 /** Moods for the rest of the day; see src/domain/mood.ts for what each one changes. */
@@ -408,7 +414,9 @@ export function parseStationConfig(raw: unknown): StationConfig {
     sounds = { ident: s.ident as boolean, hourChange: s.hourChange as boolean,
       ...(typeof s.linker === 'boolean' ? { linker: s.linker } : {}), ...(typeof s.musicBed === 'boolean' ? { musicBed: s.musicBed } : {}) };
   }
-  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}), ...(mood ? { mood } : {}) };
+  const features = parseFeatures(c.features), hiddenBlocks = parseHiddenBlocks(c.hiddenBlocks);
+  return { version: 1, name, host, timezone, ...(location ? { location } : {}), horizonMinutes, music, profile: parseProfile(c.profile), feeds, shows, schedule, ...(agents ? { agents } : {}), ...(sounds ? { sounds } : {}), ...(surprise !== undefined ? { surprise } : {}), ...(mood ? { mood } : {}),
+    ...(features ? { features } : {}), ...(hiddenBlocks ? { hiddenBlocks } : {}) };
 }
 
 /** Starting point built from what the device already stores; the owner edits it afterwards. */

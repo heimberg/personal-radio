@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Only for cloning a voice in the studio, asked for when it is used. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Ortsgeschichten: only while the app is open, and only when switched on in «Funktionen». -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- App Remote talks to the installed Spotify app. -->
     <queries>
