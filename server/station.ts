@@ -1121,7 +1121,7 @@ export const PLACES_PER_DAY = 6, PLACE_REPEAT_DAYS = 30;
  * Ortsgeschichten: the listener passes [place] (named by the Worker from the app's location). Its story is
  * put into the program soon – unless it was told this month or the day's stories are used up.
  */
-export async function addPlaceStory(deps: StationDeps, owner: string, place: string): Promise<{ itemId: string } | { skipped: 'known' | 'enough' | 'off' }> {
+export async function addPlaceStory(deps: StationDeps, owner: string, place: string): Promise<{ itemId: string } | { skipped: 'known' | 'enough' | 'waiting' | 'off' }> {
   const config = await deps.store.getConfig(owner);
   if (!config || !featureOn(config, 'places')) return { skipped: 'off' };
   const now = deps.now();
@@ -1129,6 +1129,9 @@ export async function addPlaceStory(deps: StationDeps, owner: string, place: str
   const placeOf = (row: TimelineRow) => { try { return (JSON.parse(row.research_json ?? '{}') as { place?: string }).place; } catch { return undefined; } };
   if (month.some(row => placeOf(row) === place)) return { skipped: 'known' };
   if (month.filter(row => now.getTime() - Date.parse(row.created_at) < 86_400_000).length >= PLACES_PER_DAY) return { skipped: 'enough' };
+  // One story waits at a time: on a drive the places would otherwise pile up back to back. The next one is
+  // about wherever the listener is once this one has run.
+  if (month.some(row => ['planned', 'voicing', 'ready'].includes(row.state))) return { skipped: 'waiting' };
   const last = await deps.store.lastItem(owner), id = (deps.newId ?? (() => crypto.randomUUID()))();
   await deps.store.insertItem(owner, { id, seq: (last?.seq ?? 0) + 1, showId: PLACE_SHOW, plannedAt: now.toISOString(), estimatedMinutes: 2 }, now);
   await deps.store.update(owner, id, { research_json: JSON.stringify({ subjectOverride: place, place }) }, now);
