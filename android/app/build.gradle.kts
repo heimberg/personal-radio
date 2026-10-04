@@ -79,7 +79,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     // The screens are Jetpack Compose with Material 3; the transcript and setup screens are still views.
-    implementation(platform("androidx.compose:compose-bom:2025.05.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
