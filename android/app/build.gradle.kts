@@ -100,7 +100,7 @@ dependencies {
     // Spotify App Remote controls the installed Spotify app; see libs/README.md.
     implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
     // Spotify's login, released together with App Remote 0.8.0: grants «app-remote-control» when App Remote asks for it.
-    implementation("com.spotify.android:auth:2.1.0")
+    implementation("com.spotify.android:auth:5.0.0")
     implementation("com.google.code.gson:gson:2.14.0")
 }
 
