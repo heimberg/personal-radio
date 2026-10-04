@@ -1,11 +1,24 @@
+# Update PRs, grouped so one PR per ecosystem carries the minor and patch updates; CI checks each.
+# npm and Gradle weekly, the GitHub Actions monthly.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    schedule:
-      interval: weekly
+    schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 3
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: gradle
+    directory: /android
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      android-minor:
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: monthly
+    schedule: { interval: monthly }
+    groups:
+      actions:
+        patterns: ["*"]

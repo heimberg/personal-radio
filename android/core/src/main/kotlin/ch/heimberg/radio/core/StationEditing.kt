@@ -367,6 +367,8 @@ data class Insights(
     val reasons: List<Reason> = emptyList(),
     val notes: List<String> = emptyList(),
     val changes: List<String> = emptyList(),
+    /** Productions per show in the last seven days, most first: where the costs go. */
+    val byShow: List<Pair<String, Int>> = emptyList(),
 ) {
     data class UsageDay(val day: String, val generations: Int, val ttsCharacters: Int, val models: List<ModelUse>) {
         /** Speech requests: the calls to the speech models. */
@@ -398,6 +400,10 @@ data class Insights(
                 }.orEmpty(),
                 generationLimit = number(limits, "generations").toInt(), speechLimit = number(limits, "ttsCharacters").toInt(),
                 speechRequestLimit = number(usage?.get("speech") as? JsonObject, "dailyRequests").toInt(),
+                byShow = (root["byShow"] as? JsonArray)?.mapNotNull { element ->
+                    val b = element as? JsonObject ?: return@mapNotNull null
+                    b.text("showName").ifBlank { b.text("showId") } to number(b, "count").toInt()
+                }.orEmpty(),
                 quality = (root["quality"] as? JsonArray)?.mapNotNull { element ->
                     val q = element as? JsonObject ?: return@mapNotNull null
                     QualityMark(q.text("createdAt").take(10), q.text("showName"), number(q, "overall"))

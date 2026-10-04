@@ -1,5 +1,6 @@
 package ch.heimberg.radio
 
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -184,6 +185,42 @@ private fun QualityBars(days: List<Pair<String, Double>>, changes: Set<String>) 
 }
 
 /** «Verbrauch»: today against the daily limits, then the last two weeks. */
+/** The date of a copy in words: «4. Oktober 2026», «… (vor dem Wiederherstellen)». */
+object Backups {
+    private val format = java.time.format.DateTimeFormatter.ofPattern("d. MMMM yyyy", java.util.Locale.GERMAN)
+    fun label(name: String): String {
+        val date = runCatching { java.time.LocalDate.parse(name.take(10)).format(format) }.getOrDefault(name)
+        return if (name.endsWith("-vorher")) "$date (vor dem Wiederherstellen)" else date
+    }
+}
+
+/** «Sicherungen»: weekly copies of the settings; one can be brought back, and what is there now is kept too. */
+@Composable
+fun BackupsContent(state: RadioState, actions: RadioActions) {
+    LaunchedEffect(Unit) { actions.loadBackups() }
+    Text("Jeden Sonntag sichert der Server Sender, Sendungen, Tagesplan, Redaktion und Feeds. Die letzten acht Sicherungen bleiben.",
+        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    FilledTonalButton(onClick = actions::backupNow) { Text("Jetzt sichern") }
+    val backups = state.backups ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    if (backups.isEmpty()) Text("Noch keine Sicherung.", style = MaterialTheme.typography.bodyMedium)
+    for (name in backups) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(Backups.label(name), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { state.restoreAsk = name }) { Text("Wiederherstellen") }
+        }
+    }
+    state.restoreAsk?.let { name ->
+        AlertDialog(
+            onDismissRequest = { state.restoreAsk = null },
+            title = { Text("Sicherung vom ${Backups.label(name)} wiederherstellen?") },
+            text = { Text("Sender, Sendungen, Tagesplan, Redaktion und Feeds werden auf diesen Stand gesetzt. Der jetzige Stand wird vorher gesichert, du kannst also zurück.") },
+            confirmButton = { TextButton(onClick = { actions.restoreBackup(name) }) { Text("Wiederherstellen") } },
+            dismissButton = { TextButton(onClick = { state.restoreAsk = null }) { Text("Abbrechen") } },
+            containerColor = Nocturne.surface,
+        )
+    }
+}
+
 /** «Diagnose»: what went wrong lately – the step, the show, the reason and when – newest first. */
 @Composable
 fun DiagnosticsContent(state: RadioState, actions: RadioActions) {
@@ -211,6 +248,15 @@ fun UsageContent(state: RadioState, actions: RadioActions) {
     val today = insights.days.firstOrNull()
     if (today == null) return Text("Noch kein Verbrauch.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     Meter("Produktionen heute", today.generations, insights.generationLimit)
+    if (insights.byShow.isNotEmpty()) {
+        Text("Letzte 7 Tage nach Sendung", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        for ((show, count) in insights.byShow) {
+            Row(Modifier.fillMaxWidth()) {
+                Text(show, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                Text("$count", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
+            }
+        }
+    }
     Meter("Sprachzeichen heute", today.ttsCharacters, insights.speechLimit)
     if (insights.speechRequestLimit > 0) Meter("Sprachanfragen heute", today.speechRequests, insights.speechRequestLimit)
     Text("LETZTE TAGE", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 6.dp))

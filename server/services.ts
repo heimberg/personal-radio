@@ -103,7 +103,7 @@ export function musicFor(env: Environment) {
   if (!music) {
     const spotify = env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET } : null;
     music = {
-      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL }, metered(env)) } : {}),
+      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL, liteModel: env.GEMINI_LITE_MODEL ?? 'gemini-3.8-flash-lite' }, metered(env)) } : {}),
       ...(spotify ? { catalog: new SpotifyCatalog(spotify), cleanCatalog: new SpotifyCatalog({ ...spotify, clean: true }) } : {}),
     };
     musicCache.set(env.DB as object, music);

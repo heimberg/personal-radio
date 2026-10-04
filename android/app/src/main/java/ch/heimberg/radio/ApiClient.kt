@@ -131,6 +131,18 @@ class ApiClient(private val connection: Connection) {
     suspend fun agents(): Pair<List<AgentInfo>, List<AgentPreset>> = withContext(Dispatchers.IO) { StationDraft.parseAgents(request("GET", "api/agents")) }
 
     /** Usage, the jury's marks and the owner's complaints. */
+    /** Weekly copies of the station's settings, newest first. */
+    suspend fun backups(): List<String> = withContext(Dispatchers.IO) { names(request("GET", "api/backups")) }
+    suspend fun backupNow(): List<String> = withContext(Dispatchers.IO) { names(request("POST", "api/backups", "{}")) }
+    suspend fun restoreBackup(name: String) { withContext(Dispatchers.IO) { request("POST", "api/backups/restore", JSONObject().put("name", name).toString()) } }
+    private fun names(body: String): List<String> = JSONObject(body).optJSONArray("backups")?.let { list -> (0 until list.length()).map(list::getString) }.orEmpty()
+
+    /** An app crash from an earlier run, for «Diagnose». */
+    suspend fun reportCrash(version: String, device: String, trace: String) {
+        val body = JSONObject().put("version", version).put("device", device).put("trace", trace).toString()
+        withContext(Dispatchers.IO) { request("POST", "api/diagnostics/crash", body) }
+    }
+
     /** The latest errors for the studio's «Diagnose». */
     suspend fun diagnostics(): List<ErrorEntry> = withContext(Dispatchers.IO) { ErrorEntry.parse(request("GET", "api/diagnostics")) }
 

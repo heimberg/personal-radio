@@ -43,6 +43,18 @@ class ProductionNotices(private val context: Context) {
         notices.ready.forEach(::ready)
         notices.failure?.let(::failed)
         notices.message?.let { notify(MESSAGE_ID, builder(context.getString(R.string.notice_family), it.line).setStyle(NotificationCompat.BigTextStyle().bigText(it.line)).build()) }
+        budget(timeline)
+    }
+
+    /** Once a day at most: a daily limit is nearly used up, so the program may stop growing until tomorrow. */
+    private fun budget(timeline: Timeline) {
+        val warning = timeline.budget?.warning() ?: return
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
+        synchronized(LOCK) {
+            if (prefs.getString(KEY_BUDGET, null) == today) return
+            prefs.edit().putString(KEY_BUDGET, today).apply()
+        }
+        notify(BUDGET_ID, builder(context.getString(R.string.notice_budget), warning).setStyle(NotificationCompat.BigTextStyle().bigText(warning)).build())
     }
 
     private fun ready(item: TimelineItem) {
@@ -75,9 +87,11 @@ class ProductionNotices(private val context: Context) {
     companion object {
         private const val CHANNEL = "productions"
         private const val KEY_STATE = "state"
+        private const val KEY_BUDGET = "budgetWarned"
         private val LOCK = Any()
         const val FAILURE_ID = 4201
         const val MESSAGE_ID = 4202
+        const val BUDGET_ID = 4203
     }
 }
 

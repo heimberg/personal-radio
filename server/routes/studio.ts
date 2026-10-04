@@ -14,6 +14,7 @@ import { allBlockViews } from '../../src/domain/blocks.ts';
 import { isKids, parseListeners } from '../listeners.ts';
 import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, listenerNotes } from '../../src/domain/listener-notes.ts';
 import { json, readJson } from '../http.ts';
+import { backupRoutes } from '../backups.ts';
 import type { Environment } from '../http.ts';
 import { D1FeedCounter } from '../counters.ts';
 import { stationDeps, refreshProgram } from '../services.ts';
@@ -60,6 +61,19 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json({ agents: AGENTS, presets: AGENT_PRESETS }, 200);
   }
+  if (url.pathname === '/api/diagnostics/crash') {
+    // A crash of the app, sent on its next start: version, device and the first lines of the trace.
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
+    const body = await readJson(request, 16_384);
+    if (body.error) return body.error;
+    const { version, device, trace } = (body.value ?? {}) as { version?: unknown; device?: unknown; trace?: unknown };
+    if (typeof trace !== 'string' || !trace.trim()) return json({ error: 'invalid_crash' }, 400);
+    const head = [version, device].filter((part): part is string => typeof part === 'string' && !!part.trim()).map(part => part.slice(0, 60)).join(' · ');
+    await store.logError(owner, 'app', `${head ? `${head}: ` : ''}${trace.trim().slice(0, 1200)}`, new Date());
+    return json({ ok: true }, 200);
+  }
+  if (url.pathname === '/api/backups' || url.pathname === '/api/backups/restore') return backupRoutes(request, env, owner, url, sameOrigin);
   if (url.pathname === '/api/diagnostics') {
     // The studio's «Diagnose»: the latest errors of productions, transitions and the queue.
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
@@ -117,13 +131,15 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
   if (url.pathname === '/api/insights') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     const now = new Date(), since = new Date(now.getTime() - 30 * 86_400_000);
-    const [counts, quality, changes, usage, config] = await Promise.all([
+    const [counts, quality, changes, usage, config, byShow] = await Promise.all([
       store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
       usageSummary(env.DB, owner, now, 14, { generations: Math.max(1, Number(env.DAILY_GENERATIONS) || 24), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
         env.GEMINI_API_KEY ? { model: env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts', liteModel: env.GEMINI_TTS_LITE_MODEL || 'gemini-3.8-flash-lite-tts', dailyRequests: Math.max(1, Number(env.GEMINI_TTS_DAILY_REQUESTS) || 100) } : undefined),
       store.getConfig(owner),
+      store.producedByShow(owner, new Date(now.getTime() - 7 * 86_400_000)),
     ]);
     return json({
+      byShow: byShow.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
       reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
       notes: listenerNotes(counts),
       quality: quality.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),

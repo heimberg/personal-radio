@@ -147,19 +147,42 @@ export function parseHourScript(value: unknown, songs: number, sourceIds: string
 }
 
 /** Gemini JSON calls for the three editorial steps of a music hour. */
+/** The labels of the small tasks the lite model takes (see [GeminiMusicWriter.ask]). */
+export const LITE_TASKS = new Set(['Gemini quality jury', 'Gemini linker', 'Gemini quiz', 'Gemini story choice', 'Gemini follow check']);
+
 export class GeminiMusicWriter implements MusicWriter {
   private key: string;
   private model: string;
+  private liteModel?: string;
+  /** Set once the lite model was refused (unknown to the key's project): the main model takes over. */
+  private liteRefused = false;
   private fetcher: Fetch;
-  constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
+  constructor(config: { key: string; model?: string; liteModel?: string }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Gemini configuration incomplete');
     // Workers reject fetch called as a method ("Illegal invocation"), so keep a plain function.
     this.key = config.key; this.model = config.model || 'gemini-3.8-flash'; this.fetcher = (input, init) => fetcher(input, init);
-    if (!/^[a-zA-Z0-9.-]{1,100}$/.test(this.model)) throw new Error('Gemini model configuration invalid');
+    this.liteModel = config.liteModel || undefined;
+    if (![this.model, this.liteModel ?? 'x'].every(model => /^[a-zA-Z0-9.-]{1,100}$/.test(model))) throw new Error('Gemini model configuration invalid');
   }
 
+  /**
+   * Scoring, short transitions, quiz questions, story choices and the novelty check are small, rule-bound
+   * tasks: they go to the cheaper lite model. Writing, editing and music picks stay on the main model. A
+   * lite model the project does not offer falls back to the main one once and for all.
+   */
   private async ask(system: string, input: unknown, label: string, temperature = 0.5): Promise<unknown> {
-    const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, {
+    const lite = this.liteModel && !this.liteRefused && LITE_TASKS.has(label);
+    if (!lite) return this.call(this.model, system, input, label, temperature);
+    try { return await this.call(this.liteModel!, system, input, label, temperature); }
+    catch (error) {
+      if (!(error instanceof ProviderError) || (error.status !== 404 && error.status !== 400)) throw error;
+      this.liteRefused = true;
+      return this.call(this.model, system, input, label, temperature);
+    }
+  }
+
+  private async call(model: string, system: string, input: unknown, label: string, temperature: number): Promise<unknown> {
+    const response = await this.fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(90_000),
       headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({

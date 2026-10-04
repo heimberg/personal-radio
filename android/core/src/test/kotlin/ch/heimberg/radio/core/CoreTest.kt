@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -680,5 +681,18 @@ class StationEditingTest {
         assertEquals(24, insights.generationLimit)
         assertEquals(100, insights.speechRequestLimit)
         assertEquals(ListeningProfile(true, listOf("Portishead")), ListeningProfile.parse("""{"connected":true,"artists":["Portishead"]}"""))
+    }
+
+    @Test fun warnsOnceADailyLimitIsNearlyUsed() {
+        assertNull(Budget(listOf(10, 24), listOf(2000, 12000)).warning())
+        assertEquals("Tageslimit fast erreicht: Produktionen 83 %. Danach wartet die Produktion bis morgen.", Budget(listOf(20, 24), listOf(2000, 12000)).warning())
+        val timeline = TimelineJson.parseResponse("""{"items":[],"budget":{"generations":[24,24],"speech":[11000,12000]}}""")
+        assert(timeline.budget!!.warning()!!.contains("Sprachausgabe 92 %"))
+    }
+
+    @Test fun readsWhatIsNewInABuild() {
+        val build = AppBuild.parse("""{"versionCode":7,"versionName":"0.2.7","sha256":"${"a".repeat(64)}","size":10,"notes":["Dunkler Modus","Diagnose"]}""")
+        assertEquals(listOf("Dunkler Modus", "Diagnose"), build.notes)
+        assertEquals(emptyList(), AppBuild.parse("""{"versionCode":7,"versionName":"0.2.7","sha256":"${"a".repeat(64)}","size":10}""").notes)
     }
 }

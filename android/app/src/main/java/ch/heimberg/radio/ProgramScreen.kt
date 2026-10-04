@@ -344,7 +344,7 @@ fun ItemRow(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 RubricLabel(look.kind)
-                Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, color = Nocturne.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(meta(item), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 item.error?.let { Text(Labels.error(it), style = MaterialTheme.typography.bodySmall, color = Nocturne.danger, maxLines = 2) }
             }

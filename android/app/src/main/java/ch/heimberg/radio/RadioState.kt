@@ -174,6 +174,9 @@ class RadioState {
     var insights by mutableStateOf<Insights?>(null)
     /** «Diagnose»: the latest errors; null until loaded. */
     var diagnostics by mutableStateOf<List<ch.heimberg.radio.core.ErrorEntry>?>(null)
+    /** Weekly copies of the settings (newest first), and the one asked about before it is restored. */
+    var backups by mutableStateOf<List<String>?>(null)
+    var restoreAsk by mutableStateOf<String?>(null)
     var listening by mutableStateOf<ListeningProfile?>(null)
     var settingUp by mutableStateOf(false)
     var studioMissing by mutableStateOf(false)

@@ -135,6 +135,7 @@ class MainActivity private constructor(
     override fun onCreate(savedInstanceState: Bundle?) {
         // Light, dark or as the system: set before the first frame, for this and every later screen.
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(UiHints(this).nightMode)
+        CrashReports.install(this)
         super.onCreate(savedInstanceState)
         connection = RadioSettings(this).connection() ?: run {
             startActivity(Intent(this, SetupActivity::class.java))
@@ -162,6 +163,8 @@ class MainActivity private constructor(
         }
 
         lifecycleScope.launch { loadBlocks() }
+        // A crash of an earlier run goes to «Diagnose».
+        lifecycleScope.launch { CrashReports.send(this@MainActivity, api) }
         NoticeWorker.schedule(this)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -205,7 +208,9 @@ class MainActivity private constructor(
         val build = updater.available() ?: return
         if (state.update?.versionCode == build.versionCode) return
         state.update = build
-        state.updateNote = "Version ${build.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})."
+        // «Was ist neu»: the lines the build carries, under the version.
+        state.updateNote = "Version ${build.versionName} ist bereit (installiert: ${version.removePrefix("Version ")})." +
+            build.notes.joinToString("") { "\n• $it" }
     }
 
     override fun onStart() {
