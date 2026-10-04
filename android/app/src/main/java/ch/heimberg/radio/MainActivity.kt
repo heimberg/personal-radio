@@ -691,6 +691,7 @@ class MainActivity private constructor(
                 state.connectionError = null
                 state.failures = timeline.failures
                 timeline.station?.let { state.stationName = it }
+                state.isHost = timeline.host
                 state.familyEnabled = timeline.family != null
                 state.familyUnread = timeline.family?.unread ?: 0
                 // The share menu needs the members; the open tab keeps its chat current.

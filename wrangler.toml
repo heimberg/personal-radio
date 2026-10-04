@@ -54,6 +54,7 @@ crons = ["*/10 * * * *"]
 #   ASK_BASE_URL, ASK_MODEL, ASK_API_KEY: all three set enables ASK; otherwise Gemini writes and verifies.
 #   SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET (secret): track search for artist hours · SPOTIFY_MARKET CH
 #   LISTENERS (secret): further listeners · OWNER_NAME Papa (how the family tab names the owner)
+#   CF_ACCOUNT_ID, CF_ACCESS_API_TOKEN (secret): invitations by link or code (README step 12)
 #   SPEECH_MP3 off: «on» stores speech as MP3 (a tenth of the WAV size). Encoding takes about a second of
 #   CPU per minute of speech, so it needs Workers Paid and a [limits] cpu_ms = 120000 block here; the
 #   Free plan refuses that block (and its 10 ms CPU would stop the encoding).

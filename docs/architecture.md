@@ -230,7 +230,9 @@ A series tells one subject over several episodes (`src/domain/series.ts`, table 
 
 ### Family
 
-Everyone on one Worker – the owner and the listeners in `LISTENERS` – forms the family (`server/family.ts`, migration 0011). The API names members by `owner` or their listener name and shows names only, never the owner's email. The owner's name is `OWNER_NAME`, default «Papa».
+Listeners can also join by invitation (`server/invites.ts`, `server/routes/invites.ts`, migration 0017): the owner creates a single-use code (stored as a SHA-256 hash, valid for a week); the public `/join` path (an Access bypass) shows the page, serves the APK for a valid code and redeems it by creating an Access service token through the Cloudflare API. The token's secret goes to the joining app once and is never stored. Invited listeners live in D1 (`invited_listeners`) and are merged with `LISTENERS` by `listenersOf` (cached per isolate for 30 s); wrong codes count per hashed address and hour. Guests (`kind = guest`) have a station but are not family members.
+
+Everyone on one Worker – the owner and the listeners in `LISTENERS` and the invited family – forms the family (`server/family.ts`, migration 0011). The API names members by `owner` or their listener name and shows names only, never the owner's email. The owner's name is `OWNER_NAME`, default «Papa».
 
 - **Chat:** `family_messages` keeps the last thousand messages. `family_reads` keeps each member's last read message. `GET /api/timeline` carries `family: { unread, latest }` for the badge and the notification.
 - **Sharing** (`POST /api/family/share`): copies a produced item (script, sources, every audio object under a new key) into the recipient's program, right behind the item that plays next there. It is marked with `sharedBy`, and nothing is produced again. A chat message records it.

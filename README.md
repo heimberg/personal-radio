@@ -139,6 +139,7 @@ Worker → **Settings → Variables and Secrets**, type *Secret* (or `npx wrangl
 | `ACCESS_SERVICE_TOKEN_ID` | for the app | see step 8 |
 | `LISTENERS` | optional | further listeners with their own station, see step 11 |
 | `OWNER_NAME` | optional | how the family tab names you (default «Papa»), see step 11 |
+| `CF_ACCESS_API_TOKEN` | for invitations | API token with *Access: Service Tokens Edit*, see step 12 |
 | `SPOTIFY_CLIENT_SECRET` | for music | see step 6 |
 | `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL` | no | an OpenAI-compatible endpoint; when all three are set it verifies facts as an independent second model |
 | `MISTRAL_API_KEY` | no | enables Mistral voices in addition to the Gemini voices |
@@ -194,6 +195,17 @@ Each further listener gets their own service token and their own station (progra
 2. Add the token to the **Service Auth** policy of the Worker's Access application (the same policy as the app's token).
 3. Set the Worker secret `LISTENERS` to `<Client ID>=<name>` – for a child `<Client ID>=<name>:kids`. Several listeners are separated by `;`, e.g. `ab12.access=lea:kids; cd34.access=tom`. Then run the deploy workflow again (or save the secret in the dashboard).
 4. Install the APK on their phone and enter the Worker address with *their* Client ID and Secret. The app shows «noch nicht eingerichtet»: **Studio → Radio einrichten**. Spotify needs their own account on their phone.
+
+### 12. Invite by link or code (optional)
+
+Instead of step 11 by hand, the app can invite: **Studio → Einladen**, a name and *Familie*, *Kind* or *Gast*, then the share sheet sends a link. The link opens a page with the APK download and a button that joins in the app; the code alone works too. Redeeming it makes a service token for that phone through the Cloudflare API and a station of its own. A code works once and for a week; ten wrong codes per address and hour are allowed, then the page waits. *Gast* gets a station but no family tab, chat or sharing. **Entfernen** revokes the token at once.
+
+One-time setup in Cloudflare:
+
+1. **My Profile → API Tokens → Create Token → Custom**: permission *Account · Access: Service Tokens · Edit* for your account. Set it as the Worker secret `CF_ACCESS_API_TOKEN`, and your account ID (32 hex characters, on the dashboard's overview) as the variable or secret `CF_ACCOUNT_ID`.
+2. **Zero Trust → Access → Applications → Add → Self-hosted**: the Worker's hostname with path `join`, one policy with action **Bypass** for *Everyone*. Only the invitation page, the APK for a valid code and the redemption go through it.
+3. In the Worker's existing Access application, change the **Service Auth** policy to include **Any Access Service Token**. Access then lets every token of your account through, and the Worker checks each one against the owner's token, `LISTENERS` and the invited listeners (migration `0017_invites.sql`), so unknown tokens are still refused.
+4. Playing music through the Spotify app on their phone needs nothing more. Only the **Spotify-Hörprofil** (top artists from the Web API) needs their Spotify account under *User Management* in the Spotify developer app while it is in development mode (up to 25).
 
 **Family.** As soon as `LISTENERS` has an entry, the app gets a tab «Familie» for everyone on the Worker:
 - who is there and what they hear right now;

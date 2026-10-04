@@ -11,7 +11,7 @@ import { AGENT_PRESETS } from '../../src/domain/agent-presets.ts';
 import { usageSummary } from '../usage.ts';
 import { FEATURES, featureOn, parseFeatures, parseHiddenBlocks } from '../../src/domain/features.ts';
 import { allBlockViews } from '../../src/domain/blocks.ts';
-import { isKids, parseListeners } from '../listeners.ts';
+import { isKids, listenersOf } from '../listeners.ts';
 import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, listenerNotes } from '../../src/domain/listener-notes.ts';
 import { json, readJson } from '../http.ts';
 import { backupRoutes } from '../backups.ts';
@@ -103,7 +103,7 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
   if (url.pathname === '/api/features') {
     const config = await store.getConfig(owner);
     if (!config) return json({ error: 'not_configured' }, 404);
-    const kids = isKids(owner, parseListeners(env.LISTENERS));
+    const kids = isKids(owner, await listenersOf(env));
     const view = (current: typeof config) => ({
       features: FEATURES.filter(feature => !feature.only || (feature.only === 'kids') === kids)
         .map(({ id, name, description, cost }) => ({ id, name, description, cost, enabled: featureOn(current, id) })),

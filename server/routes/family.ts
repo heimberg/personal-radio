@@ -12,7 +12,7 @@ import { membersOf, audioObjects } from '../services.ts';
  */
 export async function familyRoutes(request: Request, env: Environment, owner: string, url: URL, ctx?: ExecutionContext): Promise<Response | null> {
   if (!url.pathname.startsWith('/api/family')) return null;
-  const members = membersOf(env), me = members.find(member => member.owner === owner);
+  const members = await membersOf(env), me = members.find(member => member.owner === owner);
   if (!me) return json({ error: 'not_found' }, 404);
   const family = new FamilyStore(env.DB), store = new StationStore(env.DB), now = new Date();
   const nameOf = (id: string | null) => members.find(member => member.owner === id);

@@ -61,11 +61,47 @@
             android:layout_marginTop="@dimen/space_2"
             android:text="@string/setup_intro" />
 
+        <!-- Joining by invitation: the link (or just the code) from the owner's message. -->
         <TextView
             style="@style/Widget.PersonalRadio.Text.Meta"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_6"
+            android:labelFor="@+id/invite"
+            android:text="@string/invite_label"
+            android:textColor="@color/neutral_400"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/invite"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:hint="@string/invite_hint"
+            android:importantForAutofill="no"
+            android:inputType="textUri" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/join"
+            style="@style/Widget.PersonalRadio.Button.Primary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_3"
+            android:text="@string/join"
+            app:icon="@drawable/ic_users" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Eyebrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_8"
+            android:text="@string/manual_connection" />
+
+        <TextView
+            style="@style/Widget.PersonalRadio.Text.Meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_3"
             android:labelFor="@+id/base_url"
             android:text="@string/base_url"
             android:textColor="@color/neutral_400"

@@ -27,6 +27,10 @@ import ch.heimberg.radio.core.StationDraft
 import ch.heimberg.radio.core.ListeningProfile
 import ch.heimberg.radio.core.Insights
 import ch.heimberg.radio.core.ErrorEntry
+import ch.heimberg.radio.core.CreatedInvite
+import ch.heimberg.radio.core.InviteOverview
+import ch.heimberg.radio.core.ListenerKind
+import ch.heimberg.radio.core.JoinResult
 import ch.heimberg.radio.core.AgentPreset
 import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.VoiceOption
@@ -51,6 +55,34 @@ data class TrialResult(
 
 /** Talks to the private Worker with the Access service token on every request. */
 class ApiClient(private val connection: Connection) {
+
+    companion object {
+        /**
+         * Redeems an invitation at [baseUrl]: the one request without a token (Access lets `/join` through).
+         * Returns this phone's own token, or throws with the server's reason.
+         */
+        suspend fun join(baseUrl: String, code: String): JoinResult = withContext(Dispatchers.IO) {
+            val http = URL("${baseUrl.trimEnd('/')}/join/redeem").openConnection() as HttpURLConnection
+            try {
+                http.requestMethod = "POST"
+                http.connectTimeout = 15_000
+                http.readTimeout = 30_000
+                http.instanceFollowRedirects = false
+                http.doOutput = true
+                http.setRequestProperty("Content-Type", "application/json")
+                http.setRequestProperty("Accept", "application/json")
+                http.outputStream.use { it.write(JSONObject().put("code", code).toString().toByteArray(Charsets.UTF_8)) }
+                val status = http.responseCode
+                val text = (if (status in 200..299) http.inputStream else http.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                if (status in 200..299) return@withContext InviteOverview.joined(text)
+                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull()?.takeIf { it.isNotBlank() }
+                throw ApiException(status, detail ?: when (status) {
+                    302, 401, 403 -> "Diese Adresse lässt Einladungen noch nicht durch (Access-Ausnahme für /join fehlt)."
+                    else -> "Beitreten fehlgeschlagen (HTTP $status)."
+                })
+            } finally { http.disconnect() }
+        }
+    }
 
     data class ShowOption(val id: String, val name: String, val format: String)
 
@@ -144,6 +176,13 @@ class ApiClient(private val connection: Connection) {
     }
 
     /** The latest errors for the studio's «Diagnose». */
+    suspend fun invites(): InviteOverview = withContext(Dispatchers.IO) { InviteOverview.parse(request("GET", "api/invites")) }
+    suspend fun createInvite(name: String, kind: ListenerKind): CreatedInvite = withContext(Dispatchers.IO) {
+        InviteOverview.created(request("POST", "api/invites", JSONObject().put("name", name).put("kind", kind.wire).toString()))
+    }
+    suspend fun deleteInvite(id: String) { withContext(Dispatchers.IO) { request("DELETE", "api/invites/$id") } }
+    suspend fun removeListener(key: String) { withContext(Dispatchers.IO) { request("DELETE", "api/listeners/$key") } }
+
     suspend fun diagnostics(): List<ErrorEntry> = withContext(Dispatchers.IO) { ErrorEntry.parse(request("GET", "api/diagnostics")) }
 
     suspend fun insights(): Insights = withContext(Dispatchers.IO) { Insights.parse(request("GET", "api/insights")) }

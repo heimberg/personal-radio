@@ -119,6 +119,8 @@ data class Timeline(
     val station: String? = null,
     /** Today's use against the daily limits. */
     val budget: Budget? = null,
+    /** This phone belongs to the station's owner: it may invite others. */
+    val host: Boolean = false,
 )
 
 /**

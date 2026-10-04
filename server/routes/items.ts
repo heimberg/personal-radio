@@ -5,7 +5,7 @@ import { addFollowUp, deleteItem, removeItem, swapItem, toView, transcriptView, 
 import { PlayStore } from '../play.ts';
 import { BookmarkStore } from '../follow.ts';
 import { SERIES_PREFIX } from '../../src/domain/series.ts';
-import { isKids, parseListeners } from '../listeners.ts';
+import { isKids, listenersOf } from '../listeners.ts';
 import { isFeedbackReason } from '../../src/domain/listener-notes.ts';
 import type { FeedbackAction } from '../../src/domain/recommendation.ts';
 import { json, readJson, statusFor } from '../http.ts';
@@ -154,7 +154,7 @@ export async function itemRoutes(request: Request, env: Environment, owner: stri
   await store.addFeedback(owner, { itemId: row.id, interests, action: action as FeedbackAction, listenedRatio, createdAt: now.toISOString() });
   if (listening) await store.update(owner, row.id, { state: action === 'complete' ? 'played' : 'skipped' }, now);
   // On a child's station every episode heard to the end earns a sticker.
-  if (action === 'complete' && row.show_id.startsWith(SERIES_PREFIX) && isKids(owner, parseListeners(env.LISTENERS))) {
+  if (action === 'complete' && row.show_id.startsWith(SERIES_PREFIX) && isKids(owner, await listenersOf(env))) {
     return json({ ok: true, sticker: await new PlayStore(env.DB).award(owner, 'episode', now) }, 200);
   }
   return json({ ok: true }, 200);

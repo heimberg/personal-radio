@@ -714,3 +714,34 @@ class StationEditingTest {
         assertEquals(emptyList(), AppBuild.parse("""{"versionCode":7,"versionName":"0.2.7","sha256":"${"a".repeat(64)}","size":10}""").notes)
     }
 }
+
+class InviteTest {
+    @Test fun joinLinksCodesAndAppLinksAreRecognized() {
+        assertEquals(JoinLink("K7QM-ABCD-2345-WXYZ", "https://radio.example.workers.dev"),
+            JoinLink.parse(" https://radio.example.workers.dev/join?code=K7QM-ABCD-2345-WXYZ "))
+        assertEquals(JoinLink("K7QM-ABCD-2345-WXYZ", "https://radio.example"),
+            JoinLink.parse("personal-radio://join?code=k7qm-abcd-2345-wxyz&url=https%3A%2F%2Fradio.example%2F"))
+        assertEquals(JoinLink("K7QM-ABCD-2345-WXYZ", null), JoinLink.parse("k7qm abcd 2345 wxyz"))
+        assertEquals(JoinLink("K7QM-ABCD-2345-WXYZ", null), JoinLink.parse("K7QMABCD2345WXYZ"))
+        // Somewhere else, not a join link, or a broken code: nothing.
+        assertNull(JoinLink.parse("https://evil.example/other?code=K7QM-ABCD-2345-WXYZ"))
+        assertEquals(JoinLink("K7QM-ABCD-2345-WXYZ", null), JoinLink.parse("personal-radio://join?code=K7QM-ABCD-2345-WXYZ&url=http%3A%2F%2Fradio.example"))
+        assertNull(JoinLink.parse("https://radio.example/join?code=SHORT"))
+        assertNull(JoinLink.parse("hallo"))
+    }
+
+    @Test fun overviewListsOpenInvitationsAndListeners() {
+        val overview = InviteOverview.parse("""{"ready":true,"invites":[
+            {"id":"a","name":"Lea","kind":"kids","expiresAt":"2026-10-11T12:00:00Z"},
+            {"id":"b","name":"Tom","kind":"guest","expiresAt":"2026-10-11T12:00:00Z","usedAt":"2026-10-05T08:00:00Z"},
+            {"id":"c","name":"Max","kind":"family","expiresAt":"2026-09-01T12:00:00Z","expired":true}],
+            "listeners":[{"key":"tom","name":"Tom","kind":"guest","since":"2026-10-05T08:00:00Z","removable":true}],"extra":1}""")
+        assertTrue(overview.ready)
+        assertEquals(listOf("a"), overview.open.map { it.id })
+        assertEquals(ListenerKind.KIDS, overview.invites[0].listenerKind)
+        assertEquals(ListenerKind.GUEST, overview.listeners[0].listenerKind)
+        val created = InviteOverview.created("""{"id":"a","code":"K7QM-ABCD-2345-WXYZ","link":"https://radio.example/join?code=K7QM-ABCD-2345-WXYZ","expiresAt":"x"}""")
+        assertTrue(created.message("Lea", "Radio Heimberg").contains("«Radio Heimberg»"))
+        assertTrue(created.message("Lea", null).contains(created.link))
+    }
+}
