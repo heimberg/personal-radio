@@ -220,6 +220,20 @@ export class StationStore {
     await runAll(this.db, statements);
   }
 
+  /** Today's productions and speech characters, for the warning near the daily limits. */
+  async usageToday(owner: string, day: string): Promise<{ generations: number; characters: number }> {
+    const row = await this.db.prepare(`SELECT (SELECT requests FROM daily_requests WHERE owner_id = ? AND utc_day = ?) AS generations,
+      (SELECT characters FROM daily_usage WHERE owner_id = ? AND utc_day = ?) AS characters`).bind(owner, day, owner, day).first<{ generations: number | null; characters: number | null }>();
+    return { generations: Number(row?.generations ?? 0), characters: Number(row?.characters ?? 0) };
+  }
+
+  /** How many items each show produced since [since]: where the productions (and so the costs) go. */
+  async producedByShow(owner: string, since: Date): Promise<Array<{ showId: string; count: number }>> {
+    const rows = (await this.db.prepare(`SELECT show_id, COUNT(*) AS count FROM timeline_items WHERE owner_id = ? AND created_at >= ?
+      AND state IN ('ready', 'played', 'skipped', 'archived') GROUP BY show_id ORDER BY count DESC LIMIT 12`).bind(owner, since.toISOString()).all<{ show_id: string; count: number }>()).results;
+    return rows.map(row => ({ showId: row.show_id, count: Number(row.count) }));
+  }
+
   /** A failure outside an item (a transition, the queue). */
   async logError(owner: string, stage: string, message: string, now: Date, itemId?: string) {
     await this.db.prepare('INSERT INTO error_log (owner_id, item_id, stage, message, created_at) VALUES (?, ?, ?, ?, ?)')

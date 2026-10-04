@@ -114,6 +114,7 @@
     <string name="block_subject_hint">%1$s (%2$s)</string>
     <string name="block_needs_spotify">Mit Musik: tippe zuerst auf «Spotify verbinden».</string>
     <string name="notices_channel">Produktionen</string>
+    <string name="notice_budget">Tageslimit fast erreicht</string>
     <string name="notice_ready">«%1$s» ist bereit</string>
     <string name="notice_failed">Eine Produktion ist fehlgeschlagen</string>
     <string name="notice_family">Neu in der Familie</string>

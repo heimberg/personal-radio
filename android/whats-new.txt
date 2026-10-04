@@ -1,0 +1,8 @@
+Hell oder Dunkel einstellbar: Studio → Mehr → Darstellung
+Studio → Diagnose zeigt die letzten Fehler mit Grund – auch Abstürze der App
+Studio → Sicherungen: jeden Sonntag gesichert, mit einem Tipp wiederherstellbar
+Warnung, wenn ein Tageslimit fast erreicht ist
+Übergänge sind bereit, bevor sie laufen; lange Musikstunden entstehen zuverlässiger
+
+# Above the first empty line: what is new in the next build, in German, one line each (at most six).
+# The Android workflow puts these lines into latest.json; the app shows them in the update note.

@@ -117,6 +117,8 @@ data class Timeline(
     val play: PlaySummary = PlaySummary(),
     /** The station's name, for the header of «Hören». */
     val station: String? = null,
+    /** Today's use against the daily limits. */
+    val budget: Budget? = null,
 )
 
 /**
@@ -180,6 +182,20 @@ object TimelineJson {
     fun parseItem(body: String): TimelineItem = json.decodeFromString(TimelineItem.serializer(), body)
     fun parseResponse(body: String): Timeline = json.decodeFromString(Timeline.serializer(), body).let { it.copy(items = it.items.sortedBy { item -> item.seq }) }
     fun parse(body: String): List<TimelineItem> = parseResponse(body).items
+}
+
+/** Today's use against the daily limits, each as [used, limit]. */
+@Serializable
+data class Budget(val generations: List<Long> = emptyList(), val speech: List<Long> = emptyList()) {
+    /** A warning once a limit is at least 80 % used, else null. */
+    fun warning(): String? {
+        fun share(pair: List<Long>) = if (pair.size == 2 && pair[1] > 0) pair[0].toDouble() / pair[1] else 0.0
+        val parts = listOfNotNull(
+            share(generations).takeIf { it >= 0.8 }?.let { "Produktionen ${Math.round(it * 100)} %" },
+            share(speech).takeIf { it >= 0.8 }?.let { "Sprachausgabe ${Math.round(it * 100)} %" },
+        )
+        return if (parts.isEmpty()) null else "Tageslimit fast erreicht: ${parts.joinToString(", ")}. Danach wartet die Produktion bis morgen."
+    }
 }
 
 /** German labels shared by the app's list and notification texts. */

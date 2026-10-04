@@ -54,6 +54,17 @@ jobs:
           # Public fingerprint for the Spotify developer app (Android packages).
           keytool -list -v -keystore "$RUNNER_TEMP/release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | grep -E '^\s*SHA1:' | sed 's/^ */Signing key /'
           echo "RADIO_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Screenshot tests
+        # Program rows light, dark and with large fonts against src/test/screenshots; after a deliberate
+        # change: ./gradlew :app:recordRoborazziDebug and commit the new pictures.
+        run: ./gradlew :app:verifyRoborazziDebug --no-daemon --stacktrace
+      - name: Keep the screenshot differences
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshot-differences
+          path: android/app/build/outputs/roborazzi
+          retention-days: 7
       - name: Build APK
         env:
           RADIO_KEYSTORE_PASSWORD: ${{ secrets.RADIO_KEYSTORE_PASSWORD }}
@@ -68,8 +79,19 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           apk=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
-          printf '{"versionCode":%s,"versionName":"0.2.%s","sha256":"%s","size":%s}' \
-            "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_NUMBER" "$(sha256sum "$apk" | cut -d' ' -f1)" "$(stat -c%s "$apk")" > "$RUNNER_TEMP/latest.json"
+          # «Was ist neu»: the lines above the first empty line of whats-new.txt.
+          APK="$apk" python3 - > "$RUNNER_TEMP/latest.json" <<'PY'
+          import hashlib, json, os
+          apk = os.environ['APK']
+          notes = []
+          for line in open('whats-new.txt', encoding='utf-8').read().split('\n'):
+              if not line.strip():
+                  break
+              notes.append(line.strip()[:160])
+          run = int(os.environ['GITHUB_RUN_NUMBER'])
+          print(json.dumps({'versionCode': run, 'versionName': f'0.2.{run}', 'sha256': hashlib.sha256(open(apk, 'rb').read()).hexdigest(),
+                            'size': os.path.getsize(apk), 'notes': notes[:6]}, ensure_ascii=False))
+          PY
           # The APK first: the description only points to a build that is already there.
           npx --yes wrangler@4 r2 object put personal-radio-audio/app/personal-radio.apk --file "$apk" --content-type application/vnd.android.package-archive --remote
           npx --yes wrangler@4 r2 object put personal-radio-audio/app/latest.json --file "$RUNNER_TEMP/latest.json" --content-type application/json --remote

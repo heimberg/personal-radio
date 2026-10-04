@@ -38,6 +38,8 @@ export interface Environment {
   GEMINI_API_KEY?: string;
   GEMINI_TEXT_MODEL?: string;
   GEMINI_RESEARCH_MODEL?: string;
+  /** The cheaper model for scoring, transitions, quiz, story choices and the novelty check; empty turns it off. */
+  GEMINI_LITE_MODEL?: string;
   /** Spotify app credentials for track search (client credentials, no user login). */
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;

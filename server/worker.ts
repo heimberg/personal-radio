@@ -7,6 +7,7 @@ import { authenticate } from './auth.ts';
 import { stationDeps, refreshProgram } from './services.ts';
 import { pruneLinkers } from './routes/linker.ts';
 import { pruneDatabase } from './retention.ts';
+import { backupStation } from './backups.ts';
 import { familyRoutes } from './routes/family.ts';
 import { listeningRoutes, landingPage } from './routes/spotify.ts';
 import { voiceRoutes } from './routes/voices.ts';
@@ -51,6 +52,10 @@ export default {
     ctx.waitUntil(pruneLinkers(env.AUDIO, now).catch(() => { /* Cleanup is retried on the next run. */ }));
     // Once a night: old logs, counters and markers leave the database.
     if (now.getUTCHours() === 3 && now.getUTCMinutes() < 10) ctx.waitUntil(pruneDatabase(env.DB, now).catch(error => console.error('database cleanup failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+    // Sunday night: a copy of every station's settings, the newest eight kept.
+    if (now.getUTCDay() === 0 && now.getUTCHours() === 3 && now.getUTCMinutes() < 10) {
+      for (const owner of owners) ctx.waitUntil(backupStation(env, owner, now).catch(error => console.error('backup failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+    }
     for (const owner of owners) {
       ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
     }

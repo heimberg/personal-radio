@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("io.github.takahirom.roborazzi")
 }
 
 // CI passes a keystore so every build can update the installed app; without one the debug key signs.
@@ -47,6 +48,8 @@ android {
     }
 
     buildFeatures { compose = true }
+    // Screenshot tests run on the JVM with Robolectric's native graphics; they need the app's resources.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -62,6 +65,13 @@ android {
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
 dependencies {
+    // Screenshot tests (src/test, golden images in src/test/screenshots): ./gradlew :app:verifyRoborazziDebug
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("ch.heimberg.radio:core")
     implementation("androidx.core:core-ktx:1.13.1")
     // Installs the baseline profile (src/main/baseline-prof.txt) so startup code is compiled ahead of time.
@@ -92,4 +102,8 @@ dependencies {
     // Spotify's login, released together with App Remote 0.8.0: grants «app-remote-control» when App Remote asks for it.
     implementation("com.spotify.android:auth:2.1.0")
     implementation("com.google.code.gson:gson:2.11.0")
+}
+
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }

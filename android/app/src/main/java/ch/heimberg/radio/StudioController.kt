@@ -22,6 +22,10 @@ interface StudioActions {
     /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
     fun loadInsights()
     fun loadDiagnostics()
+    /** Sicherungen: list, copy now, bring one back. */
+    fun loadBackups()
+    fun backupNow()
+    fun restoreBackup(name: String)
     fun loadAgents()
     fun loadListening()
     fun connectListening()
@@ -100,6 +104,25 @@ class StudioController(private val ref: HostRef) : StudioActions {
 
     override fun loadInsights() {
         host.scope.launch { runCatching { api.insights() }.onSuccess { state.insights = it } }
+    }
+
+    override fun loadBackups() {
+        host.scope.launch { runCatching { api.backups() }.onSuccess { state.backups = it }.onFailure { state.say(host.failure(it)) } }
+    }
+
+    override fun backupNow() {
+        host.scope.launch {
+            runCatching { api.backupNow() }.onSuccess { state.backups = it; state.say("Einstellungen gesichert.") }.onFailure { state.say(host.failure(it)) }
+        }
+    }
+
+    override fun restoreBackup(name: String) {
+        state.restoreAsk = null
+        host.scope.launch {
+            runCatching { api.restoreBackup(name) }
+                .onSuccess { state.say("Sicherung vom ${Backups.label(name)} wiederhergestellt."); loadStudio(true); loadBackups(); host.changed() }
+                .onFailure { state.say(host.failure(it)) }
+        }
     }
 
     override fun loadDiagnostics() {

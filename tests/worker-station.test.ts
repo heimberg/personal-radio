@@ -13,6 +13,7 @@ function memoryBucket() {
     objects,
     put: async (key: string, value: Uint8Array) => { objects.set(key, value); },
     delete: async (key: string) => { objects.delete(key); },
+    list: async ({ prefix }: { prefix: string }) => ({ objects: [...objects.keys()].filter(key => key.startsWith(prefix)).map(key => ({ key })) }),
     get: async (key: string, options?: { range?: Headers }) => {
       const value = objects.get(key);
       if (!value) return null;
@@ -295,6 +296,22 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.deepEqual(calls, ['draft', 'tts']);
     assert.equal((await call(`/${sounds.linkerUrl}?after=${open[1].id}&next=${open[2].id}`)).headers.get('Content-Type'), 'audio/mpeg');
     assert.deepEqual(calls, ['draft', 'tts']);
+    // Today's use against the limits, for the app's warning.
+    const { budget } = await (await call('/api/timeline')).json() as { budget: { generations: number[]; speech: number[] } };
+    assert.equal(budget.generations.length, 2); assert.ok(budget.speech[1] > 0);
+    // An app crash goes to the diagnostics.
+    assert.equal((await call('/api/diagnostics/crash', { method: 'POST', body: JSON.stringify({ version: '0.2.99', device: 'Pixel 9', trace: 'java.lang.IllegalStateException: boom\n at X' }) })).status, 200);
+    const { errors } = await (await call('/api/diagnostics')).json() as { errors: Array<{ stage: string; message: string }> };
+    assert.equal(errors[0].stage, 'app'); assert.match(errors[0].message, /^0\.2\.99 · Pixel 9: java\.lang\.IllegalStateException/);
+    // Backups: a copy now, a change, then the copy brought back (and the state before it kept).
+    const copied = await (await call('/api/backups', { method: 'POST' })).json() as { backups: string[] };
+    assert.equal(copied.backups.length, 1);
+    assert.ok(![...env.AUDIO.objects.keys()].some(key => key.includes('@')));
+    const { config: before } = await (await call('/api/station')).json() as { config: { name: string } };
+    await call('/api/station', { method: 'PUT', body: JSON.stringify({ ...before, name: 'Anderer Name' }) });
+    const restored = await (await call('/api/backups/restore', { method: 'POST', body: JSON.stringify({ name: copied.backups[0] }) })).json() as { config: { name: string } };
+    assert.equal(restored.config.name, before.name);
+    assert.ok((await (await call('/api/backups')).json() as { backups: string[] }).backups.some(name => name.endsWith('-vorher')));
     // Voices: own voices first, then the prebuilt ones; a designed voice comes back with its station ID.
     const { voices } = await (await call('/api/voices')).json() as { voices: Array<{ id: string; group: string }> };
     assert.deepEqual(voices[0], { id: 'gemini_voice_designed1', name: 'Studio-Mira', group: 'own' });

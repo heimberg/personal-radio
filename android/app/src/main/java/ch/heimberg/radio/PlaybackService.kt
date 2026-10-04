@@ -107,6 +107,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashReports.install(this)
         connection = RadioSettings(this).connection()
         api = connection?.let { ApiClient(it) }
         spotify = SpotifyLink(this)
