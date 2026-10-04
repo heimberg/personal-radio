@@ -205,7 +205,7 @@ One-time setup in Cloudflare:
 1. **My Profile → API Tokens → Create Token → Custom**: permission *Account · Access: Service Tokens · Edit* for your account. Set it as the Worker secret `CF_ACCESS_API_TOKEN`, and your account ID (32 hex characters, on the dashboard's overview) as the variable or secret `CF_ACCOUNT_ID`.
 2. **Zero Trust → Access → Applications → Add → Self-hosted**: the Worker's hostname with path `join`, one policy with action **Bypass** for *Everyone*. Only the invitation page, the APK for a valid code and the redemption go through it.
 3. In the Worker's existing Access application, change the **Service Auth** policy to include **Any Access Service Token**. Access then lets every token of your account through, and the Worker checks each one against the owner's token, `LISTENERS` and the invited listeners (migration `0017_invites.sql`), so unknown tokens are still refused.
-4. For music, add each new listener's Spotify account under *User Management* in the Spotify developer app (development mode allows 25).
+4. Playing music through the Spotify app on their phone needs nothing more. Only the **Spotify-Hörprofil** (top artists from the Web API) needs their Spotify account under *User Management* in the Spotify developer app while it is in development mode (up to 25).
 
 **Family.** As soon as `LISTENERS` has an entry, the app gets a tab «Familie» for everyone on the Worker:
 - who is there and what they hear right now;
