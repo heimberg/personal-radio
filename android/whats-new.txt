@@ -1,6 +1,6 @@
-Einladen: Studio → Einladen schickt Familie, Kindern oder Gästen einen Link mit eigenem Sender
-Beitreten per Link oder Code direkt beim ersten Start der App
-Gäste haben einen eigenen Sender, sehen aber nichts von der Familie
+Die Jury-Kritik wird umgesetzt: bis zu zwei Überarbeitungen, die Redaktion darf dafür ganze Passagen streichen
+Im Text siehst du, ob überarbeitet wurde (z. B. 2,6 → 3,1)
+Was nur mit neuer Recherche ginge, sucht «Mehr dazu» zu diesem Beitrag zuerst
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

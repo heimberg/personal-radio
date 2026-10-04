@@ -49,7 +49,7 @@ class TranscriptActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.title).text = transcript.title
         status.text = when {
             transcript.lines.isEmpty() -> getString(R.string.transcript_empty)
-            transcript.quality != null -> getString(R.string.transcript_quality, String.format(java.util.Locale.GERMAN, "%.1f", transcript.quality!!.overall), transcript.quality!!.notes).trimEnd(' ', '·')
+            transcript.quality != null -> transcript.quality!!.line()
             else -> ""
         }
         lines.removeAllViews()
