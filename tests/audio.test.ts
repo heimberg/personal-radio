@@ -101,3 +101,20 @@ test('streamed speech is stored as MP3: about an eighth of the WAV, real MP3 fra
   assert.equal(mp3[start + 1] & 0xe0, 0xe0);
   assert.equal(wavToMp3(new Uint8Array([1, 2, 3])), null);
 });
+
+test('sources are fitted to what a draft accepts: eight at most, 24 000 characters, usable links only', async () => {
+  const { fitSources, MAX_SOURCES, MAX_SOURCE_CHARS } = await import('../server/segment-pipeline.ts');
+  const at = '2026-10-04T08:00:00Z';
+  const source = (id: string, length: number, url = `https://example.org/${id}`) => ({ id, url, title: id, excerpt: 'x'.repeat(length), publishedAt: at, retrievedAt: at });
+  // Live data first, then a full web search: eleven sources, far more than 24 000 characters.
+  const fitted = fitSources([source('wetter', 400), source('p1', 2500), source('p1', 100), source('bad', 100, 'http://plain.example'),
+    ...Array.from({ length: 8 }, (_, i) => source(`w${i + 1}`, 3000))]);
+  assert.equal(fitted.length, MAX_SOURCES);
+  assert.deepEqual(fitted.slice(0, 2).map(item => item.id), ['wetter', 'p1']);
+  assert.ok(!fitted.some(item => item.id === 'bad'));
+  assert.ok(fitted.reduce((sum, item) => sum + item.excerpt.length, 0) <= MAX_SOURCE_CHARS);
+  // The station's own material (a story's plan, the week's review) has no link and stays.
+  assert.equal(fitSources([source('plan', 100, '')]).length, 1);
+  // A short source keeps all of its text.
+  assert.equal(fitted[0].excerpt.length, 400);
+});

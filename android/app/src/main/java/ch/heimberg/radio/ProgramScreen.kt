@@ -198,7 +198,7 @@ private fun Failures(state: RadioState, actions: RadioActions) {
             .clip(RoundedCornerShape(14.dp))
             .background(Nocturne.danger.copy(alpha = 0.10f))
             .clickable {
-                state.detail = "${failures.count} Beitrag/Beiträge fehlgeschlagen." + (reason?.let { "\n\nZuletzt${at?.let { " um $it" } ?: ""}: $it" } ?: "") +
+                state.detail = (if (failures.count == 1) "1 Beitrag ist fehlgeschlagen." else "${failures.count} Beiträge sind fehlgeschlagen.") + (reason?.let { "\n\nZuletzt${at?.let { " um $it" } ?: ""}: $it" } ?: "") +
                     "\n\n«Nochmal» produziert sie neu, ✕ räumt sie weg."
             }
             .padding(start = 14.dp, end = 2.dp),

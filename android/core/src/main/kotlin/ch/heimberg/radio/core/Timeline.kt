@@ -198,6 +198,7 @@ object Labels {
 
     fun error(code: String): String = when {
         code.startsWith("REJECTED: ") -> "Quellenprüfung nicht bestanden – " + code.removePrefix("REJECTED: ")
+        code.startsWith("INVALID_INPUT: ") -> "Produktion abgebrochen – " + code.removePrefix("INVALID_INPUT: ")
         code.startsWith("TOO_FEW_TRACKS: ") -> "Zu wenige Songs gefunden – " + code.removePrefix("TOO_FEW_TRACKS: ")
         else -> known(code)
     }
@@ -215,6 +216,9 @@ object Labels {
         "NO_ARTISTS" -> "Für Konzerte fehlt dein Spotify-Hörprofil (Studio → Spotify verbinden)."
         "NOTHING_NEW" -> "Nichts Neues zum Thema."
         "FOLLOW_REMOVED" -> "Du bleibst an diesem Thema nicht mehr dran."
-        else -> code
+        "INVALID_INPUT" -> "Die Quellen oder der Text passten nicht in die Grenzen der Produktion – «Nochmal» versucht es neu."
+        "SERIES_REMOVED" -> "Die Serie gibt es nicht mehr."
+        // An unknown code word is never shown bare; a sentence from the server is shown as it is.
+        else -> if (Regex("^[A-Z_]+$").matches(code)) "Unerwarteter Fehler ($code)." else code
     }
 }
