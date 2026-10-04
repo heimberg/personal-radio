@@ -17,7 +17,7 @@ import type { StationDeps } from './station.ts';
 import { meteredFetch } from './usage.ts';
 import { PlayStore } from './play.ts';
 import { FollowStore } from './follow.ts';
-import { forKids, isKids, parseListeners } from './listeners.ts';
+import { forKids, isKids, listenersNow, listenersOf } from './listeners.ts';
 import { familyMembers } from './family.ts';
 import type { AudioObjects, Member } from './family.ts';
 import type { Environment } from './http.ts';
@@ -113,7 +113,7 @@ export function musicFor(env: Environment) {
 
 /** Production for one station; a child's station gets its rules and never an explicit track. */
 export function stationDeps(env: Environment, owner: string): StationDeps {
-  const kids = isKids(owner, parseListeners(env.LISTENERS));
+  const kids = isKids(owner, listenersNow(env));
   const catalog = kids ? musicFor(env).cleanCatalog : musicFor(env).catalog;
   return {
     store: new StationStore(env.DB, kids ? forKids : undefined), pipeline: pipelineFor(env), audio: env.AUDIO,
@@ -167,8 +167,8 @@ export function listeningFor(env: Environment): SpotifyListening | null {
   return env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? new SpotifyListening(env.DB, { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET }) : null;
 }
 
-/** Everyone on this Worker: the owner and the listeners. */
-export const membersOf = (env: Environment): Member[] => familyMembers(env.ALLOWED_EMAIL ?? '', parseListeners(env.LISTENERS), env.OWNER_NAME);
+/** The family on this Worker: the owner and the listeners who are not guests. */
+export const membersOf = async (env: Environment): Promise<Member[]> => familyMembers(env.ALLOWED_EMAIL ?? '', await listenersOf(env), env.OWNER_NAME);
 
 /** R2 objects as the family copy reads them. */
 export const audioObjects = (env: Environment): AudioObjects => ({

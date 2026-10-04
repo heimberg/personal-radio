@@ -4,8 +4,13 @@
 import type { StationConfig } from '../src/domain/station.ts';
 import { AGENTS, resolveAgents } from '../src/domain/agents.ts';
 
-/** A further listener: their owner ID in the database, and whether the station is for a child. */
-export interface Listener { owner: string; kids: boolean }
+/**
+ * A further listener: their owner ID in the database, whether the station is for a child, and for those
+ * who joined by invitation their name and whether they are a guest (an own station, but not in the family).
+ */
+export interface Listener { owner: string; kids: boolean; guest?: boolean; name?: string }
+
+export type ListenerKind = 'family' | 'kids' | 'guest';
 
 const OWNER = /^[a-z0-9][a-z0-9._-]{1,39}$/;
 
@@ -25,6 +30,45 @@ export function parseListeners(value: string | undefined): Map<string, Listener>
     listeners.set(clientId, { owner: `listener:${name}`, kids: flag === 'kids' });
   }
   return listeners;
+}
+
+interface InvitedRow { client_id: string; owner_id: string; name: string; kind: ListenerKind }
+
+// Per isolate for half a minute: every request needs the listeners, joining is rare.
+let cached: { at: number; db: unknown; rows: InvitedRow[] } | null = null;
+const CACHE_MS = 30_000;
+
+/** Forgets the cached invited listeners (after someone joined or was removed). */
+export function forgetListeners() { cached = null; }
+
+/**
+ * Every further listener: those in the `LISTENERS` secret and those who joined by invitation (D1). A
+ * missing table (migration not applied yet) counts as nobody invited.
+ */
+export async function listenersOf(env: { LISTENERS?: string; DB: { prepare(sql: string): { all<T>(): Promise<{ results: T[] }> } } }, now = Date.now()): Promise<Map<string, Listener>> {
+  const listeners = parseListeners(env.LISTENERS);
+  if (!cached || cached.db !== env.DB || now - cached.at > CACHE_MS) {
+    const rows = await env.DB.prepare('SELECT client_id, owner_id, name, kind FROM invited_listeners ORDER BY created_at').all<InvitedRow>()
+      .then(result => result.results).catch(() => [] as InvitedRow[]);
+    cached = { at: now, db: env.DB, rows };
+  }
+  return withInvited(listeners, cached.rows);
+}
+
+function withInvited(listeners: Map<string, Listener>, rows: InvitedRow[]): Map<string, Listener> {
+  for (const row of rows) {
+    if (listeners.has(row.client_id)) continue;
+    listeners.set(row.client_id, { owner: row.owner_id, kids: row.kind === 'kids', guest: row.kind === 'guest', name: row.name });
+  }
+  return listeners;
+}
+
+/**
+ * The listeners as last loaded by [listenersOf], for code that cannot wait. Every entry point (request,
+ * cron, queue) loads them first, so a child's station always gets its rules.
+ */
+export function listenersNow(env: { LISTENERS?: string; DB: unknown }): Map<string, Listener> {
+  return withInvited(parseListeners(env.LISTENERS), cached && cached.db === env.DB ? cached.rows : []);
 }
 
 /** Every station the Worker keeps: the owner first, then the listeners. */

@@ -55,6 +55,9 @@ export interface Environment {
   SPEECH_MP3?: string;
   /** How the family tab names the owner (default «Papa»). */
   OWNER_NAME?: string;
+  /** Invitations: the Cloudflare account and an API token with `Access: Service Tokens Edit` (secret). */
+  CF_ACCOUNT_ID?: string;
+  CF_ACCESS_API_TOKEN?: string;
 }
 
 export function json(body: unknown, status: number) {

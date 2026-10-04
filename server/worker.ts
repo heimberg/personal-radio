@@ -1,6 +1,6 @@
 /** The Worker: authentication and routing (routes live in server/routes/), the cron and the production queue. */
 import { produceItem } from './station.ts';
-import { allOwners, parseListeners } from './listeners.ts';
+import { allOwners, listenersOf } from './listeners.ts';
 import { json } from './http.ts';
 import type { Environment, ProductionMessage, QueueBatch, ExecutionContext } from './http.ts';
 import { authenticate } from './auth.ts';
@@ -16,10 +16,13 @@ import { listenerRoutes } from './routes/listener.ts';
 import { programRoutes } from './routes/program.ts';
 import { itemRoutes } from './routes/items.ts';
 import { segmentRoutes } from './routes/segments.ts';
+import { inviteRoutes, joinRoutes } from './routes/invites.ts';
 
 export default {
   async fetch(request: Request, env: Environment, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // Joining by invitation happens before there is a token: Access lets `/join` through (see the docs).
+    if (url.pathname === '/join' || url.pathname.startsWith('/join/')) return joinRoutes(request, env, url);
     const auth = await authenticate(request, env);
     if (auth.owner === null) return json({ error: 'unauthorized', reason: auth.reason }, 401);
     const owner = auth.owner;
@@ -36,7 +39,7 @@ export default {
       } catch { return json({ error: 'quota_reset_unavailable' }, 503); }
       return json({ reset: true, utcDay }, 200);
     }
-    for (const routes of [voiceRoutes, studioRoutes, familyRoutes, listeningRoutes, listenerRoutes, programRoutes, itemRoutes]) {
+    for (const routes of [inviteRoutes, voiceRoutes, studioRoutes, familyRoutes, listeningRoutes, listenerRoutes, programRoutes, itemRoutes]) {
       const response = await routes(request, env, owner, url, ctx);
       if (response) return response;
     }
@@ -46,7 +49,7 @@ export default {
 
   /** Cron: keep every station's program filled ahead of playback (each only while its listener listens). */
   async scheduled(_controller: unknown, env: Environment, ctx: ExecutionContext) {
-    const owners = allOwners(env.ALLOWED_EMAIL, parseListeners(env.LISTENERS));
+    const owners = allOwners(env.ALLOWED_EMAIL, await listenersOf(env));
     if (!owners.length) return;
     const now = new Date();
     ctx.waitUntil(pruneLinkers(env.AUDIO, now).catch(() => { /* Cleanup is retried on the next run. */ }));
@@ -63,7 +66,7 @@ export default {
 
   /** Queue consumer: produce one timeline item per message. Retries are driven by the item's state, not the queue. */
   async queue(batch: QueueBatch, env: Environment) {
-    const owners = new Set(allOwners(env.ALLOWED_EMAIL, parseListeners(env.LISTENERS)));
+    const owners = new Set(allOwners(env.ALLOWED_EMAIL, await listenersOf(env)));
     for (const message of batch.messages) {
       const body = message.body as Partial<ProductionMessage> | null;
       const owner = body?.owner;

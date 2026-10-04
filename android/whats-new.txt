@@ -1,5 +1,6 @@
-Unter der Haube: neue Android-Bibliotheken (Media3, Compose, Spotify-Login 5)
-Bitte einmal prüfen: Spotify verbinden und eine Musikstunde abspielen
+Einladen: Studio → Einladen schickt Familie, Kindern oder Gästen einen Link mit eigenem Sender
+Beitreten per Link oder Code direkt beim ersten Start der App
+Gäste haben einen eigenen Sender, sehen aber nichts von der Familie
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

@@ -3,7 +3,7 @@ import { showNameOf } from '../station.ts';
 import { stationSounds } from '../../src/domain/station.ts';
 import { PlayStore } from '../play.ts';
 import { linkerFacts, linkerKey, linkerSystem, linkerText, silentWav } from '../linker.ts';
-import { forKids, isKids, parseListeners } from '../listeners.ts';
+import { forKids, isKids, listenersOf } from '../listeners.ts';
 import { FamilyStore } from '../family.ts';
 import { json } from '../http.ts';
 import type { Environment, AudioStore } from '../http.ts';
@@ -65,18 +65,18 @@ export async function prepareLinker(env: Environment, store: StationStore, owner
 async function makeLinker(env: Environment, store: StationStore, owner: string, after: string | null, next: string, personal: boolean):
   Promise<{ bytes: Uint8Array; type: string } | { body: ReadableStream; size: number; type: string } | null> {
   const stored = await store.getConfig(owner), writer = musicFor(env).writer;
-  const config = stored && isKids(owner, parseListeners(env.LISTENERS)) ? forKids(stored) : stored;
+  const config = stored && isKids(owner, await listenersOf(env)) ? forKids(stored) : stored;
   if (!config || !stationSounds(config).linker || !writer) return null;
   const [nextRow, before] = await Promise.all([store.getItem(owner, next), after ? store.getItem(owner, after) : Promise.resolve(null)]);
   if (!nextRow) return null;
   const now = new Date(), voice = `${config.host.voiceId ?? ''}|${config.host.voiceStyle ?? ''}|${stationSounds(config).musicBed}`;
   // A family greeting waiting for this listener is read in this transition (and never comes from the cache).
   const family = new FamilyStore(env.DB), greeting = await family.pendingGreeting(owner, now);
-  const from = greeting ? membersOf(env).find(member => member.owner === greeting.sender)?.name ?? 'der Familie' : '';
+  const from = greeting ? (await membersOf(env)).find(member => member.owner === greeting.sender)?.name ?? 'der Familie' : '';
   // A question to the radio is answered in a transition without a greeting (one thing at a time).
   const play = new PlayStore(env.DB), question = greeting ? null : await play.pendingQuestion(owner, now);
   if (!personal && (greeting || question)) return null;
-  const asker = question ? membersOf(env).find(member => member.owner === owner)?.name ?? '' : '';
+  const asker = question ? (await membersOf(env)).find(member => member.owner === owner)?.name ?? '' : '';
   const key = linkerKey(now.toISOString().slice(0, 10), after, next, voice + (greeting ? `|g${greeting.id}` : '') + (question ? `|q${question.id}` : ''));
   for (const [suffix, type] of [['.wav', 'audio/wav'], ['.mp3', 'audio/mpeg']] as const) {
     const cached = await env.AUDIO.get(key + suffix);

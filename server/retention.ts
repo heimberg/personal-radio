@@ -35,6 +35,9 @@ export async function pruneDatabase(db: D1Database, now: Date): Promise<void> {
     db.prepare('DELETE FROM radio_questions WHERE aired_at IS NOT NULL AND aired_at < ?').bind(before(now, RETENTION_DAYS.aired)),
     db.prepare('DELETE FROM spotify_oauth_states WHERE created_at < ?').bind(before(now, 1)),
     db.prepare('DELETE FROM research_cache WHERE created_at < ?').bind(before(now, 2)),
+    // Join attempts count per hour; invitations nobody used are gone a month after they expired.
+    db.prepare('DELETE FROM join_attempts WHERE hour < ?').bind(before(now, 1).slice(0, 13)),
+    db.prepare('DELETE FROM invites WHERE used_at IS NULL AND expires_at < ?').bind(before(now, 30)),
   ];
   await runAll(db, statements);
 }

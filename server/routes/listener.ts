@@ -6,7 +6,7 @@ import { PlayStore, albumView } from '../play.ts';
 import { BookmarkStore, FollowStore, MAX_FOLLOWED } from '../follow.ts';
 import { reverseGeocode, validCoordinate } from '../places.ts';
 import { featureOn } from '../../src/domain/features.ts';
-import { parseListeners } from '../listeners.ts';
+import { membersOf } from '../services.ts';
 import { FamilyStore } from '../family.ts';
 import { json, readJson } from '../http.ts';
 import type { Environment } from '../http.ts';
@@ -95,7 +95,8 @@ export async function listenerRoutes(request: Request, env: Environment, owner: 
     if (!config || !stationSounds(config).linker || !env.GEMINI_API_KEY) return json({ error: 'linker_off' }, 409);
     const now = new Date();
     const id = await play.addQuestion(owner, text, now);
-    if (parseListeners(env.LISTENERS).size) await new FamilyStore(env.DB).addMessage(owner, 'text', `❓ Frage ans Radio: ${text}`, now);
+    const members = await membersOf(env);
+    if (members.length > 1 && members.some(member => member.owner === owner)) await new FamilyStore(env.DB).addMessage(owner, 'text', `❓ Frage ans Radio: ${text}`, now);
     return json({ id }, 200);
   }
   return null;

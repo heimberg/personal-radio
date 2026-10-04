@@ -16,13 +16,17 @@ export interface Member {
   kids: boolean;
 }
 
-/** The owner (named [ownerName], «Papa» unless set) and every listener, named after their entry in LISTENERS. */
+/**
+ * The owner (named [ownerName], «Papa» unless set) and every listener but guests, named as invited or after
+ * their entry in LISTENERS. Guests have their own station but see nothing of the family.
+ */
 export function familyMembers(ownerEmail: string, listeners: Map<string, Listener>, ownerName?: string): Member[] {
   const members: Member[] = [{ key: 'owner', owner: ownerEmail.toLowerCase(), name: ownerName?.trim().slice(0, 30) || 'Papa', kids: false }];
   for (const listener of listeners.values()) {
+    if (listener.guest) continue;
     const key = listener.owner.slice('listener:'.length);
     if (members.some(member => member.key === key)) continue;
-    members.push({ key, owner: listener.owner, name: key.charAt(0).toUpperCase() + key.slice(1), kids: listener.kids });
+    members.push({ key, owner: listener.owner, name: listener.name?.trim().slice(0, 30) || key.charAt(0).toUpperCase() + key.slice(1), kids: listener.kids });
   }
   return members;
 }

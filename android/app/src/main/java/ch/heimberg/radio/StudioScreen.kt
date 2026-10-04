@@ -216,6 +216,14 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Toggle("Live-Übergänge", "Die Moderation verbindet die Beiträge kurz vor der Sendung", settings.linker) { edit(settings.copy(linker = it)) }
         Toggle("Klangteppich", "Leise Musik unter kurzen Moderationen", settings.bed) { edit(settings.copy(bed = it)) }
     }
+    if (state.isHost) {
+        val open = state.invites?.open?.size ?: 0
+        val listening = state.invites?.listeners?.size
+        Card("einladen", R.drawable.ic_users, Kind.STORY, "Einladen", when {
+            listening == null -> "Familie, Kinder oder Gäste mit eigenem Sender"
+            else -> "$listening Hörer${if (open > 0) " · $open offen" else ""}"
+        }, state) { InvitesContent(state, actions) }
+    }
     val station = state.station
     if (station != null) {
         if (state.studioCard == null) Text("PROGRAMM UND REDAKTION", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 4.dp))

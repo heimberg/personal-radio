@@ -180,6 +180,12 @@ class RadioState {
     /** Weekly copies of the settings (newest first), and the one asked about before it is restored. */
     var backups by mutableStateOf<List<String>?>(null)
     var restoreAsk by mutableStateOf<String?>(null)
+    /** The owner's phone: the studio offers «Einladen». */
+    var isHost by mutableStateOf(false)
+    /** Invitations and who listens; null until the card opens. */
+    var invites by mutableStateOf<ch.heimberg.radio.core.InviteOverview?>(null)
+    /** A listener the owner is about to remove (asks first). */
+    var removeListenerAsk by mutableStateOf<ch.heimberg.radio.core.InvitedListener?>(null)
     var listening by mutableStateOf<ListeningProfile?>(null)
     var settingUp by mutableStateOf(false)
     var studioMissing by mutableStateOf(false)

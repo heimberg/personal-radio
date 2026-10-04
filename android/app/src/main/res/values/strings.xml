@@ -53,7 +53,15 @@
     <string name="reason_saved">Danke – die Redaktion achtet darauf.</string>
     <string name="planned">Programm wird geplant und produziert.</string>
     <string name="setup_title">Mit deinem Radio verbinden</string>
-    <string name="setup_intro">Adresse deines privaten Workers und das Cloudflare-Access-Service-Token der App. Die Angaben bleiben in dieser App.</string>
+    <string name="setup_intro">Eingeladen? Füge den Link aus der Einladung ein. Sonst: Adresse deines privaten Workers und das Cloudflare-Access-Service-Token der App. Die Angaben bleiben in dieser App.</string>
+    <string name="invite_label">Ich habe eine Einladung</string>
+    <string name="invite_hint">Link oder Code (XXXX-XXXX-XXXX-XXXX)</string>
+    <string name="join">Beitreten</string>
+    <string name="joining">Trete bei …</string>
+    <string name="manual_connection">Oder von Hand verbinden</string>
+    <string name="invite_needs_address">Nur der Code? Dann trag unten die Adresse des Radios ein, oder füge den ganzen Link ein.</string>
+    <string name="invite_invalid">Das ist kein Einladungslink und kein Code mit 16 Zeichen.</string>
+    <string name="invite_replaces">Diese Einladung ersetzt die bestehende Verbindung. Tippe auf «Beitreten», wenn du das willst.</string>
     <string name="base_url">Adresse (https://…)</string>
     <string name="client_id">Client-ID des Service-Tokens</string>
     <string name="client_secret">Client-Secret des Service-Tokens</string>

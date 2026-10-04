@@ -7,11 +7,11 @@ import { stationSounds } from '../../src/domain/station.ts';
 import { activeMood } from '../../src/domain/mood.ts';
 import { PlayStore } from '../play.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from '../sounds.ts';
-import { isKids, parseListeners } from '../listeners.ts';
-import { FamilyStore, messageLine } from '../family.ts';
+import { isKids, listenersOf } from '../listeners.ts';
+import { FamilyStore, familyMembers, messageLine } from '../family.ts';
 import { json, readJson, statusFor } from '../http.ts';
 import type { Environment } from '../http.ts';
-import { membersOf, pipelineFor, stationDeps, refreshProgram } from '../services.ts';
+import { pipelineFor, stationDeps, refreshProgram } from '../services.ts';
 import { linker } from './linker.ts';
 
 const identAudio: Array<Uint8Array | undefined> = [];
@@ -27,14 +27,17 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     // Every question below goes to the database at once rather than one after another: the app asks every
     // half minute, and one round of waiting is faster than ten.
-    const listeners = parseListeners(env.LISTENERS), familyStore = new FamilyStore(env.DB);
+    const listeners = await listenersOf(env), familyStore = new FamilyStore(env.DB);
+    // The family tab only for its members: guests have a station of their own and nothing more.
+    const members = familyMembers(env.ALLOWED_EMAIL ?? '', listeners, env.OWNER_NAME);
+    const inFamily = members.length > 1 && members.some(member => member.owner === owner);
     const [config, , rows, failures, stickerList, unread, latest, today] = await Promise.all([
       store.getConfig(owner),
       // A background check for notifications only looks; it must not count as listening (no paid planning).
       url.searchParams.get('peek') !== '1' ? store.touch(owner, new Date()) : Promise.resolve(),
       store.visibleItems(owner), store.failureSummary(owner), new PlayStore(env.DB).stickers(owner),
-      listeners.size ? familyStore.unread(owner) : Promise.resolve(0),
-      listeners.size ? familyStore.latestUnread(owner) : Promise.resolve(null),
+      inFamily ? familyStore.unread(owner) : Promise.resolve(0),
+      inFamily ? familyStore.latestUnread(owner) : Promise.resolve(null),
       store.usageToday(owner, new Date().toISOString().slice(0, 10)),
     ]);
     // Today's use against the daily limits: the app warns once a limit is 80 % used.
@@ -48,10 +51,12 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     const idents = Array.from({ length: IDENT_VARIANTS }, (_, variant) => `api/sounds/ident/${variant}.wav`);
     const mood = config && activeMood(config, new Date()) ? { mood: config.mood } : {};
     // Unread family messages, for the badge on the family tab and the notification.
-    const family = listeners.size ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, membersOf(env)) } } : {}) } } : {};
+    const family = inFamily ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, members) } } : {}) } } : {};
+    // Only the owner hands out invitations.
+    const host = owner === env.ALLOWED_EMAIL?.toLowerCase() ? { host: true } : {};
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
     const play = { play: { stickers: stickerList.length, kids: isKids(owner, listeners), ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
-    return unchangedOr(request, json({ items: rows.map(row => toView(row, config)), failures, ...(config?.name ? { station: config.name } : {}), ...budget, ...spotify, ...mood, ...family, ...play,
+    return unchangedOr(request, json({ items: rows.map(row => toView(row, config)), failures, ...(config?.name ? { station: config.name } : {}), ...host, ...budget, ...spotify, ...mood, ...family, ...play,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),

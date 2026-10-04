@@ -482,3 +482,70 @@ fun usageSummary(insights: Insights?): String {
     val today = insights?.days?.firstOrNull() ?: return "Produktionen, Sprache und Aufrufe pro Tag"
     return "Heute ${today.generations} von ${insights.generationLimit} Produktionen"
 }
+
+/**
+ * «Einladen»: a name and who it is for, then the share sheet sends the link. Open invitations can be
+ * withdrawn; whoever joined by invitation can lose their access again (their token is revoked at once).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InvitesContent(state: RadioState, actions: RadioActions) {
+    LaunchedEffect(Unit) { actions.loadInvites() }
+    var name by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(ch.heimberg.radio.core.ListenerKind.FAMILY) }
+    val overview = state.invites
+    if (overview != null && !overview.ready) {
+        Text("Einladungen sind auf dem Server noch nicht eingerichtet: Es fehlen CF_ACCOUNT_ID und CF_ACCESS_API_TOKEN und die Access-Ausnahme für /join (siehe Anleitung).",
+            style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    }
+    Text("Jede eingeladene Person bekommt einen eigenen Sender auf deinem Server. Ihre Produktionen zählen zu deinen Kosten; jede hat ihre eigenen Tageslimits.",
+        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    OutlinedTextField(name, { name = it.take(30) }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (option in ch.heimberg.radio.core.ListenerKind.entries) {
+            FilterChip(selected = kind == option, onClick = { kind = option }, label = { Text(option.label) })
+        }
+    }
+    Text(kind.hint, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    FilledTonalButton(
+        onClick = { actions.createInvite(name.trim(), kind); name = "" },
+        enabled = name.trim().length >= 2 && overview?.ready != false,
+    ) { Text("Einladung erstellen und senden") }
+    if (overview == null) return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val date = java.time.format.DateTimeFormatter.ofPattern("d.M.").withZone(java.time.ZoneId.systemDefault())
+    val day = { at: String? -> at?.let { runCatching { date.format(java.time.Instant.parse(it)) }.getOrNull() } ?: "" }
+    if (overview.open.isNotEmpty()) {
+        Text("Offene Einladungen", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        for (invite in overview.open) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(invite.name, style = MaterialTheme.typography.bodyMedium)
+                    Text("${invite.listenerKind.label} · gültig bis ${day(invite.expiresAt)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                }
+                TextButton(onClick = { actions.deleteInvite(invite.id) }) { Text("Zurückziehen") }
+            }
+        }
+    }
+    Text("Hören mit", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    if (overview.listeners.isEmpty()) Text("Noch niemand – nur du.", style = MaterialTheme.typography.bodyMedium)
+    for (listener in overview.listeners) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(listener.name.replaceFirstChar(Char::uppercase), style = MaterialTheme.typography.bodyMedium)
+                Text(listOfNotNull(listener.listenerKind.label, listener.since?.let { "seit ${day(it)}" }, if (!listener.removable) "im Worker eingetragen" else null).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+            }
+            if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Entfernen") }
+        }
+    }
+    state.removeListenerAsk?.let { listener ->
+        AlertDialog(
+            onDismissRequest = { state.removeListenerAsk = null },
+            title = { Text("${listener.name} entfernen?") },
+            text = { Text("Die App von ${listener.name} kommt sofort nicht mehr auf dein Radio. Für einen neuen Zugang braucht es eine neue Einladung.") },
+            confirmButton = { TextButton(onClick = { actions.removeListener(listener.key) }) { Text("Entfernen") } },
+            dismissButton = { TextButton(onClick = { state.removeListenerAsk = null }) { Text("Abbrechen") } },
+            containerColor = Nocturne.surface,
+        )
+    }
+}

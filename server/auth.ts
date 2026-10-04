@@ -1,6 +1,6 @@
 /** Cloudflare Access: who is asking (the owner or a listener), or why the request is refused. */
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { parseListeners } from './listeners.ts';
+import { listenersOf } from './listeners.ts';
 import type { Environment } from './http.ts';
 
 // Reused per isolate so the Access signing keys are not fetched on every request.
@@ -27,7 +27,7 @@ export async function authenticate(request: Request, env: Environment): Promise<
     if (!serviceToken) return refuse('no_identity');
     if (env.ACCESS_SERVICE_TOKEN_ID?.trim() && serviceToken === env.ACCESS_SERVICE_TOKEN_ID.trim()) return { owner: env.ALLOWED_EMAIL.toLowerCase() };
     // Further listeners each have their own token, and with it their own station.
-    const listener = parseListeners(env.LISTENERS).get(serviceToken);
+    const listener = (await listenersOf(env)).get(serviceToken);
     if (listener) return { owner: listener.owner };
     if (!env.ACCESS_SERVICE_TOKEN_ID?.trim()) return refuse('service_token_not_configured');
     return refuse('service_token_not_allowed');

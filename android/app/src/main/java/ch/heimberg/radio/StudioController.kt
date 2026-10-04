@@ -26,6 +26,11 @@ interface StudioActions {
     fun loadBackups()
     fun backupNow()
     fun restoreBackup(name: String)
+    /** Einladen: list, hand out (opens the share sheet), withdraw, take a listener's access away. */
+    fun loadInvites()
+    fun createInvite(name: String, kind: ch.heimberg.radio.core.ListenerKind)
+    fun deleteInvite(id: String)
+    fun removeListener(key: String)
     fun loadAgents()
     fun loadListening()
     fun connectListening()
@@ -123,6 +128,32 @@ class StudioController(private val ref: HostRef) : StudioActions {
                 .onSuccess { state.say("Sicherung vom ${Backups.label(name)} wiederhergestellt."); loadStudio(true); loadBackups(); host.changed() }
                 .onFailure { state.say(host.failure(it)) }
         }
+    }
+
+    override fun loadInvites() {
+        host.scope.launch { runCatching { api.invites() }.onSuccess { state.invites = it }.onFailure { state.say(host.failure(it)) } }
+    }
+
+    override fun createInvite(name: String, kind: ch.heimberg.radio.core.ListenerKind) {
+        host.scope.launch {
+            runCatching { api.createInvite(name, kind) }
+                .onSuccess { invite ->
+                    loadInvites()
+                    // The code is shown only now: the share sheet sends it on (messenger, mail, SMS).
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, invite.message(name, state.stationName.ifBlank { null }))
+                    host.activity.startActivity(Intent.createChooser(send, "Einladung an $name senden"))
+                }
+                .onFailure { state.say(host.failure(it)) }
+        }
+    }
+
+    override fun deleteInvite(id: String) {
+        host.scope.launch { runCatching { api.deleteInvite(id) }.onSuccess { state.say("Einladung zurückgezogen."); loadInvites() }.onFailure { state.say(host.failure(it)) } }
+    }
+
+    override fun removeListener(key: String) {
+        state.removeListenerAsk = null
+        host.scope.launch { runCatching { api.removeListener(key) }.onSuccess { state.say("Zugang entfernt."); loadInvites() }.onFailure { state.say(host.failure(it)) } }
     }
 
     override fun loadDiagnostics() {
