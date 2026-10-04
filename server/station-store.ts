@@ -311,13 +311,21 @@ export class StationStore {
 
   /**
    * Items created before the cutoff leave the program: unfinished ones expire, finished but unheard ones
-   * move to the archive, where they stay playable until their audio is released.
+   * move to the archive, where they stay playable until their audio is released. The item playing right
+   * now ([playing]) stays: it leaves the program when the app reports it heard.
    */
-  async expire(owner: string, createdBefore: Date, now: Date): Promise<TimelineRow[]> {
+  async expire(owner: string, createdBefore: Date, now: Date, playing: string | null = null): Promise<TimelineRow[]> {
     return (await this.db.prepare(`UPDATE timeline_items SET state = CASE WHEN state = 'ready' THEN 'archived' ELSE 'expired' END,
       lease_until = NULL, updated_at = ?
-      WHERE owner_id = ? AND state IN ('planned', 'voicing', 'ready') AND created_at < ? RETURNING *`)
-      .bind(now.toISOString(), owner, createdBefore.toISOString()).all<TimelineRow>()).results;
+      WHERE owner_id = ? AND state IN ('planned', 'voicing', 'ready') AND created_at < ? AND id != ? RETURNING *`)
+      .bind(now.toISOString(), owner, createdBefore.toISOString(), playing ?? '').all<TimelineRow>()).results;
+  }
+
+  /** The item the owner's app plays now (as reported for the family), while that report holds. */
+  async playingNow(owner: string, now: Date): Promise<string | null> {
+    const row = await this.db.prepare('SELECT item_id FROM family_presence WHERE owner_id = ? AND until > ?')
+      .bind(owner, now.toISOString()).first<{ item_id: string }>();
+    return row?.item_id ?? null;
   }
 
   /** Audio of items that left the program before the retention cutoff. */

@@ -226,9 +226,9 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
         Spacer(Modifier.height(18.dp))
         // A tap or a drag on the bars jumps there; during a jingle or transition they only show that it runs.
         Waveform(
-            if (state.inSound) 0f else state.progress, state.live, ink,
+            if (state.inSound) 0f else state.partProgress, state.live, ink,
             Modifier.fillMaxWidth().height(32.dp)
-                .semantics { contentDescription = "Position im Beitrag, antippen zum Springen" }
+                .semantics { contentDescription = "Position im laufenden Teil, antippen zum Springen" }
                 .pointerInput(state.inSound) {
                     if (!state.inSound) detectTapGestures { offset -> actions.seek(offset.x / size.width) }
                 },
@@ -237,9 +237,9 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
             if (state.inSound) Text("Übergang …", style = MaterialTheme.typography.labelMedium, color = ink)
             else {
-                Text(time(state.positionMs), style = MaterialTheme.typography.labelMedium, color = ink)
+                Text(time(state.partPositionMs), style = MaterialTheme.typography.labelMedium, color = ink)
                 Spacer(Modifier.weight(1f))
-                Text(if (state.durationMs > 0) "−" + time((state.durationMs - state.positionMs).coerceAtLeast(0)) else "", style = MaterialTheme.typography.labelMedium, color = ink)
+                Text(if (state.partDurationMs > 0) "−" + time((state.partDurationMs - state.partPositionMs).coerceAtLeast(0)) else "", style = MaterialTheme.typography.labelMedium, color = ink)
             }
         }
     }
