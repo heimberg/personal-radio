@@ -11,6 +11,7 @@ import { PlayStore, albumView } from '../server/play.ts';
 import { forKids } from '../server/listeners.ts';
 import { linkerSystem } from '../server/linker.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
+import { realPipeline } from './real-pipeline.ts';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import worker from '../server/worker.ts';
 
@@ -282,4 +283,13 @@ test('Mitmachen through the Worker: a question answered in the next transition, 
     await store.saveConfig(nina, parseStationConfig({ ...defaultStationConfig(), sounds: { ident: true, hourChange: true, linker: false } }), NOW);
     assert.equal((await call('nina', '/api/questions', { text: 'Wie hoch ist der Mond?' })).status, 409);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a Mitmach-Geschichte passes the real pipeline: the story plan is the station\'s own source', async () => {
+  const h = harness(); await h.setup();
+  const real = realPipeline();
+  h.deps.pipeline = real.pipeline;
+  const firstId = (await addBlock(h.deps, OWNER, 'mitmach', '🦊 ein schlauer Fuchs, im Zauberwald'))!;
+  assert.equal(await produceItem(h.deps, OWNER, firstId), 'ready');
+  assert.ok(real.seen[0].some(source => source.url === ''));
 });

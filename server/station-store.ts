@@ -14,7 +14,15 @@ export interface D1Statement {
   run(): Promise<unknown>;
   all<T>(): Promise<{ results: T[] }>;
 }
-export interface D1Database { prepare(query: string): D1Statement }
+/** `batch` sends several statements in one round trip (and one transaction); without it they run one by one. */
+export interface D1Database { prepare(query: string): D1Statement; batch?(statements: D1Statement[]): Promise<unknown[]> }
+
+/** Runs [statements] in one batch where the database offers it. */
+export async function runAll(db: D1Database, statements: D1Statement[]): Promise<void> {
+  if (!statements.length) return;
+  if (db.batch) { await db.batch(statements); return; }
+  for (const statement of statements) await statement.run();
+}
 
 export interface TimelineRow {
   id: string;
@@ -126,18 +134,25 @@ export class StationStore {
   async arrange(owner: string, ordered: Array<Pick<TimelineRow, 'id' | 'estimated_minutes'>>, start: Date, now: Date) {
     const max = await this.db.prepare('SELECT MAX(seq) AS seq FROM timeline_items WHERE owner_id = ?').bind(owner).first<{ seq: number | null }>();
     let seq = (max?.seq ?? 0) + 1, at = start.getTime();
+    const updates: D1Statement[] = [];
     for (const item of ordered) {
-      await this.db.prepare(`UPDATE timeline_items SET seq = ?, planned_at = ?, updated_at = ? WHERE owner_id = ? AND id = ? AND state IN ('planned', 'voicing', 'ready')`)
-        .bind(seq++, new Date(at).toISOString(), now.toISOString(), owner, item.id).run();
+      updates.push(this.db.prepare(`UPDATE timeline_items SET seq = ?, planned_at = ?, updated_at = ? WHERE owner_id = ? AND id = ? AND state IN ('planned', 'voicing', 'ready')`)
+        .bind(seq++, new Date(at).toISOString(), now.toISOString(), owner, item.id));
       at += item.estimated_minutes * 60_000;
     }
+    await runAll(this.db, updates);
   }
 
-  async insertItem(owner: string, item: { id: string; seq: number; showId: string; plannedAt: string; estimatedMinutes: number }, now: Date) {
+  async insertItem(owner: string, item: NewItem, now: Date) {
+    await this.insertItems(owner, [item], now);
+  }
+
+  /** The planner's new items in one batch. */
+  async insertItems(owner: string, items: NewItem[], now: Date) {
     const at = now.toISOString();
-    await this.db.prepare(`INSERT INTO timeline_items (id, owner_id, seq, show_id, planned_at, estimated_minutes, state, attempts, created_at, updated_at)
+    await runAll(this.db, items.map(item => this.db.prepare(`INSERT INTO timeline_items (id, owner_id, seq, show_id, planned_at, estimated_minutes, state, attempts, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'planned', 0, ?, ?)`)
-      .bind(item.id, owner, item.seq, item.showId, item.plannedAt, item.estimatedMinutes, at, at).run();
+      .bind(item.id, owner, item.seq, item.showId, item.plannedAt, item.estimatedMinutes, at, at)));
   }
 
   async insertSeries(owner: string, series: Series, now: Date) {
@@ -194,8 +209,28 @@ export class StationStore {
   async update(owner: string, id: string, patch: TimelinePatch, now: Date) {
     const keys = PATCHABLE.filter(key => key in patch);
     if (!keys.length) return;
-    await this.db.prepare(`UPDATE timeline_items SET ${keys.map(key => `${key} = ?`).join(', ')}, updated_at = ? WHERE owner_id = ? AND id = ?`)
-      .bind(...keys.map(key => patch[key] ?? null), now.toISOString(), owner, id).run();
+    const statements = [this.db.prepare(`UPDATE timeline_items SET ${keys.map(key => `${key} = ?`).join(', ')}, updated_at = ? WHERE owner_id = ? AND id = ?`)
+      .bind(...keys.map(key => patch[key] ?? null), now.toISOString(), owner, id)];
+    // Every error an item records also goes to the error log, for the studio's «Diagnose».
+    if (typeof patch.error === 'string' && patch.error) {
+      statements.push(this.db.prepare(`INSERT INTO error_log (owner_id, item_id, show_id, stage, message, created_at)
+        SELECT ?, ?, show_id, ?, ?, ? FROM timeline_items WHERE owner_id = ? AND id = ?`)
+        .bind(owner, id, patch.state === 'failed' ? 'failed' : patch.state === 'expired' ? 'skipped' : 'retry', patch.error.slice(0, 400), now.toISOString(), owner, id));
+    }
+    await runAll(this.db, statements);
+  }
+
+  /** A failure outside an item (a transition, the queue). */
+  async logError(owner: string, stage: string, message: string, now: Date, itemId?: string) {
+    await this.db.prepare('INSERT INTO error_log (owner_id, item_id, stage, message, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(owner, itemId ?? null, stage.slice(0, 40), message.slice(0, 400), now.toISOString()).run();
+  }
+
+  /** The latest errors, newest first, with the show's id where there is one. */
+  async errors(owner: string, limit = 30): Promise<Array<{ itemId: string | null; showId: string | null; stage: string; message: string; at: string }>> {
+    const rows = (await this.db.prepare('SELECT item_id, show_id, stage, message, created_at FROM error_log WHERE owner_id = ? ORDER BY id DESC LIMIT ?')
+      .bind(owner, limit).all<{ item_id: string | null; show_id: string | null; stage: string; message: string; created_at: string }>()).results;
+    return rows.map(row => ({ itemId: row.item_id, showId: row.show_id, stage: row.stage, message: row.message, at: row.created_at }));
   }
 
   /** Items waiting for production whose lease is free. */
@@ -232,9 +267,9 @@ export class StationStore {
 
   /** Failures are summarised instead of listed one by one. */
   async failureSummary(owner: string): Promise<{ count: number; latestError?: string; latestAt?: string }> {
-    const count = await this.db.prepare(`SELECT COUNT(*) AS n FROM timeline_items WHERE owner_id = ? AND state = 'failed'`).bind(owner).first<{ n: number }>();
-    const latest = await this.db.prepare(`SELECT error, updated_at FROM timeline_items WHERE owner_id = ? AND state = 'failed' ORDER BY updated_at DESC LIMIT 1`)
-      .bind(owner).first<{ error: string | null; updated_at: string }>();
+    const [count, latest] = await Promise.all([this.db.prepare(`SELECT COUNT(*) AS n FROM timeline_items WHERE owner_id = ? AND state = 'failed'`).bind(owner).first<{ n: number }>(),
+      this.db.prepare(`SELECT error, updated_at FROM timeline_items WHERE owner_id = ? AND state = 'failed' ORDER BY updated_at DESC LIMIT 1`)
+      .bind(owner).first<{ error: string | null; updated_at: string }>()]);
     return { count: Number(count?.n ?? 0), ...(latest ? { latestError: latest.error ?? undefined, latestAt: latest.updated_at } : {}) };
   }
 
@@ -362,12 +397,14 @@ export class StationStore {
   }
 
   async markCovered(owner: string, urls: string[], now: Date) {
-    for (const url of new Set(urls)) {
-      await this.db.prepare('INSERT OR IGNORE INTO covered_sources (owner_id, url, covered_at) VALUES (?, ?, ?)')
-        .bind(owner, url, now.toISOString()).run();
-    }
+    // The station's own material has no link and is never «covered».
+    await runAll(this.db, [...new Set(urls)].filter(Boolean).map(url => this.db.prepare('INSERT OR IGNORE INTO covered_sources (owner_id, url, covered_at) VALUES (?, ?, ?)')
+      .bind(owner, url, now.toISOString())));
   }
 }
+
+/** A new item of the program, as the planner makes it. */
+export interface NewItem { id: string; seq: number; showId: string; plannedAt: string; estimatedMinutes: number }
 
 interface SeriesRow { id: string; title: string; subject: string; kind: SeriesKind; episodes_json: string; recaps_json: string; scheduled: number; state: SeriesState; created_at: string;
   interactive?: number; choices_json?: string }

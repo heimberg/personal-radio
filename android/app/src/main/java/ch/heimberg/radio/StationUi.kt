@@ -184,6 +184,26 @@ private fun QualityBars(days: List<Pair<String, Double>>, changes: Set<String>) 
 }
 
 /** «Verbrauch»: today against the daily limits, then the last two weeks. */
+/** «Diagnose»: what went wrong lately – the step, the show, the reason and when – newest first. */
+@Composable
+fun DiagnosticsContent(state: RadioState, actions: RadioActions) {
+    LaunchedEffect(Unit) { actions.loadDiagnostics() }
+    val errors = state.diagnostics ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    Text("Die letzten Fehler von Produktionen, Übergängen und der Warteschlange (30 Tage).", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    if (errors.isEmpty()) return Text("Keine Fehler – alles läuft.", style = MaterialTheme.typography.bodyMedium)
+    val shows = state.station?.shows.orEmpty().associate { it.id to it.name }
+    val clock = java.time.format.DateTimeFormatter.ofPattern("d.M. HH:mm").withZone(java.time.ZoneId.systemDefault())
+    for (error in errors) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            val at = runCatching { clock.format(java.time.Instant.parse(error.at)) }.getOrDefault("")
+            val show = error.showId?.let { shows[it] ?: it.removePrefix("_block:").removePrefix("_series:").replaceFirstChar(Char::uppercase) }
+            Text(listOfNotNull(at, error.stageLabel, show).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = Nocturne.muted)
+            Text(ch.heimberg.radio.core.Labels.error(error.message), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    TextButton(onClick = actions::loadDiagnostics) { Text("Neu laden") }
+}
+
 @Composable
 fun UsageContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadInsights() }

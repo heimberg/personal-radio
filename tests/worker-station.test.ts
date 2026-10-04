@@ -288,6 +288,13 @@ test('Gemini-only setup: web research, Gemini draft and Gemini verification with
     assert.ok([...env.AUDIO.objects.keys()].some(key => key.startsWith(`linkers/${new Date().toISOString().slice(0, 10)}/${open[0].id}-${open[1].id}-`)));
     assert.equal((await call(`/${sounds.linkerUrl}?after=${open[0].id}&next=${open[1].id}`)).headers.get('Content-Type'), 'audio/mpeg');
     assert.deepEqual(calls, ['draft', 'tts']);
+    // When an item starts, the transition into the next one is made right away; the app then finds it ready.
+    assert.ok(open.length > 2);
+    calls.length = 0;
+    assert.equal((await call('/api/family/presence', { method: 'POST', body: JSON.stringify({ itemId: open[1].id }) })).status, 200);
+    assert.deepEqual(calls, ['draft', 'tts']);
+    assert.equal((await call(`/${sounds.linkerUrl}?after=${open[1].id}&next=${open[2].id}`)).headers.get('Content-Type'), 'audio/mpeg');
+    assert.deepEqual(calls, ['draft', 'tts']);
     // Voices: own voices first, then the prebuilt ones; a designed voice comes back with its station ID.
     const { voices } = await (await call('/api/voices')).json() as { voices: Array<{ id: string; group: string }> };
     assert.deepEqual(voices[0], { id: 'gemini_voice_designed1', name: 'Studio-Mira', group: 'own' });

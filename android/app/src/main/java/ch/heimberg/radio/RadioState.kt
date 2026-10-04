@@ -172,6 +172,8 @@ class RadioState {
     var agentEdit by mutableStateOf<AgentInfo?>(null)
     var trials by mutableStateOf<Map<String, TrialResult?>>(emptyMap())
     var insights by mutableStateOf<Insights?>(null)
+    /** «Diagnose»: the latest errors; null until loaded. */
+    var diagnostics by mutableStateOf<List<ch.heimberg.radio.core.ErrorEntry>?>(null)
     var listening by mutableStateOf<ListeningProfile?>(null)
     var settingUp by mutableStateOf(false)
     var studioMissing by mutableStateOf(false)

@@ -12,6 +12,7 @@ import { PipelineError } from '../server/segment-pipeline.ts';
 import { ProviderError } from '../server/providers.ts';
 import type { FeedItem } from '../server/feed.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
+import { realPipeline } from './real-pipeline.ts';
 
 const OWNER = 'owner@example.test';
 const NOW = new Date('2026-09-27T08:00:00Z');
@@ -709,4 +710,76 @@ test('the day\'s headlines are researched once and reused by the next block', as
   // Older entries go when a new one is kept.
   await store.cache(OWNER, 'headlines:2026-10-05', '{}', new Date('2026-10-05T07:00:00Z'));
   assert.equal(h.db.raw.prepare('SELECT COUNT(*) AS n FROM research_cache').get()!.n, 1);
+});
+
+test('a long hour is voiced over several invocations: eight parts per run, then the next queue message', async () => {
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'kuenstler' ? { ...show, enabled: true, artist: 'Portishead', tracks: 12 } : { ...show, enabled: false });
+  const h = harness({ station: parseStationConfig(station) }); await h.setup();
+  const titles = Array.from({ length: 12 }, (_, i) => `Song ${i + 1}`);
+  h.deps.researcher = { research: async () => ({ sources: [{ id: 'w1', url: 'https://example.org/p', title: 't', excerpt: 'x', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }) };
+  h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title.replace(/\W/g, '')}`, durationMs: 200_000 }) };
+  h.deps.musicWriter = {
+    pickSubject: async () => { throw new Error('fixed'); }, pickSongs: async () => [], writeBlock: async () => [],
+    pickTracks: async () => titles.map(title => ({ title, artist: 'Portishead', reason: 'r' })),
+    writeHour: async () => ({ title: 'Portishead', intro: { text: 'Willkommen.', sourceIds: [] },
+      tracks: titles.slice(0, 10).map((_, index) => ({ index, text: `Zu Song ${index + 1}.`, sourceIds: [] })), outro: { text: 'Danke.', sourceIds: [] } }),
+  };
+  const id = (await scheduleShowNow(h.deps, OWNER, 'kuenstler'))!;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'continue');
+  assert.equal(h.calls.voice, 8);
+  assert.equal((await h.store.getItem(OWNER, id))?.lease_until, null);
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  assert.equal(h.calls.voice, 12);
+});
+
+test('a production stays well inside an invocation\'s query limit; the planner and arranging write in batches', async () => {
+  const h = harness(); await h.setup();
+  const start = h.db.queries;
+  const due = (await tick(h.deps, OWNER)).due;
+  assert.ok(h.db.queries - start < 25, `tick used ${h.db.queries - start} queries`);
+  const before = h.db.queries;
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'ready');
+  assert.ok(h.db.queries - before < 40, `a production used ${h.db.queries - before} queries`);
+});
+
+test('errors of productions go to the error log with their show, for the studio\'s «Diagnose»', async () => {
+  const h = harness(); await h.setup();
+  const due = (await tick(h.deps, OWNER)).due;
+  h.behaviour.review = () => { throw new PipelineError('REJECTED', 'Nicht belegt: «Mars»'); };
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'failed');
+  await h.store.logError(OWNER, 'linker', 'Gemini linker failed (503)', NOW);
+  const errors = await h.store.errors(OWNER);
+  assert.deepEqual(errors.map(error => [error.stage, error.message]), [['linker', 'Gemini linker failed (503)'], ['failed', 'REJECTED: Nicht belegt: «Mars»']]);
+  assert.equal(errors[1].showId, (await h.store.getItem(OWNER, due[0]))?.show_id);
+});
+
+test('the nightly cleanup removes old logs, counters and markers and keeps recent ones', async () => {
+  const { pruneDatabase } = await import('../server/retention.ts');
+  const db = sqliteD1(), old = '2026-01-01T00:00:00.000Z', recent = '2026-09-26T00:00:00.000Z';
+  db.raw.prepare('INSERT INTO covered_sources (owner_id, url, covered_at) VALUES (?, ?, ?), (?, ?, ?)').run(OWNER, 'https://a', old, OWNER, 'https://b', recent);
+  db.raw.prepare('INSERT INTO error_log (owner_id, stage, message, created_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)').run(OWNER, 'queue', 'alt', old, OWNER, 'queue', 'neu', recent);
+  db.raw.prepare('INSERT INTO daily_requests (owner_id, utc_day, requests) VALUES (?, ?, 1), (?, ?, 1)').run(OWNER, '2025-01-01', OWNER, '2026-09-26');
+  await pruneDatabase(db, NOW);
+  assert.deepEqual(db.raw.prepare('SELECT url FROM covered_sources').all().map((row: any) => row.url), ['https://b']);
+  assert.deepEqual(db.raw.prepare('SELECT message FROM error_log').all().map((row: any) => row.message), ['neu']);
+  assert.deepEqual(db.raw.prepare('SELECT utc_day FROM daily_requests').all().map((row: any) => row.utc_day), ['2026-09-26']);
+});
+
+test('a feed brief and a web brief with a full search pass the real pipeline', async () => {
+  const h = harness(); await h.setup();
+  const real = realPipeline();
+  h.deps.pipeline = real.pipeline;
+  const due = (await tick(h.deps, OWNER)).due;
+  assert.equal(await produceItem(h.deps, OWNER, due[0]), 'ready');
+  // Web research with eight long sources: together more than a draft accepts, so they are fitted.
+  const station = config();
+  station.shows = station.shows.map(show => show.id === 'entdecken' ? { ...show, enabled: true } : { ...show, enabled: false });
+  const web = harness({ station: parseStationConfig(station) }); await web.setup();
+  web.deps.pipeline = real.pipeline;
+  web.deps.researcher = { research: async () => ({ sources: Array.from({ length: 8 }, (_, i) => ({ id: `w${i + 1}`, url: `https://example.org/${i}`, title: `Quelle ${i}`,
+    excerpt: 'x'.repeat(5000), publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() })), queries: [] }) };
+  const id = (await scheduleShowNow(web.deps, OWNER, 'entdecken'))!;
+  assert.equal(await produceItem(web.deps, OWNER, id), 'ready');
+  assert.ok(real.seen.at(-1)!.reduce((sum, source) => sum + source.excerpt.length, 0) <= 24_000);
 });

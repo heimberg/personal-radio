@@ -99,4 +99,11 @@ class StudioSettingsTest {
         }
         assertEquals(10, ShowFormat.PODCAST.maxMinutes)
     }
+
+    @Test fun readsTheDiagnosticsList() {
+        val errors = ErrorEntry.parse("""{"errors":[{"itemId":"i1","showId":"_block:mitmach","stage":"failed","message":"INVALID_INPUT: Text zu lang","at":"2026-10-04T08:38:00Z"},{"itemId":null,"showId":null,"stage":"linker","message":"Gemini linker failed (503)","at":"2026-10-04T08:30:00Z"}]}""")
+        assertEquals(listOf("Fehlgeschlagen", "Übergang"), errors.map { it.stageLabel })
+        assertEquals("_block:mitmach", errors[0].showId)
+        assertNull(errors[1].showId)
+    }
 }

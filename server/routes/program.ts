@@ -25,22 +25,27 @@ export async function programRoutes(request: Request, env: Environment, owner: s
   const sameOrigin = request.headers.get('Origin') === url.origin;
   if (url.pathname === '/api/timeline') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
-    const config = await store.getConfig(owner);
-    // A background check for notifications only looks; it must not count as listening (no paid planning).
-    if (url.searchParams.get('peek') !== '1') await store.touch(owner, new Date());
+    // Every question below goes to the database at once rather than one after another: the app asks every
+    // half minute, and one round of waiting is faster than ten.
+    const listeners = parseListeners(env.LISTENERS), familyStore = new FamilyStore(env.DB);
+    const [config, , rows, failures, stickerList, unread, latest] = await Promise.all([
+      store.getConfig(owner),
+      // A background check for notifications only looks; it must not count as listening (no paid planning).
+      url.searchParams.get('peek') !== '1' ? store.touch(owner, new Date()) : Promise.resolve(),
+      store.visibleItems(owner), store.failureSummary(owner), new PlayStore(env.DB).stickers(owner),
+      listeners.size ? familyStore.unread(owner) : Promise.resolve(0),
+      listeners.size ? familyStore.latestUnread(owner) : Promise.resolve(null),
+    ]);
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
     const sounds = config ? stationSounds(config) : { ident: false, hourChange: false, linker: false };
     const idents = Array.from({ length: IDENT_VARIANTS }, (_, variant) => `api/sounds/ident/${variant}.wav`);
     const mood = config && activeMood(config, new Date()) ? { mood: config.mood } : {};
     // Unread family messages, for the badge on the family tab and the notification.
-    const familyStore = new FamilyStore(env.DB);
-    const [unread, latest] = parseListeners(env.LISTENERS).size ? await Promise.all([familyStore.unread(owner), familyStore.latestUnread(owner)]) : [0, null];
-    const family = parseListeners(env.LISTENERS).size ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, membersOf(env)) } } : {}) } } : {};
+    const family = listeners.size ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, membersOf(env)) } } : {}) } } : {};
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
-    const kids = isKids(owner, parseListeners(env.LISTENERS)), stickers = (await new PlayStore(env.DB).stickers(owner)).length;
-    const play = { play: { stickers, kids, ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
-    return unchangedOr(request, json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...(config?.name ? { station: config.name } : {}), ...spotify, ...mood, ...family, ...play,
+    const play = { play: { stickers: stickerList.length, kids: isKids(owner, listeners), ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
+    return unchangedOr(request, json({ items: rows.map(row => toView(row, config)), failures, ...(config?.name ? { station: config.name } : {}), ...spotify, ...mood, ...family, ...play,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),

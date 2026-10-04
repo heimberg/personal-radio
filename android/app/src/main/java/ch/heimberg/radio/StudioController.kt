@@ -21,6 +21,7 @@ interface StudioActions {
     fun setUpStation()
     /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
     fun loadInsights()
+    fun loadDiagnostics()
     fun loadAgents()
     fun loadListening()
     fun connectListening()
@@ -99,6 +100,10 @@ class StudioController(private val ref: HostRef) : StudioActions {
 
     override fun loadInsights() {
         host.scope.launch { runCatching { api.insights() }.onSuccess { state.insights = it } }
+    }
+
+    override fun loadDiagnostics() {
+        host.scope.launch { runCatching { api.diagnostics() }.onSuccess { state.diagnostics = it }.onFailure { state.say(host.failure(it)) } }
     }
 
     override fun loadAgents() {

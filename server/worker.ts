@@ -6,6 +6,7 @@ import type { Environment, ProductionMessage, QueueBatch, ExecutionContext } fro
 import { authenticate } from './auth.ts';
 import { stationDeps, refreshProgram } from './services.ts';
 import { pruneLinkers } from './routes/linker.ts';
+import { pruneDatabase } from './retention.ts';
 import { familyRoutes } from './routes/family.ts';
 import { listeningRoutes, landingPage } from './routes/spotify.ts';
 import { voiceRoutes } from './routes/voices.ts';
@@ -16,7 +17,7 @@ import { itemRoutes } from './routes/items.ts';
 import { segmentRoutes } from './routes/segments.ts';
 
 export default {
-  async fetch(request: Request, env: Environment): Promise<Response> {
+  async fetch(request: Request, env: Environment, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const auth = await authenticate(request, env);
     if (auth.owner === null) return json({ error: 'unauthorized', reason: auth.reason }, 401);
@@ -35,7 +36,7 @@ export default {
       return json({ reset: true, utcDay }, 200);
     }
     for (const routes of [voiceRoutes, studioRoutes, familyRoutes, listeningRoutes, listenerRoutes, programRoutes, itemRoutes]) {
-      const response = await routes(request, env, owner, url);
+      const response = await routes(request, env, owner, url, ctx);
       if (response) return response;
     }
     if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);
@@ -46,7 +47,10 @@ export default {
   async scheduled(_controller: unknown, env: Environment, ctx: ExecutionContext) {
     const owners = allOwners(env.ALLOWED_EMAIL, parseListeners(env.LISTENERS));
     if (!owners.length) return;
-    ctx.waitUntil(pruneLinkers(env.AUDIO, new Date()).catch(() => { /* Cleanup is retried on the next run. */ }));
+    const now = new Date();
+    ctx.waitUntil(pruneLinkers(env.AUDIO, now).catch(() => { /* Cleanup is retried on the next run. */ }));
+    // Once a night: old logs, counters and markers leave the database.
+    if (now.getUTCHours() === 3 && now.getUTCMinutes() < 10) ctx.waitUntil(pruneDatabase(env.DB, now).catch(error => console.error('database cleanup failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
     for (const owner of owners) {
       ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
     }
@@ -59,8 +63,15 @@ export default {
       const body = message.body as Partial<ProductionMessage> | null;
       const owner = body?.owner;
       if (typeof owner === 'string' && owners.has(owner) && typeof body?.itemId === 'string') {
-        try { await produceItem(stationDeps(env, owner), owner, body.itemId); }
-        catch (error) { console.error('segment production failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown'); }
+        const deps = stationDeps(env, owner);
+        try {
+          // A long hour is voiced in several invocations: the next part follows in a new message.
+          if (await produceItem(deps, owner, body.itemId) === 'continue') await env.PRODUCTION.send({ owner, itemId: body.itemId });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message.slice(0, 300) : 'unknown';
+          console.error('segment production failed', detail.slice(0, 160));
+          await deps.store.logError(owner, 'queue', detail, new Date(), body.itemId).catch(() => { /* The log is best effort. */ });
+        }
       }
       message.ack();
     }

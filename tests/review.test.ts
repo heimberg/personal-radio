@@ -10,6 +10,7 @@ import { blockViews } from '../src/domain/blocks.ts';
 import { REVIEW_SHOW, reviewSources, reviewable } from '../server/review.ts';
 import { PlayStore } from '../server/play.ts';
 import { sqliteD1 } from './d1-sqlite.ts';
+import { realPipeline } from './real-pipeline.ts';
 
 const OWNER = 'owner@example.test';
 // Sunday, 10:00 in Zurich.
@@ -101,4 +102,14 @@ test('the Wochenrückblick can be added any day from the palette; without anythi
   assert.equal(await produceItem(h.deps, OWNER, id), 'skipped');
   assert.equal((await h.store.getItem(OWNER, id))?.error, 'NO_SOURCES');
   assert.deepEqual(reviewSources([] as TimelineRow[], { questions: [], stickers: [] }, h.deps.now()), []);
+});
+
+test('the Wochenrückblick passes the real pipeline: its own sources have no link', async () => {
+  const h = harness(); await h.setup();
+  for (const id of ['a', 'b', 'c']) await h.heard(id, { title: `Thema ${id}`, text: `Gehört: ${id}.`, sourceIds: [] });
+  const real = realPipeline();
+  h.deps.pipeline = real.pipeline;
+  const id = (await addBlock(h.deps, OWNER, 'rueckblick'))!;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  assert.ok(real.seen[0].every(source => source.url === ''));
 });
