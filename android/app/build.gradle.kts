@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("io.github.takahirom.roborazzi")
 }
@@ -12,7 +11,7 @@ val keystorePath: String? = System.getenv("RADIO_KEYSTORE_PATH")
 
 android {
     namespace = "ch.heimberg.radio"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "ch.heimberg.radio"
