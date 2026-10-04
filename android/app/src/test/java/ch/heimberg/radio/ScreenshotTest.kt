@@ -2,7 +2,9 @@ package ch.heimberg.radio
 
 import androidx.compose.material3.Surface
 import com.github.takahirom.roborazzi.RoborazziOptions
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -11,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.TimelineItem
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Test
@@ -57,5 +60,19 @@ class ScreenshotTest {
     @Test fun programRowsLargeFont() = captureRoboImage("src/test/screenshots/program-rows-large-font.png", roborazziOptions = options) {
         val density = LocalDensity.current
         CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1.6f)) { RadioTheme { Rows() } }
+    }
+
+    /** «Für dich» tiles at phone width: long names shrink or break where German allows, never mid-syllable. */
+    @Test fun pickTiles() = captureRoboImage("src/test/screenshots/pick-tiles.png", roborazziOptions = options) {
+        RadioTheme {
+            Surface(color = Nocturne.bg) {
+                Row(Modifier.width(400.dp).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PickTile("Wochenrückblick", "SONNTAGS", Kind.SPECIAL, Modifier.weight(1f)) {}
+                    PickTile("Musikblock", "OFT", Kind.MUSIC, Modifier.weight(1f)) {}
+                    PickTile("Schlagzeilen", "OFT", Kind.NEWS, Modifier.weight(1f)) {}
+                    PickTile("Streitgespräch", "NEU", Kind.NEWS, Modifier.weight(1f)) {}
+                }
+            }
+        }
     }
 }

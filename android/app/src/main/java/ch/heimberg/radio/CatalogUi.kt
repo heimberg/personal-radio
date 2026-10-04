@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -281,6 +286,17 @@ fun PickTile(name: String, why: String, kind: Kind, modifier: Modifier = Modifie
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(why, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = ink.copy(alpha = 0.85f), maxLines = 1)
-        Text(name.uppercase(), style = display(15), color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        // The longest word fits on one line: the name shrinks rather than breaking «MUSIKBLOC/K»; a word too
+        // long even then is hyphenated where German allows («WOCHEN-/RÜCKBLICK»).
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val title = name.uppercase()
+            val measurer = rememberTextMeasurer()
+            val longest = title.split(' ', '-').maxByOrNull { it.length } ?: title
+            val style = remember(title, maxWidth) {
+                (15 downTo 13).firstNotNullOfOrNull { size -> display(size).takeIf { measurer.measure(longest, it, maxLines = 1).size.width <= constraints.maxWidth } }
+                    ?: display(13).copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph, localeList = LocaleList("de-CH"))
+            }
+            Text(title, style = style, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
