@@ -133,6 +133,8 @@ class MainActivity private constructor(
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Light, dark or as the system: set before the first frame, for this and every later screen.
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(UiHints(this).nightMode)
         super.onCreate(savedInstanceState)
         connection = RadioSettings(this).connection() ?: run {
             startActivity(Intent(this, SetupActivity::class.java))
@@ -144,6 +146,7 @@ class MainActivity private constructor(
         catalogPrefs = CatalogPrefs(this)
         state.favorites = catalogPrefs.favorites
         state.usage = catalogPrefs.usage
+        state.appearance = UiHints(this).appearance
         updater = AppUpdater(this, api)
         // Shown so an installed build can be matched to its CI run.
         val version = "Version " + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?")
@@ -607,6 +610,14 @@ class MainActivity private constructor(
     override fun stopSeries(series: SeriesInfo) = serverAction({ api.stopSeries(series.id) }, "«${series.title}» ist beendet.")
 
     /** Mixes the program; «Rückgängig» puts the order back as it was. */
+    /** Light, dark or as the system; AppCompat redraws the screens in the new look. */
+    override fun setAppearance(mode: Int) {
+        val hints = UiHints(this)
+        hints.appearance = mode
+        state.appearance = hints.appearance
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(hints.nightMode)
+    }
+
     override fun shuffle() {
         val before = ProgramClock.playingOrder(state.open, state.currentItemId).map { it.id }
         lifecycleScope.launch {

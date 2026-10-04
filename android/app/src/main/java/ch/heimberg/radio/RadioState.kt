@@ -69,6 +69,8 @@ class RadioState {
     var playWhenReady by mutableStateOf(false)
     /** The station's name from the program; the header of «Hören». */
     var stationName by mutableStateOf("")
+    /** Darstellung: 0 as the system, 1 light, 2 dark. */
+    var appearance by mutableIntStateOf(0)
     /** This session's ratings of items (true 👍, false 👎), so the buttons show them. */
     val ratings = mutableStateMapOf<String, Boolean>()
     /** The playing step is a station sound (jingle, transition, news opener), not the item itself. */
@@ -261,6 +263,8 @@ interface RadioActions : StudioActions, VoiceActions, FamilyActions, MitmachenAc
     /** Jumps to [fraction] of the playing item (within its playing part), or 15 seconds back. */
     fun seek(fraction: Float)
     fun rewind()
+    /** Darstellung: 0 as the system, 1 light, 2 dark. */
+    fun setAppearance(mode: Int)
     /** A new order of the open items (by id), from dragging in the program. */
     fun reorder(order: List<String>)
     fun chooseBlock(block: BlockView)

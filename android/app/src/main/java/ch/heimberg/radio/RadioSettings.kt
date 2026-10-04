@@ -59,11 +59,23 @@ class CatalogPrefs(context: Context) {
     }
 }
 
-/** Tips the app shows once: only on this phone. */
+/** Tips the app shows once, and how it looks: only on this phone. */
 class UiHints(context: Context) {
     private val prefs = context.getSharedPreferences("hints", Context.MODE_PRIVATE)
 
     var programSeen: Boolean
         get() = prefs.getBoolean("program", false)
         set(value) { prefs.edit().putBoolean("program", value).apply() }
+
+    /** Light or dark: 0 follows the system, 1 always light, 2 always dark. */
+    var appearance: Int
+        get() = prefs.getInt("appearance", 0).coerceIn(0, 2)
+        set(value) { prefs.edit().putInt("appearance", value.coerceIn(0, 2)).apply() }
+
+    /** The same as AppCompat's night mode, for every screen of the app (Compose and views). */
+    val nightMode: Int get() = when (appearance) {
+        1 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+        2 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+        else -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+    }
 }

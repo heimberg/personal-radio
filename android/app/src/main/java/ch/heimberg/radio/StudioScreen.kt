@@ -379,6 +379,12 @@ private fun Interests(settings: StudioSettings, actions: RadioActions) {
 @Composable
 private fun More(state: RadioState, actions: RadioActions) {
     Text("MEHR", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp))
+    // Only on this phone: how the app looks.
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Text("Darstellung", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+        Segments(listOf("Automatisch", "Hell", "Dunkel"), state.appearance) { actions.setAppearance(it) }
+        Text("«Automatisch» folgt dem dunklen Design von Android.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+    }
     LinkRow("🗓", "Tagesplan", "Zeitfenster und Überraschungen") {
         state.tab = Tab.PROGRAM
         actions.openDayPlan()
