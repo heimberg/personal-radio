@@ -1,5 +1,6 @@
 Einfügen: lange Namen auf den Kacheln werden sauber getrennt («WOCHEN-RÜCKBLICK»)
 Einfügen: Künstler- und Themen-Stunde stehen nur noch einmal in der Liste
+Einfügen: «Konzerte in der Nähe» steht unter Musik; jede Rubrik geht von kurz nach lang, eigene Sendungen zuletzt
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

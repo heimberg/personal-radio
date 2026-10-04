@@ -22,11 +22,12 @@ object Looks {
         "weltpresse" to Look(Kind.NEWS, "🌐"), "streitgespraech" to Look(Kind.NEWS, "⚖️"), "dranbleiben" to Look(Kind.NEWS, "📌"),
         // Wissen
         "entdeckung" to Look(Kind.DISCOVER, "🔭"), "hintergrund" to Look(Kind.DISCOVER, "🎙️"), "vertiefung" to Look(Kind.DISCOVER, "🔍"),
-        "serie" to Look(Kind.DISCOVER, "📚"), "konzerte" to Look(Kind.DISCOVER, "🎟️"), "nachfrage" to Look(Kind.DISCOVER, "❓"),
+        "serie" to Look(Kind.DISCOVER, "📚"), "nachfrage" to Look(Kind.DISCOVER, "❓"),
         "ortsgeschichte" to Look(Kind.DISCOVER, "🏰"),
         // Musik
         "kuenstler" to Look(Kind.MUSIC, "🎸"), "genre" to Look(Kind.MUSIC, "🎛️"), "themenstunde" to Look(Kind.MUSIC, "🌙"),
         "musik" to Look(Kind.MUSIC, "🎵"), "neu" to Look(Kind.MUSIC, "✨"), "song" to Look(Kind.MUSIC, "🎶"),
+        "konzerte" to Look(Kind.MUSIC, "🎟️"),
         // Geschichten
         "geschichte" to Look(Kind.STORY, "📖"), "mitmach" to Look(Kind.STORY, "🧩"),
         // Spezial

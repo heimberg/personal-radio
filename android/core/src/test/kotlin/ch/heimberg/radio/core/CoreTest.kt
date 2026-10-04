@@ -388,6 +388,17 @@ class CatalogTest {
         assertEquals(listOf("musik"), rubrics[2].second.map { it.id })
     }
 
+    @Test fun rubricsGoFromShortToLongWithOwnShowsLastAndConcertsUnderMusic() {
+        val music = listOf(
+            BlockView("show:k", "Meine Stunde", "Deine Sendung", minutes = 20.0, music = true, own = true),
+            BlockView("kuenstler", "Künstler-Stunde", "Eine Band", minutes = 60.0, music = true),
+            BlockView("konzerte", "Konzerte in der Nähe", "Wo deine Künstler auftreten", minutes = 2.0),
+            BlockView("musik", "Musikblock", "30 Minuten", minutes = 30.0, music = true),
+        )
+        assertEquals(listOf("konzerte", "musik", "kuenstler", "show:k"), Catalog.rubrics(music, emptySet())[2].second.map { it.id })
+        assertEquals(listOf("kuenstler", "konzerte", "musik", "show:k"), Catalog.rubrics(music, setOf("kuenstler"))[2].second.map { it.id })
+    }
+
     @Test fun searchIgnoresCaseAndUmlauts() {
         assertEquals(listOf("ueberraschung"), Catalog.search(blocks, "uberrasch").map { it.id })
         assertEquals(listOf("morgen"), Catalog.search(blocks, "WETTER datum").map { it.id })
