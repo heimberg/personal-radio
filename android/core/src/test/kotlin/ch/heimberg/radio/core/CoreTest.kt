@@ -397,6 +397,11 @@ class CatalogTest {
         )
         assertEquals(listOf("konzerte", "musik", "kuenstler", "show:k"), Catalog.rubrics(music, emptySet())[2].second.map { it.id })
         assertEquals(listOf("kuenstler", "konzerte", "musik", "show:k"), Catalog.rubrics(music, setOf("kuenstler"))[2].second.map { it.id })
+        val planned = { show: String -> TimelineItem("x", 1, show, "Show", "2026-10-04T12:00:00Z", "planned", 60.0) }
+        assertTrue(Looks.bringsMusic(planned("_block:themenstunde")))
+        assertTrue(Looks.bringsMusic(planned("_block:musik")))
+        assertFalse(Looks.bringsMusic(planned("_block:konzerte")))
+        assertEquals(Kind.DISCOVER, Looks.ofBlock(BlockView("themenstunde", "Themen-Stunde", "Ein Thema in Kapiteln", minutes = 60.0, music = true)).kind)
     }
 
     @Test fun searchIgnoresCaseAndUmlauts() {

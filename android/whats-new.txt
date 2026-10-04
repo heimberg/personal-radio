@@ -1,5 +1,6 @@
 Einfügen: lange Namen auf den Kacheln werden sauber getrennt («WOCHEN-RÜCKBLICK»)
 Einfügen: Künstler- und Themen-Stunde stehen nur noch einmal in der Liste
+Themen-Stunde steht unter Wissen: das Thema steht im Vordergrund (♫ zeigt, dass Spotify nötig ist)
 Einfügen: «Konzerte in der Nähe» steht unter Musik; jede Rubrik geht von kurz nach lang, eigene Sendungen zuletzt
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
