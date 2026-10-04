@@ -106,4 +106,9 @@ class StudioSettingsTest {
         assertEquals("_block:mitmach", errors[0].showId)
         assertNull(errors[1].showId)
     }
+
+    @Test fun readsProductionsPerShow() {
+        val insights = Insights.parse("""{"byShow":[{"showId":"morgen","showName":"Morgenbriefing","count":9},{"showId":"_block:x","count":2}]}""")
+        assertEquals(listOf("Morgenbriefing" to 9, "_block:x" to 2), insights.byShow)
+    }
 }

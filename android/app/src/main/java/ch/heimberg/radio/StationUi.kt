@@ -248,6 +248,15 @@ fun UsageContent(state: RadioState, actions: RadioActions) {
     val today = insights.days.firstOrNull()
     if (today == null) return Text("Noch kein Verbrauch.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     Meter("Produktionen heute", today.generations, insights.generationLimit)
+    if (insights.byShow.isNotEmpty()) {
+        Text("Letzte 7 Tage nach Sendung", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        for ((show, count) in insights.byShow) {
+            Row(Modifier.fillMaxWidth()) {
+                Text(show, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                Text("$count", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
+            }
+        }
+    }
     Meter("Sprachzeichen heute", today.ttsCharacters, insights.speechLimit)
     if (insights.speechRequestLimit > 0) Meter("Sprachanfragen heute", today.speechRequests, insights.speechRequestLimit)
     Text("LETZTE TAGE", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 6.dp))
