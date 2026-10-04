@@ -1,10 +1,11 @@
-# Weekly update PRs, grouped so one PR per ecosystem carries the minor and patch updates; CI checks each.
+# Update PRs, grouped so one PR per ecosystem carries the minor and patch updates; CI checks each.
+# npm and Gradle weekly, the GitHub Actions monthly.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly, day: monday }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     groups:
       npm-minor:
         update-types: [minor, patch]
@@ -17,7 +18,7 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly, day: monday }
+    schedule: { interval: monthly }
     groups:
       actions:
         patterns: ["*"]
