@@ -783,3 +783,18 @@ test('a feed brief and a web brief with a full search pass the real pipeline', a
   assert.equal(await produceItem(web.deps, OWNER, id), 'ready');
   assert.ok(real.seen.at(-1)!.reduce((sum, source) => sum + source.excerpt.length, 0) <= 24_000);
 });
+
+test('the item playing right now is never archived from under the listener', async () => {
+  const h = harness(); await h.setup();
+  const [id] = (await tick(h.deps, OWNER)).due;
+  await produceItem(h.deps, OWNER, id);
+  h.advance(13 * 60);
+  const until = new Date(h.deps.now().getTime() + 30 * 60_000).toISOString();
+  h.db.raw.prepare('INSERT INTO family_presence (owner_id, item_id, title, until) VALUES (?, ?, ?, ?)').run(OWNER, id, 'Läuft', until);
+  await tick(h.deps, OWNER);
+  assert.equal((await h.store.getItem(OWNER, id))?.state, 'ready');
+  // Once its report runs out, it moves to the archive like any stale item.
+  h.advance(31);
+  await tick(h.deps, OWNER);
+  assert.equal((await h.store.getItem(OWNER, id))?.state, 'archived');
+});

@@ -80,11 +80,13 @@ export async function tick(deps: StationDeps, owner: string, options: { requireL
   const now = deps.now();
   const config = await deps.store.getConfig(owner);
   if (!config) return { planned: 0, due: [], expired: 0 };
-  const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now);
+  // What plays right now is never taken out from under the listener.
+  const playing = await deps.store.playingNow(owner, now);
+  const expired = await deps.store.expire(owner, minutes(now, -STALE_HOURS * 60), now, playing);
   // Time-bound items (weather, headlines, date, a music block's time of day) that missed their air time
   // by hours no longer fit: finished ones move to the archive, and the planner makes fresh ones.
   for (const row of await deps.store.openItems(owner)) {
-    if ((row.state !== 'ready' && row.state !== 'voicing') || Date.parse(row.planned_at) > now.getTime() - TIMELY_HOURS * 3_600_000 || !timeBound(row, config)) continue;
+    if (row.id === playing || (row.state !== 'ready' && row.state !== 'voicing') || Date.parse(row.planned_at) > now.getTime() - TIMELY_HOURS * 3_600_000 || !timeBound(row, config)) continue;
     await deps.store.update(owner, row.id, { state: row.state === 'ready' ? 'archived' : 'expired', lease_until: null }, now);
     expired.push({ ...row, state: row.state === 'ready' ? 'archived' : 'expired' });
   }

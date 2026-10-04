@@ -79,6 +79,9 @@ class RadioState {
     var hasMedia by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
+    /** The playing part on its own (a song, a spoken part): what the big card shows. */
+    var partPositionMs by mutableLongStateOf(0L)
+    var partDurationMs by mutableLongStateOf(0L)
     var currentItemId by mutableStateOf<String?>(null)
     var sleepLabel by mutableStateOf<String?>(null)
     /** The playing song's album cover, from the player's metadata. */
@@ -223,6 +226,7 @@ class RadioState {
     /** The cover of what plays: the song's album, else the item's first album, else none (the kind's tile). */
     val coverUrl: String? get() = artworkUrl ?: current?.coverUrl
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val partProgress: Float get() = if (partDurationMs > 0) (partPositionMs.toFloat() / partDurationMs).coerceIn(0f, 1f) else 0f
     val readyCount: Int get() = open.count { it.isPlayable }
     fun bookmarked(itemId: String?): Boolean = itemId != null && bookmarks.any { it.itemId == itemId }
     /** The choice or quiz to show on «Hören»: for what plays, else for something heard a little earlier. */

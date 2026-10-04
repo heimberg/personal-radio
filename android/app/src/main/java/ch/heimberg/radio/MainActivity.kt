@@ -306,11 +306,16 @@ class MainActivity private constructor(
         if (player == null || mediaId == null || duration == C.TIME_UNSET || duration <= 0) {
             state.positionMs = 0
             state.durationMs = 0
+            state.partPositionMs = 0
+            state.partDurationMs = 0
             state.inSound = false
             return
         }
         state.inSound = StationSound.isSound(mediaId)
         val current = player.currentPosition.coerceIn(0, duration)
+        // A song plays as silence of its length plus a margin: its own length is the song's.
+        state.partDurationMs = player.currentMediaItem?.mediaMetadata?.durationMs?.takeIf { it > 0 } ?: duration
+        state.partPositionMs = current.coerceAtMost(state.partDurationMs)
         if (state.inSound) {
             state.durationMs = duration
             state.positionMs = current
@@ -335,12 +340,9 @@ class MainActivity private constructor(
 
     override fun seek(fraction: Float) {
         val player = controller ?: return
-        if (state.durationMs <= 0) return
-        val target = (state.durationMs * fraction.coerceIn(0f, 1f)).toLong()
-        // The bar spans the whole item: find the part that holds [target].
-        val start = state.positionMs - player.currentPosition
-        val inPart = target - start
-        if (inPart in 0..player.duration) player.seekTo(inPart) else state.say("Springen geht nur innerhalb des laufenden Teils.")
+        if (state.partDurationMs <= 0) return
+        // The card shows the playing part (a song, a spoken part): the jump stays within it.
+        player.seekTo((state.partDurationMs * fraction.coerceIn(0f, 1f)).toLong())
         renderProgress(player)
     }
 

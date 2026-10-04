@@ -196,6 +196,8 @@ class ProgramClockTest {
         assertEquals(now.plusSeconds(90 + 120), starts["c"])
         // Nothing playing: the list starts now.
         assertEquals(now.plusSeconds(120), ProgramClock.startTimes(items, now, null, null)["b"])
+        // Still playing but no longer listed: the next item waits for its end, not «now».
+        assertEquals(now.plusSeconds(380), ProgramClock.startTimes(items, now, "gone", 380_000)["a"])
     }
 
     @Test fun movingKeepsThePlayingItemFirst() {

@@ -313,6 +313,34 @@ export function normalizeQuote(text: string): string {
     .replace(/\s+/g, ' ').trim().replace(/[\s.,;:!?"']+$/, '').replace(/^["'\s]+/, '');
 }
 
+const words = (text: string) => normalizeQuote(text).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+const NEGATIONS = /^(nicht|nichts|kein|keine|keinen|keinem|keiner|keines|nie|niemals|ohne|weder|noch|not|no|never|without)$/;
+
+/**
+ * Whether [quote] stands in [excerpt]: word for word, or with a few words left out. Checking models often
+ * drop a word («Forschende … sechs Zonen» for «Forschende … haben sechs Zonen»); that is no invented quote.
+ * Every quoted word must appear, in order, within one short passage; only a negation may never be left out.
+ */
+export function quoteInSource(quote: string, excerpt: string): boolean {
+  if (normalizeQuote(excerpt).includes(normalizeQuote(quote))) return true;
+  const wanted = words(quote), text = words(excerpt);
+  if (wanted.length < 5) return false;
+  const span = wanted.length + Math.max(2, Math.ceil(wanted.length * 0.3));
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== wanted[0]) continue;
+    // Earliest in-order match from here; the words passed over are the ones the quote left out.
+    let at = start, matched = 0, skippedNegation = false;
+    while (matched < wanted.length && at < text.length && at - start < span) {
+      if (text[at] === wanted[matched]) matched++;
+      else if (NEGATIONS.test(text[at])) skippedNegation = true;
+      at++;
+    }
+    if (matched === wanted.length && !skippedNegation) return true;
+  }
+  return false;
+}
+
 /** Model-independent part of the evidence check: every quote must occur in a cited source. */
 export function evaluateVerification(parsed: any, script: Script, sources: Source[]) {
   if (!parsed || typeof parsed.approved !== 'boolean' || !Array.isArray(parsed.checks) || !parsed.checks.length || !Array.isArray(parsed.reasons)) {
@@ -325,10 +353,9 @@ export function evaluateVerification(parsed: any, script: Script, sources: Sourc
     if (typeof check.quote !== 'string' || !normalizeQuote(check.quote) || !Array.isArray(check.sourceIds) || !check.sourceIds.length) {
       return { approved: false, reasons: [`Kein Zitat für: ${short(check.claim)}`] };
     }
-    const quote = normalizeQuote(check.quote);
     const found = check.sourceIds.every((id: unknown) => {
       const source = sources.find(item => item.id === id);
-      return !!source && script.sourceIds.includes(source.id) && normalizeQuote(source.excerpt).includes(quote);
+      return !!source && script.sourceIds.includes(source.id) && quoteInSource(check.quote, source.excerpt);
     });
     if (!found) return { approved: false, reasons: [`Zitat nicht in der Quelle: ${short(check.quote)}`] };
   }

@@ -11,9 +11,13 @@ object ProgramClock {
     fun startTimes(items: List<TimelineItem>, now: Instant, currentId: String?, currentRemainingMs: Long?): Map<String, Instant> {
         val starts = LinkedHashMap<String, Instant>()
         var at = now
-        items.firstOrNull { it.id == currentId }?.let { current ->
+        val current = items.firstOrNull { it.id == currentId }
+        if (current != null) {
             starts[current.id] = now
             at = now.plusMillis(currentRemainingMs?.coerceAtLeast(0) ?: lengthMs(current))
+        } else if (currentId != null && currentRemainingMs != null) {
+            // Still playing but no longer listed (the server moved it on): the rest starts after it.
+            at = now.plusMillis(currentRemainingMs.coerceAtLeast(0))
         }
         for (item in items) {
             if (item.id == currentId) continue
