@@ -1,5 +1,9 @@
 package ch.heimberg.radio
 
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -86,7 +90,8 @@ fun ListenScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
 @Composable
 private fun Header(state: RadioState) {
     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("PERSONAL RADIO", style = display(26), letterSpacing = 0.5.sp, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(state.stationName.ifBlank { "Personal Radio" }.uppercase(), style = display(26), letterSpacing = 0.5.sp, modifier = Modifier.weight(1f),
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
         StatusChip(state)
     }
 }
@@ -219,27 +224,41 @@ private fun PlayerCard(state: RadioState, actions: RadioActions) {
             Text(it, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp), color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(18.dp))
-        Waveform(state.progress, state.live, ink, Modifier.fillMaxWidth().height(24.dp), rest = ink.copy(alpha = 0.3f))
+        // A tap or a drag on the bars jumps there; during a jingle or transition they only show that it runs.
+        Waveform(
+            if (state.inSound) 0f else state.progress, state.live, ink,
+            Modifier.fillMaxWidth().height(32.dp)
+                .semantics { contentDescription = "Position im Beitrag, antippen zum Springen" }
+                .pointerInput(state.inSound) {
+                    if (!state.inSound) detectTapGestures { offset -> actions.seek(offset.x / size.width) }
+                },
+            rest = ink.copy(alpha = 0.3f),
+        )
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            Text(time(state.positionMs), style = MaterialTheme.typography.labelMedium, color = ink)
-            Spacer(Modifier.weight(1f))
-            Text(if (state.durationMs > 0) "−" + time((state.durationMs - state.positionMs).coerceAtLeast(0)) else "", style = MaterialTheme.typography.labelMedium, color = ink)
+            if (state.inSound) Text("Übergang …", style = MaterialTheme.typography.labelMedium, color = ink)
+            else {
+                Text(time(state.positionMs), style = MaterialTheme.typography.labelMedium, color = ink)
+                Spacer(Modifier.weight(1f))
+                Text(if (state.durationMs > 0) "−" + time((state.durationMs - state.positionMs).coerceAtLeast(0)) else "", style = MaterialTheme.typography.labelMedium, color = ink)
+            }
         }
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        RoundIcon(R.drawable.ic_thumbs_down, "Weniger davon") { actions.rate(false) }
+    val rating = state.currentItemId?.let { state.ratings[it] }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        RoundIcon(R.drawable.ic_thumbs_down, if (rating == false) "Weniger davon (bewertet)" else "Weniger davon", on = rating == false) { actions.rate(false) }
+        RoundIcon(R.drawable.ic_rewind, "15 Sekunden zurück") { actions.rewind() }
         PlayButton(state, actions, 78.dp)
         RoundIcon(R.drawable.ic_skip_forward, "Weiter") { actions.next() }
-        RoundIcon(R.drawable.ic_thumbs_up, "Mehr davon") { actions.rate(true) }
+        RoundIcon(R.drawable.ic_thumbs_up, if (rating == true) "Mehr davon (bewertet)" else "Mehr davon", on = rating == true) { actions.rate(true) }
     }
-    // Five small actions: they scroll sideways on a narrow screen.
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-        SmallAction(R.drawable.ic_info, "Text") { actions.transcript() }
-        SmallAction(R.drawable.ic_question, "Nachfragen") { actions.askAbout() }
-        SmallAction(R.drawable.ic_plus_circle, "Mehr dazu") { actions.deepen() }
-        val marked = state.bookmarked(state.currentItemId)
-        SmallAction(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
-        SmallAction(R.drawable.ic_moon, if (state.sleepLabel != null) "Timer an" else "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
+    // Five actions side by side, each with its icon above its word: all visible, even on a narrow screen.
+    val marked = state.bookmarked(state.currentItemId)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        Tile(R.drawable.ic_info, "Text") { actions.transcript() }
+        Tile(R.drawable.ic_question, "Nachfragen") { actions.askAbout() }
+        Tile(R.drawable.ic_plus_circle, "Mehr dazu") { actions.deepen() }
+        Tile(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Gemerkt" else "Merken", highlighted = marked) { actions.toggleBookmark() }
+        Tile(R.drawable.ic_moon, state.sleepLabel ?: "Schlafen", highlighted = state.sleepLabel != null) { state.sleepOpen = true }
     }
 }
 
@@ -334,18 +353,23 @@ private fun StartState(state: RadioState, actions: RadioActions) {
 }
 
 @Composable
-private fun RoundIcon(icon: Int, label: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).background(Nocturne.surfaceHigh, CircleShape)) {
-        Icon(painterResource(icon), label, Modifier.size(20.dp), tint = Nocturne.text)
+private fun RoundIcon(icon: Int, label: String, on: Boolean = false, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).background(if (on) Nocturne.accent else Nocturne.surfaceHigh, CircleShape)) {
+        Icon(painterResource(icon), label, Modifier.size(20.dp), tint = if (on) Nocturne.bg else Nocturne.text)
     }
 }
 
+/** One of the small actions under the player: icon over word, an equal share of the width. */
 @Composable
-private fun SmallAction(icon: Int, label: String, highlighted: Boolean = false, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
-        Icon(painterResource(icon), null, Modifier.size(16.dp), tint = if (highlighted) Nocturne.accentLight else Nocturne.muted)
-        Spacer(Modifier.width(6.dp))
-        Text(label, color = if (highlighted) Nocturne.accentLight else Nocturne.muted, style = MaterialTheme.typography.labelMedium)
+private fun RowScope.Tile(icon: Int, label: String, highlighted: Boolean = false, onClick: () -> Unit) {
+    val color = if (highlighted) Nocturne.accentLight else Nocturne.muted
+    Column(
+        Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = color)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = color, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 

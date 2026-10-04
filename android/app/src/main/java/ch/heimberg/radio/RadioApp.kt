@@ -1,5 +1,6 @@
 package ch.heimberg.radio
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.activity.compose.BackHandler
@@ -84,7 +85,7 @@ fun RadioApp(state: RadioState, actions: RadioActions, version: String) {
             SnackbarHost(snackbar) { data ->
                 Snackbar(
                     modifier = Modifier.padding(horizontal = 12.dp),
-                    action = data.visuals.actionLabel?.let { label -> { TextButton(onClick = data::performAction) { Text(label, color = Color(0xFF9DBBF2)) } } },
+                    action = data.visuals.actionLabel?.let { label -> { TextButton(onClick = data::performAction) { Text(label, color = if (Nocturne.dark) Color(0xFF1F5FD0) else Color(0xFF9DBBF2)) } } },
                     containerColor = Nocturne.text, contentColor = Nocturne.bg,
                 ) { Text(data.visuals.message, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
@@ -219,12 +220,15 @@ private fun Dialogs(state: RadioState, actions: RadioActions) {
     }
 }
 
-/** Options of one item: in the program to hear, move, swap or take out; in the archive to read or delete. */
+/**
+ * Options of one item: the three most used as big buttons (hear now, next, something else), the rest as a
+ * list with icons. Moving is done with the drag handle in the program, so it is not here.
+ */
 @Composable
 private fun ItemActions(item: TimelineItem, state: RadioState, actions: RadioActions) {
     val look = Looks.of(item)
     val close = { state.actionsFor = null }
-    Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Cover(look, item.coverUrl, 44.dp)
         Spacer(Modifier.width(12.dp))
         Column {
@@ -233,36 +237,54 @@ private fun ItemActions(item: TimelineItem, state: RadioState, actions: RadioAct
         }
     }
     val playing = item.id == state.currentItemId
-    val options = buildList<Pair<String, () -> Unit>> {
-        if (!playing && (item.isPlayable || (!item.isOpen && item.hasAudio))) add("▶  Jetzt hören" to { actions.play(item); state.tab = Tab.LISTEN })
-        if (item.isOpen && !playing) {
-            if (state.sections.next?.id != item.id) add("⏭  Als Nächstes" to { actions.playNext(item) })
-            add("↑  Nach vorne" to { actions.shift(item, -1) })
-            add("↓  Nach hinten" to { actions.shift(item, 1) })
-            add((if (item.surprise) "🎲  Andere Überraschung" else "🎲  Anders – eine Überraschung stattdessen") to { actions.swap(item) })
+    val quick = buildList<Triple<Int, String, () -> Unit>> {
+        if (!playing && (item.isPlayable || (!item.isOpen && item.hasAudio))) add(Triple(R.drawable.ic_play, "Jetzt hören") { actions.play(item); state.tab = Tab.LISTEN })
+        if (item.isOpen && !playing && state.sections.next?.id != item.id) add(Triple(R.drawable.ic_queue, "Als Nächstes") { actions.playNext(item) })
+        if (item.isOpen && !playing) add(Triple(R.drawable.ic_dice, if (item.surprise) "Andere" else "Anders") { actions.swap(item) })
+    }
+    if (quick.isNotEmpty()) {
+        Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((icon, label, run) in quick) {
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Nocturne.surfaceHigh).clickable { close(); run() }.padding(vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(painterResource(icon), null, Modifier.size(22.dp), tint = Nocturne.text)
+                    Spacer(Modifier.height(6.dp))
+                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
         }
-        if (item.state != "planned") add("📄  Text und Quellen" to { actions.transcript(item) })
+        Spacer(Modifier.height(8.dp))
+    }
+    val options = buildList<Triple<Int, String, () -> Unit>> {
+        if (item.state != "planned") add(Triple(R.drawable.ic_file_text, "Text und Quellen") { actions.transcript(item) })
         // Spoken items: a question about it, the reading list, and following its topic.
         if (item.state != "planned" && item.state != "voicing" && !item.hasMusic && item.showId != "_musik") {
-            add("❓  Nachfragen" to { actions.askAbout(item) })
-            add((if (state.bookmarked(item.id)) "🔖  Von der Leseliste nehmen" else "🔖  Merken") to { actions.toggleBookmark(item) })
-            add("📌  Dranbleiben" to { actions.suggestFollow(Reading.topicOf(item)) })
+            add(Triple(R.drawable.ic_question, "Nachfragen") { actions.askAbout(item) })
+            val marked = state.bookmarked(item.id)
+            add(Triple(if (marked) R.drawable.ic_bookmark_fill else R.drawable.ic_bookmark, if (marked) "Von der Leseliste nehmen" else "Merken") { actions.toggleBookmark(item) })
+            add(Triple(R.drawable.ic_push_pin, "Dranbleiben") { actions.suggestFollow(Reading.topicOf(item)) })
         }
         // Produced items can go to the family: a copy lands in their program.
         if (item.state != "planned" && item.state != "voicing" && item.hasAudio) {
-            for (member in state.family?.shareTargets().orEmpty()) add("🎧  Teilen mit ${member.name}" to { actions.share(item, member) })
+            for (member in state.family?.shareTargets().orEmpty()) add(Triple(R.drawable.ic_share, "Teilen mit ${member.name}") { actions.share(item, member) })
         }
-        if (item.isOpen && !playing) add("✕  Aus dem Programm nehmen" to { actions.remove(item) })
-        if (!item.isOpen) add("🗑  Löschen" to { state.deleteAsk = item })
     }
-    for ((label, run) in options) {
-        ListItem(
-            headlineContent = { Text(label) },
-            colors = ListItemDefaults.colors(containerColor = Nocturne.surface),
-            modifier = Modifier.clickable { close(); run() },
-        )
-    }
+    for ((icon, label, run) in options) Option(icon, label) { close(); run() }
+    if (item.isOpen && !playing) Option(R.drawable.ic_minus_circle, "Aus dem Programm nehmen", Nocturne.danger) { close(); actions.remove(item) }
+    if (!item.isOpen) Option(R.drawable.ic_trash, "Löschen", Nocturne.danger) { close(); state.deleteAsk = item }
     Spacer(Modifier.height(24.dp))
+}
+
+@Composable
+private fun Option(icon: Int, label: String, color: Color = Nocturne.text, onClick: () -> Unit) {
+    ListItem(
+        leadingContent = { Icon(painterResource(icon), null, Modifier.size(20.dp), tint = color) },
+        headlineContent = { Text(label, color = color) },
+        colors = ListItemDefaults.colors(containerColor = Nocturne.surface),
+        modifier = Modifier.clickable(onClick = onClick),
+    )
 }
 
 @Composable

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- «Magazin»: light paper, ink and one link blue; the same tokens as RadioTheme.kt. -->
-    <style name="Theme.PersonalRadio" parent="Theme.Material3.Light.NoActionBar">
+    <!-- «Magazin»: paper (or the dark ground at night), ink and one link blue; the same tokens as RadioTheme.kt. -->
+    <style name="Theme.PersonalRadio" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/bg</item>
         <item name="colorPrimaryContainer">@color/accent_800</item>
@@ -38,8 +38,8 @@
         <item name="android:windowBackground">@drawable/window_background</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightStatusBar">@bool/light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/light_bars</item>
 
         <item name="materialButtonStyle">@style/Widget.PersonalRadio.Button</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.PersonalRadio.Button</item>

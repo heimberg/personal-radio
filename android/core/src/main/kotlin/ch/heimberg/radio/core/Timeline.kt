@@ -115,6 +115,8 @@ data class Timeline(
     val family: FamilySummary? = null,
     /** Mitmachen: stickers, a child's station, questions to the radio. */
     val play: PlaySummary = PlaySummary(),
+    /** The station's name, for the header of «Hören». */
+    val station: String? = null,
 )
 
 /**

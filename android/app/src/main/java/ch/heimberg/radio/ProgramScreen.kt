@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -44,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -135,7 +137,8 @@ fun ProgramScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             }
         }
         // Everything new goes in here: blocks, «Für dich», a song, a topic to follow.
-        InsertButton(onClick = { state.catalogOpen = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
+        val expanded by remember { derivedStateOf { list.firstVisibleItemIndex == 0 || !list.lastScrolledForward } }
+        InsertButton(onClick = { state.catalogOpen = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), expanded = expanded)
     }
 }
 
@@ -154,11 +157,17 @@ private fun ProgramHead(state: RadioState, actions: RadioActions) {
             Text(listOfNotNull("$ready bereit".takeIf { ready > 0 }, "${state.open.size - ready} in Arbeit".takeIf { state.open.size > ready }).joinToString(" · ").ifEmpty { "Nichts geplant" }, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { AssistChip(onClick = actions::openDayPlan, label = { Text("🗓  Tagesplan") }) }
-            item { AssistChip(onClick = actions::shuffle, label = { Text("🔀  Mischen") }, enabled = state.open.size > 1) }
-            item { AssistChip(onClick = actions::plan, label = { Text("⚡  Jetzt planen") }) }
+            item { ToolChip(R.drawable.ic_calendar, "Tagesplan", onClick = actions::openDayPlan) }
+            item { ToolChip(R.drawable.ic_shuffle, "Mischen", enabled = state.open.size > 1, onClick = actions::shuffle) }
+            item { ToolChip(R.drawable.ic_lightning, "Jetzt planen", onClick = actions::plan) }
         }
     }
+}
+
+@Composable
+private fun ToolChip(icon: Int, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    AssistChip(onClick = onClick, enabled = enabled, label = { Text(label) },
+        leadingIcon = { Icon(painterResource(icon), null, Modifier.size(18.dp), tint = Nocturne.text) })
 }
 
 /** «Sendeplan» with a bar of what comes, each rubric as long as its minutes. */
@@ -200,7 +209,7 @@ private fun Failures(state: RadioState, actions: RadioActions) {
         Text("${failures.count} fehlgeschlagen" + (reason?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall, color = Nocturne.text,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         TextButton(onClick = actions::retry) { Text("Nochmal") }
-        IconButton(onClick = actions::cleanup) { Text("✕", color = Nocturne.muted, style = MaterialTheme.typography.titleSmall) }
+        IconButton(onClick = actions::cleanup) { Icon(painterResource(R.drawable.ic_x), "Aufräumen", Modifier.size(16.dp), tint = Nocturne.muted) }
     }
 }
 
@@ -208,7 +217,9 @@ private fun Failures(state: RadioState, actions: RadioActions) {
 @Composable
 private fun Tip(text: String, onDone: () -> Unit) {
     Row(Modifier.padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("💡 $text", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.weight(1f))
+        Icon(painterResource(R.drawable.ic_lightbulb), null, Modifier.size(16.dp), tint = Nocturne.muted)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.weight(1f))
         TextButton(onClick = onDone) { Text("OK") }
     }
 }
@@ -217,13 +228,17 @@ private fun Tip(text: String, onDone: () -> Unit) {
 @Composable
 private fun Outlook(state: RadioState) {
     if (!state.loaded) return
-    val text = when {
+    val (icon, text) = when {
         state.open.isEmpty() -> return
-        !state.playWhenReady -> "⏸ Pausiert – das Radio plant weiter, sobald du wieder hörst."
-        state.open.count { it.state == "ready" } < state.open.size -> "⏳ Weitere Beiträge sind in Arbeit und erscheinen hier, sobald sie fertig sind."
-        else -> "📻 Das Radio plant laufend nach deinem Tagesplan weiter."
+        !state.playWhenReady -> R.drawable.ic_pause_circle to "Pausiert – das Radio plant weiter, sobald du wieder hörst."
+        state.open.count { it.state == "ready" } < state.open.size -> R.drawable.ic_hourglass to "Weitere Beiträge sind in Arbeit und erscheinen hier, sobald sie fertig sind."
+        else -> R.drawable.ic_radio to "Das Radio plant laufend nach deinem Tagesplan weiter."
     }
-    Text(text, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(icon), null, Modifier.size(16.dp), tint = Nocturne.muted)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    }
 }
 
 /** A running series: its title, how far it is and the next episode; «Beenden» asks first. */
@@ -318,11 +333,13 @@ fun ItemRow(
             .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.width(58.dp)) {
-                Text(timeLabel ?: start?.let(clock::format) ?: "", style = display(22), color = if (live) Nocturne.live else Nocturne.text, maxLines = 1)
-                Text(if (live) liveLabel else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+            // At least the width of «23:45»; with large system fonts the column grows instead of cutting the time.
+            Column(Modifier.widthIn(min = 58.dp)) {
+                Text(timeLabel ?: start?.let(clock::format) ?: "", style = display(22), color = if (live) Nocturne.live else Nocturne.text, maxLines = 1, softWrap = false)
+                Text(if (live) liveLabel else if (item.state == "ready") "" else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
             }
             val barHeight = (14 + item.estimatedMinutes * 4).toInt().coerceIn(30, 84).dp
+            Spacer(Modifier.width(4.dp))
             Box(Modifier.width(6.dp).height(barHeight).background(color, RoundedCornerShape(3.dp)))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {

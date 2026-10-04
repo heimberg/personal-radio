@@ -1,5 +1,10 @@
 package ch.heimberg.radio
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.Icon
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -104,6 +109,23 @@ fun KindBadge(icon: String, kind: Kind?, size: Dp = 36.dp, modifier: Modifier = 
         modifier.size(size).background(Nocturne.kind(kind), RoundedCornerShape(size * 0.28f)),
         contentAlignment = Alignment.Center,
     ) { Text(icon, fontSize = (size.value * 0.46f).sp) }
+}
+
+/** The same badge with an icon drawn in the text colour of the rubric (the app's own icons, not emoji). */
+@Composable
+fun KindBadge(icon: Int, kind: Kind?, size: Dp = 36.dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(size).background(Nocturne.kind(kind), RoundedCornerShape(size * 0.28f)),
+        contentAlignment = Alignment.Center,
+    ) { Icon(painterResource(icon), null, Modifier.size(size * 0.5f), tint = Nocturne.onKind(kind)) }
+}
+
+/** A button label: icon and word, so every button speaks the same visual language. */
+@Composable
+fun IconText(icon: Int, text: String, color: Color = Color.Unspecified) {
+    Icon(painterResource(icon), null, Modifier.size(18.dp), tint = if (color == Color.Unspecified) LocalContentColor.current else color)
+    Spacer(Modifier.width(8.dp))
+    Text(text, color = color)
 }
 
 /** A small pill filled with the rubric's colour, e.g. «☕ Aktuell». */

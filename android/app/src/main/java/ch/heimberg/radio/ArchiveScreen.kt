@@ -1,5 +1,22 @@
 package ch.heimberg.radio
 
+import ch.heimberg.radio.core.Looks
+import ch.heimberg.radio.core.Kind
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,11 +56,13 @@ private val zone = ZoneId.systemDefault()
 private val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(zone)
 private val day = DateTimeFormatter.ofPattern("EEEE, d. MMMM", Locale.GERMAN)
 
-/** «Archiv»: productions that can still be heard, by day. Tap to hear, long press for text or delete. */
+/** «Archiv»: productions that can still be heard, by day; filter by rubric, search, tap to hear, swipe to delete, long press for more. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValues) {
     val items = state.archive
+    var kindFilter by rememberSaveable { mutableStateOf<Kind?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
     // Opening the tab brings the archive up to date.
     LaunchedEffect(Unit) { actions.loadArchive() }
     PullToRefreshBox(isRefreshing = state.archiveRefreshing, onRefresh = actions::loadArchive, modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -70,7 +89,16 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                 items(state.bookmarks, key = { "bookmark-${it.itemId}" }) { ReadingListEntry(it, actions) }
                 return@LazyColumn
             }
-            for ((date, group) in byDay(items.orEmpty())) {
+            // Filter by rubric and search in titles and shows.
+            item(key = "filter") { ArchiveFilter(items.orEmpty(), kindFilter, query, { kindFilter = it }, { query = it }) }
+            val shown = items.orEmpty().filter { item ->
+                (kindFilter == null || Looks.of(item).kind == kindFilter) &&
+                    (query.isBlank() || item.displayTitle.contains(query.trim(), ignoreCase = true) || item.showName.contains(query.trim(), ignoreCase = true))
+            }
+            if (items != null && shown.isEmpty() && items.isNotEmpty()) {
+                item(key = "none") { Text("Nichts gefunden.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp)) }
+            }
+            for ((date, group) in byDay(shown)) {
                 item(key = "day-$date") {
                     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
                         Text(dayLabel(date), style = display(24), color = Nocturne.text)
@@ -79,7 +107,20 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                     }
                 }
                 items(group, key = { "archive-${it.id}" }) { item ->
-                    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    // Swiping to the left deletes, with «Rückgängig» for a few seconds.
+                    val swipe = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+                        if (value == SwipeToDismissBoxValue.EndToStart) { actions.delete(item); true } else false
+                    })
+                    SwipeToDismissBox(
+                        state = swipe, enableDismissFromStartToEnd = false,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        backgroundContent = {
+                            Box(
+                                Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Nocturne.danger.copy(alpha = 0.18f)).padding(horizontal = 20.dp),
+                                contentAlignment = Alignment.CenterEnd,
+                            ) { Text("Löschen", style = MaterialTheme.typography.labelLarge, color = Nocturne.danger) }
+                        },
+                    ) {
                         ItemRow(
                             item, null, timeLabel = planned(item)?.let(clock::format) ?: "",
                             onTap = { actions.play(item); state.tab = Tab.LISTEN },
@@ -107,6 +148,32 @@ private fun dayLabel(date: LocalDate?): String {
         today -> "HEUTE"
         today.minusDays(1) -> "GESTERN"
         else -> day.format(date).uppercase(Locale.GERMAN)
+    }
+}
+
+/** Rubric chips (only those the archive has) and a search field. */
+@Composable
+private fun ArchiveFilter(items: List<TimelineItem>, kind: Kind?, query: String, onKind: (Kind?) -> Unit, onQuery: (String) -> Unit) {
+    if (items.isEmpty()) return
+    val kinds = Kind.entries.filter { k -> items.any { Looks.of(it).kind == k } }
+    Column(Modifier.padding(top = 4.dp)) {
+        OutlinedTextField(
+            value = query, onValueChange = { onQuery(it.take(60)) }, singleLine = true,
+            placeholder = { Text("Im Archiv suchen") },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_search), null, Modifier.size(18.dp)) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(painterResource(R.drawable.ic_x), "Suche leeren", Modifier.size(18.dp)) } },
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        )
+        if (kinds.size > 1) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { FilterChip(selected = kind == null, onClick = { onKind(null) }, label = { Text("Alle") }) }
+                items(kinds) { k ->
+                    FilterChip(selected = kind == k, onClick = { onKind(if (kind == k) null else k) }, label = { Text(k.label) },
+                        leadingIcon = { Box(Modifier.size(10.dp).clip(CircleShape).background(Nocturne.kind(k))) })
+                }
+            }
+        }
     }
 }
 

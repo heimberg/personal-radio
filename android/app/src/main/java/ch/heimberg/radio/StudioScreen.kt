@@ -1,5 +1,7 @@
 package ch.heimberg.radio
 
+import androidx.compose.runtime.key
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,10 +79,19 @@ fun StudioScreen(state: RadioState, actions: RadioActions, version: String, padd
             TextButton(onClick = actions::openConnection) { Text("Verbindung") }
         }
         if (state.studioDirty) SaveBar(state, actions)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        // A setting opens as its own page; back (or the arrow) returns to the overview.
+        val page = state.studioCard
+        BackHandler(enabled = page != null) { state.studioCard = null }
+        if (page != null) {
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { state.studioCard = null }) { Icon(painterResource(R.drawable.ic_arrow_left), "Zurück zur Übersicht") }
+                Text(PAGE_TITLES[page] ?: "", style = MaterialTheme.typography.titleLarge)
+            }
+        }
+        Column(Modifier.weight(1f).verticalScroll(key(page) { rememberScrollState() }).padding(bottom = 24.dp)) {
             when {
                 settings != null -> {
-                    StationHero(settings, state)
+                    if (page == null) StationHero(settings, state)
                     Cards(settings, state, actions)
                 }
                 state.studioMissing -> Note("Das Radio ist noch nicht eingerichtet. Ein Tipp legt es mit den Standardsendungen an; danach passt du hier alles an.") {
@@ -88,7 +99,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, version: String, padd
                 }
                 else -> Text("Einstellungen werden geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
             }
-            More(state, actions)
+            if (page == null) More(state, actions)
         }
     }
     VoiceDialogs(state, actions)
@@ -140,9 +151,9 @@ private fun StationHero(settings: StudioSettings, state: RadioState) {
 private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioActions) {
     val edit = actions::editStudio
     // What the station does on its own and which blocks the palette shows: one place for all of it.
-    Text("EINSTELLUNGEN", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp))
-    Card("funktionen", "🧩", Kind.SPECIAL, "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
-    Card("sender", "🎙️", Kind.NEWS, "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
+    if (state.studioCard == null) Text("EINSTELLUNGEN", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp))
+    Card("funktionen", R.drawable.ic_puzzle, Kind.SPECIAL, "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
+    Card("sender", R.drawable.ic_microphone, Kind.NEWS, "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
         Field("Name des Senders", settings.name) { edit(settings.copy(name = it.take(60))) }
         Field("Moderation", settings.hostName) { edit(settings.copy(hostName = it.take(40))) }
         Field("Tonfall", settings.tone, hint = "z. B. ruhig, neugierig, präzise") { edit(settings.copy(tone = it.take(160))) }
@@ -151,12 +162,12 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Field("Anweisungen an die Moderation", settings.instructions, hint = "Gilt für alle Sendungen.", lines = 3) { edit(settings.copy(instructions = it.take(2000))) }
     }
     val voiceName = state.voices.firstOrNull { it.id == settings.voiceId }?.name ?: settings.voiceId ?: "Standard"
-    Card("stimme", "🗣️", Kind.MUSIC, "Stimme", voiceName, state) {
+    Card("stimme", R.drawable.ic_user_sound, Kind.MUSIC, "Stimme", voiceName, state) {
         Text("Antippen wählt die Stimme, ▶ spielt eine Hörprobe mit deinem Sendernamen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         Field("Sprechstil", settings.voiceStyle, hint = "Gemini-Stimmen folgen ihm, z. B. «warm, lebendig, mit hörbarem Lächeln».", lines = 2) { edit(settings.copy(voiceStyle = it.take(300))) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { state.designOpen = true }) { Text("✨ Entwerfen") }
-            FilledTonalButton(onClick = { state.cloneOpen = true }) { Text("🎤 Meine Stimme") }
+            FilledTonalButton(onClick = { state.designOpen = true }) { IconText(R.drawable.ic_sparkle, "Entwerfen") }
+            FilledTonalButton(onClick = { state.cloneOpen = true }) { IconText(R.drawable.ic_microphone, "Meine Stimme") }
         }
         VoiceSearch(state, actions)
         // Which voice the list sets: the host's, or the co-host's in dialogs such as «Hintergrund».
@@ -185,13 +196,13 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
             }
         }
     }
-    Card("ort", "📍", Kind.DISCOVER, "Wo du hörst", settings.place?.name ?: "Noch kein Ort – ohne Ort kein Wetter", state) { PlacePicker(settings, state, actions) }
+    Card("ort", R.drawable.ic_map_pin, Kind.DISCOVER, "Wo du hörst", settings.place?.name ?: "Noch kein Ort – ohne Ort kein Wetter", state) { PlacePicker(settings, state, actions) }
     val interests = settings.topics + settings.interests
-    Card("interessen", "✨", Kind.STORY, "Interessen", if (interests.isEmpty()) "Noch keine" else interests.take(4).joinToString(", ") + if (interests.size > 4) " und ${interests.size - 4} weitere" else "", state) {
+    Card("interessen", R.drawable.ic_sparkle, Kind.STORY, "Interessen", if (interests.isEmpty()) "Noch keine" else interests.take(4).joinToString(", ") + if (interests.size > 4) " und ${interests.size - 4} weitere" else "", state) {
         Interests(settings, actions)
     }
     val songs = when (settings.between) { 0 -> "Keine Songs zwischen Beiträgen"; 1 -> "1 Song zwischen Beiträgen"; else -> "${settings.between} Songs zwischen Beiträgen" }
-    Card("musik", "🎵", Kind.MUSIC, "Musik", songs + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
+    Card("musik", R.drawable.ic_music_notes, Kind.MUSIC, "Musik", songs + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
         Text(if (settings.between == 0) "Songs zwischen Beiträgen: aus" else songs, style = MaterialTheme.typography.bodyMedium)
         Slider(value = settings.between.toFloat(), onValueChange = { edit(settings.between(Math.round(it))) }, valueRange = 0f..3f, steps = 2)
         Field("Musikgeschmack", settings.taste, hint = "Genres, Künstler, Stimmungen – so konkret wie möglich.", lines = 2) { edit(settings.copy(taste = it.take(500))) }
@@ -199,7 +210,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Text("Dein Spotify-Hörprofil verbindest du unten unter «Spotify-Hörprofil».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     }
     val sounds = listOf(settings.ident, settings.hourChange, settings.linker, settings.bed).count { it }
-    Card("sound", "🔊", Kind.NEWS, "Stationssound", "$sounds von 4 an", state) {
+    Card("sound", R.drawable.ic_speaker, Kind.NEWS, "Stationssound", "$sounds von 4 an", state) {
         Toggle("Jingles", "Zwischen Musik und Wort, der Opener vor den Nachrichten", settings.ident) { edit(settings.copy(ident = it)) }
         Toggle("Zeitzeichen zur vollen Stunde", "Mit der gesprochenen Zeitansage", settings.hourChange) { edit(settings.copy(hourChange = it)) }
         Toggle("Live-Übergänge", "Die Moderation verbindet die Beiträge kurz vor der Sendung", settings.linker) { edit(settings.copy(linker = it)) }
@@ -207,43 +218,52 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
     }
     val station = state.station
     if (station != null) {
-        Text("PROGRAMM UND REDAKTION", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 4.dp))
-        Card("sendungen", "📻", Kind.DISCOVER, "Sendungen", "${station.shows.count { it.enabled }} aktiv von ${station.shows.size}", state) { ShowsContent(state, actions) }
-        Card("feeds", "📰", Kind.NEWS, "Feeds", if (station.feeds.isEmpty()) "Keine" else station.feeds.joinToString(", ") { it.name }, state) { FeedsContent(state, actions) }
+        if (state.studioCard == null) Text("PROGRAMM UND REDAKTION", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 4.dp))
+        Card("sendungen", R.drawable.ic_radio, Kind.DISCOVER, "Sendungen", "${station.shows.count { it.enabled }} aktiv von ${station.shows.size}", state) { ShowsContent(state, actions) }
+        Card("feeds", R.drawable.ic_newspaper, Kind.NEWS, "Feeds", if (station.feeds.isEmpty()) "Keine" else station.feeds.joinToString(", ") { it.name }, state) { FeedsContent(state, actions) }
         val changed = station.agents.size
-        Card("redaktion", "✍️", Kind.STORY, "Redaktion", if (changed == 0) "Alle Agenten wie ausgeliefert" else "$changed ${if (changed == 1) "Agent" else "Agenten"} angepasst", state) { AgentsContent(state, actions) }
-        Card("qualitaet", "★", Kind.SPECIAL, "Qualität", "Noten der Jury und was du bemängelt hast", state) { QualityContent(state, actions) }
-        Card("verbrauch", "📊", Kind.DISCOVER, "Verbrauch", usageSummary(state.insights), state) { UsageContent(state, actions) }
-        Card("spotify", "🎧", Kind.MUSIC, "Spotify-Hörprofil", when (state.listening?.connected) { true -> "Verbunden"; false -> "Nicht verbunden"; null -> "Deine Top-Künstler für die Songauswahl" }, state) { ListeningContent(state, actions) }
+        Card("redaktion", R.drawable.ic_pen_nib, Kind.STORY, "Redaktion", if (changed == 0) "Alle Agenten wie ausgeliefert" else "$changed ${if (changed == 1) "Agent" else "Agenten"} angepasst", state) { AgentsContent(state, actions) }
+        Card("qualitaet", R.drawable.ic_star, Kind.SPECIAL, "Qualität", "Noten der Jury und was du bemängelt hast", state) { QualityContent(state, actions) }
+        Card("verbrauch", R.drawable.ic_chart_bar, Kind.DISCOVER, "Verbrauch", usageSummary(state.insights), state) { UsageContent(state, actions) }
+        Card("spotify", R.drawable.ic_headphones, Kind.MUSIC, "Spotify-Hörprofil", when (state.listening?.connected) { true -> "Verbunden"; false -> "Nicht verbunden"; null -> "Deine Top-Künstler für die Songauswahl" }, state) { ListeningContent(state, actions) }
     }
 }
 
-/** A card that opens in place; one is open at a time. Its icon sits on a rubric colour, so the cards are told apart at a glance. */
+/** The titles of the setting pages, for the bar above an open page. */
+private val PAGE_TITLES = mapOf(
+    "funktionen" to "Funktionen", "sender" to "Sender und Moderation", "stimme" to "Stimme", "ort" to "Wo du hörst",
+    "interessen" to "Interessen", "musik" to "Musik", "sound" to "Stationssound", "sendungen" to "Sendungen", "feeds" to "Feeds",
+    "redaktion" to "Redaktion", "qualitaet" to "Qualität", "verbrauch" to "Verbrauch", "spotify" to "Spotify-Hörprofil",
+)
+
+/**
+ * One setting: in the overview a row with its icon on a rubric colour and a one-line summary; a tap opens it
+ * as its own page (the same [id] in [RadioState.studioCard]), which shows only its content.
+ */
 @Composable
-private fun Card(id: String, icon: String, kind: Kind, title: String, summary: String, state: RadioState, content: @Composable () -> Unit) {
-    val open = state.studioCard == id
+private fun Card(id: String, icon: Int, kind: Kind, title: String, summary: String, state: RadioState, content: @Composable () -> Unit) {
+    val page = state.studioCard
+    if (page == id) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+        return
+    }
+    if (page != null) return
     val shape = RoundedCornerShape(18.dp)
-    Column(
-        Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(shape)
+    Row(
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(shape)
             .background(Nocturne.surface)
-            .border(if (open) 2.dp else 1.dp, if (open) Nocturne.kind(kind) else Nocturne.divider, shape)
-            .animateContentSize(),
+            .border(1.dp, Nocturne.divider, shape)
+            .clickable { state.studioCard = id }
+            .padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { state.studioCard = if (open) null else id }.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            KindBadge(icon, kind, 40.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                if (!open) Text(summary, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box(Modifier.size(28.dp).background(Nocturne.surfaceHigh, CircleShape), contentAlignment = Alignment.Center) {
-                Text(if (open) "−" else "+", style = MaterialTheme.typography.titleMedium, color = Nocturne.text)
-            }
+        KindBadge(icon, kind, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (open) Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+        Text("›", style = MaterialTheme.typography.titleLarge, color = Nocturne.muted)
     }
 }
 
@@ -282,7 +302,7 @@ private fun VoiceRow(
             Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        if (onDelete != null) IconButton(onClick = onDelete) { Text("✕", color = Nocturne.muted) }
+        if (onDelete != null) IconButton(onClick = onDelete) { Icon(painterResource(R.drawable.ic_trash), "Stimme löschen", Modifier.size(18.dp), tint = Nocturne.muted) }
         if (onPreview != null) {
             IconButton(onClick = onPreview) {
                 Icon(

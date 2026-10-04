@@ -52,8 +52,8 @@ fun PlayRow(state: RadioState, actions: RadioActions) {
     val play = state.play
     if (!play.ask && !play.album) return
     Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (play.ask) FilledTonalButton(onClick = { state.askOpen = true }, modifier = Modifier.weight(1f)) { Text("❓  Frag das Radio") }
-        if (play.album) OutlinedButton(onClick = actions::openAlbum, modifier = Modifier.weight(1f)) { Text("⭐  Sticker · ${play.stickers}") }
+        if (play.ask) FilledTonalButton(onClick = { state.askOpen = true }, modifier = Modifier.weight(1f)) { IconText(R.drawable.ic_question, "Frag das Radio") }
+        if (play.album) OutlinedButton(onClick = actions::openAlbum, modifier = Modifier.weight(1f)) { IconText(R.drawable.ic_sticker, "Sticker · ${play.stickers}") }
     }
 }
 
@@ -175,7 +175,7 @@ private fun AskDialog(state: RadioState, actions: RadioActions) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = state.askDraft, onValueChange = { state.askDraft = it.take(if (about != null) 300 else 200) }, maxLines = 4,
                     placeholder = { Text(if (about != null) "z. B. Was heisst das für die Schweiz?" else "z. B. Warum ist der Himmel blau?") }, modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = actions::dictate) { Text("🎤  Sprechen statt tippen") }
+                TextButton(onClick = actions::dictate) { IconText(R.drawable.ic_microphone, "Sprechen statt tippen") }
                 if (state.asking && about != null) Text("Die Redaktion sucht die Antwort …", style = MaterialTheme.typography.bodySmall, color = Nocturne.accentLight)
             }
         },
