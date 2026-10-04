@@ -36,6 +36,11 @@ max_retries = 0
 max_concurrency = 2
 
 # Keeps the program filled while the owner listens.
+# Workers Logs (included in the Free plan): console output and errors are kept and searchable in the
+# dashboard (Worker → Logs), so a failed production can be traced.
+[observability]
+enabled = true
+
 [triggers]
 crons = ["*/10 * * * *"]
 

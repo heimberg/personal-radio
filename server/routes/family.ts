@@ -2,14 +2,15 @@ import { StationStore } from '../station-store.ts';
 import { toView } from '../station.ts';
 import { FamilyStore, avatarImage, avatarKey, copyItem, mayCopyInto } from '../family.ts';
 import { json, readJson } from '../http.ts';
-import type { Environment } from '../http.ts';
+import { prepareLinker } from './linker.ts';
+import type { Environment, ExecutionContext } from '../http.ts';
 import { membersOf, audioObjects } from '../services.ts';
 
 /**
  * Family: who is there and what they hear, the chat, sharing an item into another member's program,
  * listening along, and greetings the host reads on air.
  */
-export async function familyRoutes(request: Request, env: Environment, owner: string, url: URL): Promise<Response | null> {
+export async function familyRoutes(request: Request, env: Environment, owner: string, url: URL, ctx?: ExecutionContext): Promise<Response | null> {
   if (!url.pathname.startsWith('/api/family')) return null;
   const members = membersOf(env), me = members.find(member => member.owner === owner);
   if (!me) return json({ error: 'not_found' }, 404);
@@ -86,6 +87,9 @@ export async function familyRoutes(request: Request, env: Environment, owner: st
       if (!row) return json({ error: 'not_found' }, 404);
       const view = toView(row, await store.getConfig(owner));
       await family.setPresence(owner, row.id, (view.title ?? view.showName).slice(0, 160), new Date(now.getTime() + Math.min(120, row.estimated_minutes + 5) * 60_000));
+      // The app reports each item as it starts: the transition into the following one is made now, after the response.
+      const prepare = prepareLinker(env, store, owner, row.id);
+      if (ctx) ctx.waitUntil(prepare); else await prepare;
       return json({ ok: true }, 200);
     }
     case '/api/family/share': {

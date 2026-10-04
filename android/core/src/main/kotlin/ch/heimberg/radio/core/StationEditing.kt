@@ -334,6 +334,29 @@ private fun JsonObject.flag(key: String, default: Boolean): Boolean = (this[key]
 private fun JsonObject.list(key: String): List<String> =
     (this[key] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content } ?: emptyList()
 
+/** One entry of the studio's «Diagnose» (`GET /api/diagnostics`): where it went wrong, why and when. */
+data class ErrorEntry(val stage: String, val message: String, val at: String, val showId: String? = null, val itemId: String? = null) {
+    /** The step in German: a failed production, a retry, a transition, the queue. */
+    val stageLabel: String get() = when (stage) {
+        "failed" -> "Fehlgeschlagen"
+        "retry" -> "Wird wiederholt"
+        "skipped" -> "Ausgelassen"
+        "linker" -> "Übergang"
+        "queue" -> "Produktion"
+        else -> stage
+    }
+
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+
+        fun parse(body: String): List<ErrorEntry> =
+            ((json.parseToJsonElement(body).jsonObject["errors"]) as? JsonArray)?.mapNotNull { element ->
+                val e = element as? JsonObject ?: return@mapNotNull null
+                ErrorEntry(e.text("stage"), e.text("message"), e.text("at"), e.text("showId").ifBlank { null }, e.text("itemId").ifBlank { null })
+            }.orEmpty()
+    }
+}
+
 /** `GET /api/insights`, the parts the app shows: usage per day, the jury's marks and the owner's complaints. */
 data class Insights(
     val days: List<UsageDay> = emptyList(),

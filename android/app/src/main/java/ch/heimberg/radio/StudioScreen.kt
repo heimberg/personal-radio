@@ -224,6 +224,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         val changed = station.agents.size
         Card("redaktion", R.drawable.ic_pen_nib, Kind.STORY, "Redaktion", if (changed == 0) "Alle Agenten wie ausgeliefert" else "$changed ${if (changed == 1) "Agent" else "Agenten"} angepasst", state) { AgentsContent(state, actions) }
         Card("qualitaet", R.drawable.ic_star, Kind.SPECIAL, "Qualität", "Noten der Jury und was du bemängelt hast", state) { QualityContent(state, actions) }
+        Card("diagnose", R.drawable.ic_warning_circle, Kind.NEWS, "Diagnose", "Die letzten Fehler und ihr Grund", state) { DiagnosticsContent(state, actions) }
         Card("verbrauch", R.drawable.ic_chart_bar, Kind.DISCOVER, "Verbrauch", usageSummary(state.insights), state) { UsageContent(state, actions) }
         Card("spotify", R.drawable.ic_headphones, Kind.MUSIC, "Spotify-Hörprofil", when (state.listening?.connected) { true -> "Verbunden"; false -> "Nicht verbunden"; null -> "Deine Top-Künstler für die Songauswahl" }, state) { ListeningContent(state, actions) }
     }
@@ -233,7 +234,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
 private val PAGE_TITLES = mapOf(
     "funktionen" to "Funktionen", "sender" to "Sender und Moderation", "stimme" to "Stimme", "ort" to "Wo du hörst",
     "interessen" to "Interessen", "musik" to "Musik", "sound" to "Stationssound", "sendungen" to "Sendungen", "feeds" to "Feeds",
-    "redaktion" to "Redaktion", "qualitaet" to "Qualität", "verbrauch" to "Verbrauch", "spotify" to "Spotify-Hörprofil",
+    "redaktion" to "Redaktion", "qualitaet" to "Qualität", "verbrauch" to "Verbrauch", "diagnose" to "Diagnose", "spotify" to "Spotify-Hörprofil",
 )
 
 /**

@@ -60,6 +60,11 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     return json({ agents: AGENTS, presets: AGENT_PRESETS }, 200);
   }
+  if (url.pathname === '/api/diagnostics') {
+    // The studio's «Diagnose»: the latest errors of productions, transitions and the queue.
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    return json({ errors: await store.errors(owner) }, 200);
+  }
   if (url.pathname === '/api/formats') {
     // The show formats with the lengths the config check accepts, so the app's editor never offers more.
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);

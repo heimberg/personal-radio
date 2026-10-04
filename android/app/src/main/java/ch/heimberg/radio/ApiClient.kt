@@ -26,6 +26,7 @@ import ch.heimberg.radio.core.ShowFormat
 import ch.heimberg.radio.core.StationDraft
 import ch.heimberg.radio.core.ListeningProfile
 import ch.heimberg.radio.core.Insights
+import ch.heimberg.radio.core.ErrorEntry
 import ch.heimberg.radio.core.AgentPreset
 import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.VoiceOption
@@ -130,6 +131,9 @@ class ApiClient(private val connection: Connection) {
     suspend fun agents(): Pair<List<AgentInfo>, List<AgentPreset>> = withContext(Dispatchers.IO) { StationDraft.parseAgents(request("GET", "api/agents")) }
 
     /** Usage, the jury's marks and the owner's complaints. */
+    /** The latest errors for the studio's «Diagnose». */
+    suspend fun diagnostics(): List<ErrorEntry> = withContext(Dispatchers.IO) { ErrorEntry.parse(request("GET", "api/diagnostics")) }
+
     suspend fun insights(): Insights = withContext(Dispatchers.IO) { Insights.parse(request("GET", "api/insights")) }
 
     /** Forgets the collected complaints («Zu lang» …). */
