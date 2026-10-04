@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt, withoutVoiceTags, mapLimited } from '../server/providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, parseModelJson, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, GeminiVoiceCatalog, MistralSpeechSynthesizer, VoiceRouter, pcmToWav, personaPrompt, withoutVoiceTags, mapLimited, quoteInSource } from '../server/providers.ts';
 import { defaultProfile, parseProfile, parseScript } from '../src/domain/program.ts';
 const sources = [{ id: 's1', url: 'https://example.org/news', title: 'Test', excerpt: 'Ein Test.', publishedAt: '2026-09-25', retrievedAt: '2026-09-25' }];
 test('script rejects invented source IDs', () => {
@@ -390,4 +390,17 @@ test('spent TTS quota (429) moves speech once to the lite model: prebuilt and ow
   const same = new GeminiSpeechSynthesizer({ key: 'g', liteModel: 'gemini-3.8-flash-tts' }, quota);
   await assert.rejects(same.synthesize('Hallo.', undefined, 'gemini_voice_mine'), /429/);
   assert.deepEqual(models, ['gemini-3.8-flash-tts']);
+});
+
+test('a quote with a dropped or bent word still counts; an invented one does not', () => {
+  const excerpt = 'Peking. Forschende der Chinesischen Akademie der Wissenschaften haben sechs bisher unentdeckte Zonen im Erdmantel kartiert, wie das Team am Montag mitteilte.';
+  assert.equal(quoteInSource('Forschende der Chinesischen Akademie der Wissenschaften sechs bisher unentdeckte Zonen', excerpt), true);
+  assert.equal(quoteInSource('„sechs bisher unentdeckte Zonen im Erdmantel“', excerpt), true);
+  // A changed word (here a number) or a dropped negation is no longer the source.
+  assert.equal(quoteInSource('Forschende der Chinesischen Akademie der Wissenschaften haben zehn bisher unentdeckte Zonen im Erdmantel kartiert', excerpt), false);
+  assert.equal(quoteInSource('Die Behörde hat den Impfstoff zugelassen', 'Die Behörde hat den Impfstoff bisher nicht zugelassen.'), false);
+  assert.equal(quoteInSource('Die Behörde hat den Impfstoff zugelassen', 'Die Behörde hat den neuen Impfstoff zugelassen.'), true);
+  assert.equal(quoteInSource('Forschende der Universität Zürich haben sechs neue Vulkane auf dem Mond entdeckt', excerpt), false);
+  assert.equal(quoteInSource('sechs neue Zonen', excerpt), false);
+  assert.equal(quoteInSource('das Team hat am Dienstag nichts mitgeteilt', excerpt), false);
 });
