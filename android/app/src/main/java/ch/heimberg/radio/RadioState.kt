@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.setValue
 import ch.heimberg.radio.core.AppBuild
 import ch.heimberg.radio.core.BlockView
@@ -66,6 +67,12 @@ class RadioState {
     var status by mutableStateOf("")
     var phase by mutableStateOf(Phase.WAITING)
     var playWhenReady by mutableStateOf(false)
+    /** The station's name from the program; the header of «Hören». */
+    var stationName by mutableStateOf("")
+    /** This session's ratings of items (true 👍, false 👎), so the buttons show them. */
+    val ratings = mutableStateMapOf<String, Boolean>()
+    /** The playing step is a station sound (jingle, transition, news opener), not the item itself. */
+    var inSound by mutableStateOf(false)
     var live by mutableStateOf(false)
     var hasMedia by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
@@ -251,6 +258,9 @@ interface RadioActions : StudioActions, VoiceActions, FamilyActions, MitmachenAc
     fun remove(item: TimelineItem)
     fun playNext(item: TimelineItem)
     fun shift(item: TimelineItem, offset: Int)
+    /** Jumps to [fraction] of the playing item (within its playing part), or 15 seconds back. */
+    fun seek(fraction: Float)
+    fun rewind()
     /** A new order of the open items (by id), from dragging in the program. */
     fun reorder(order: List<String>)
     fun chooseBlock(block: BlockView)

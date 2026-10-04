@@ -30,6 +30,7 @@ import ch.heimberg.radio.core.PlaceTrigger
 import ch.heimberg.radio.core.FeedbackPolicy
 import ch.heimberg.radio.core.FeedbackReason
 import ch.heimberg.radio.core.Program
+import ch.heimberg.radio.core.StationSound
 import ch.heimberg.radio.core.ProgramClock
 import ch.heimberg.radio.core.SeriesInfo
 import ch.heimberg.radio.core.TimelineItem
@@ -146,10 +147,10 @@ class MainActivity private constructor(
         updater = AppUpdater(this, api)
         // Shown so an installed build can be matched to its CI run.
         val version = "Version " + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?")
-        // A light ground: dark icons in the status and navigation bars.
+        // Transparent bars whose icons follow the theme: dark on the light ground, light at night.
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
         setContent {
             RadioTheme {
@@ -286,15 +287,59 @@ class MainActivity private constructor(
         )
     }
 
+    /**
+     * How far the playing item is: over all its parts (an hour has many), not just the playing one, so the
+     * time does not jump at each part. Parts whose length is not known yet share the item's estimate.
+     * While a jingle or transition plays, it shows that step on its own.
+     */
     private fun renderProgress(player: Player? = controller) {
         val duration = player?.duration ?: C.TIME_UNSET
-        if (player == null || duration == C.TIME_UNSET || duration <= 0) {
+        val mediaId = player?.currentMediaItem?.mediaId
+        if (player == null || mediaId == null || duration == C.TIME_UNSET || duration <= 0) {
             state.positionMs = 0
             state.durationMs = 0
+            state.inSound = false
             return
         }
-        state.durationMs = duration
-        state.positionMs = player.currentPosition.coerceIn(0, duration)
+        state.inSound = StationSound.isSound(mediaId)
+        val current = player.currentPosition.coerceIn(0, duration)
+        if (state.inSound) {
+            state.durationMs = duration
+            state.positionMs = current
+            return
+        }
+        val itemId = Program.itemIdOf(mediaId)
+        val index = player.currentMediaItemIndex
+        var known = 0L; var before = 0L; var unknown = 0; var unknownBefore = 0
+        for (i in 0 until player.mediaItemCount) {
+            val id = player.getMediaItemAt(i).mediaId
+            if (Program.itemIdOf(id) != itemId || StationSound.isSound(id)) continue
+            val length = if (i == index) duration else player.getMediaItemAt(i).mediaMetadata.durationMs?.takeIf { it > 0 }
+            if (length == null) { unknown++; if (i < index) unknownBefore++; continue }
+            known += length
+            if (i < index) before += length
+        }
+        val estimate = ((state.open.firstOrNull { it.id == itemId }?.estimatedMinutes ?: 0.0) * 60_000).toLong()
+        val share = if (unknown > 0) ((estimate - known).coerceAtLeast(0) / unknown) else 0L
+        state.durationMs = known + share * unknown
+        state.positionMs = (before + share * unknownBefore + current).coerceAtMost(state.durationMs)
+    }
+
+    override fun seek(fraction: Float) {
+        val player = controller ?: return
+        if (state.durationMs <= 0) return
+        val target = (state.durationMs * fraction.coerceIn(0f, 1f)).toLong()
+        // The bar spans the whole item: find the part that holds [target].
+        val start = state.positionMs - player.currentPosition
+        val inPart = target - start
+        if (inPart in 0..player.duration) player.seekTo(inPart) else state.say("Springen geht nur innerhalb des laufenden Teils.")
+        renderProgress(player)
+    }
+
+    override fun rewind() {
+        val player = controller ?: return
+        player.seekTo((player.currentPosition - 15_000).coerceAtLeast(0))
+        renderProgress(player)
     }
 
     private fun renderSleep(extras: Bundle) {
@@ -356,6 +401,7 @@ class MainActivity private constructor(
         window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         lifecycleScope.launch {
             val result = runCatching { api.send(FeedbackPolicy.rating(id, liked)) }
+            if (result.isSuccess) state.ratings[id] = liked
             state.say(result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" }))
             val showId = state.open.firstOrNull { it.id == id }?.showId
             // One optional tap after 👎: repeated reasons teach the station's writer, editor and jury.
@@ -560,7 +606,18 @@ class MainActivity private constructor(
 
     override fun stopSeries(series: SeriesInfo) = serverAction({ api.stopSeries(series.id) }, "«${series.title}» ist beendet.")
 
-    override fun shuffle() = serverAction({ api.shuffle() }, "Programm gemischt.")
+    /** Mixes the program; «Rückgängig» puts the order back as it was. */
+    override fun shuffle() {
+        val before = ProgramClock.playingOrder(state.open, state.currentItemId).map { it.id }
+        lifecycleScope.launch {
+            val result = runCatching { api.shuffle() }
+            changed()
+            result.fold(
+                { state.say("Programm gemischt.", "Rückgängig") { reorder(before) } },
+                { state.say(it.message ?: getString(R.string.connection_failed)) },
+            )
+        }
+    }
 
     override fun addSong() = serverAction({ api.addSong() }, "Ein Song wird ausgewählt und hinten angehängt.")
 
@@ -615,6 +672,7 @@ class MainActivity private constructor(
                 state.spotifyNeeded = spotifyClientId != null && !RadioSettings(this).spotifyLinked
                 state.connectionError = null
                 state.failures = timeline.failures
+                timeline.station?.let { state.stationName = it }
                 state.familyEnabled = timeline.family != null
                 state.familyUnread = timeline.family?.unread ?: 0
                 // The share menu needs the members; the open tab keeps its chat current.
@@ -652,11 +710,19 @@ class MainActivity private constructor(
         }
     }
 
+    /** Deletes after a few seconds without «Rückgängig»: the row leaves the archive right away. */
     override fun delete(item: TimelineItem) {
-        lifecycleScope.launch {
+        val before = state.archive
+        state.archive = before?.filter { it.id != item.id }
+        val pending = lifecycleScope.launch {
+            delay(UNDO_MS)
             val result = runCatching { api.delete(item.id) }
-            state.say(result.fold({ getString(R.string.deleted) }, { it.message ?: getString(R.string.connection_failed) }))
+            result.exceptionOrNull()?.let { state.say(it.message ?: getString(R.string.connection_failed)) }
             loadArchive()
+        }
+        state.say("«${item.displayTitle}» gelöscht.", "Rückgängig") {
+            pending.cancel()
+            state.archive = before
         }
     }
 

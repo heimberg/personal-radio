@@ -86,6 +86,8 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.deepEqual(items[0].sources, [{ title: 'Raumfahrt heute', url: 'https://news.example.test/a' }]);
     assert.equal(items[1].state, 'planned'); // the foreign message was ignored
     assert.equal(((await (await call('/api/timeline')).json()) as { spotify?: unknown }).spotify, undefined);
+    // The app's player header shows the station's name.
+    assert.equal(typeof ((await (await call('/api/timeline')).json()) as { station?: unknown }).station, 'string');
     // Unchanged since the last poll: 304 without a body, with the same ETag.
     const first = await call('/api/timeline');
     const etag = first.headers.get('ETag')!;

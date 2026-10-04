@@ -1,5 +1,6 @@
 package ch.heimberg.radio
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -113,7 +114,7 @@ private fun SlotCard(slot: ScheduleSlot, onAir: Boolean, plan: DayPlan, state: R
             TextButton(onClick = { state.timeAsk = slot.id to false }) { Text(slot.to, style = MaterialTheme.typography.titleMedium) }
             if (onAir) KindChip("läuft jetzt", null, Modifier.padding(start = 4.dp))
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { actions.editDayPlan(plan.remove(slot.id)) }) { Text("✕", color = Nocturne.muted) }
+            IconButton(onClick = { actions.editDayPlan(plan.remove(slot.id)) }) { Icon(painterResource(R.drawable.ic_x), "Zeitfenster entfernen", Modifier.size(16.dp), tint = Nocturne.muted) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((label, days) in DayPlan.DAY_SETS) {

@@ -91,6 +91,9 @@ object StationSound {
     const val IDENT = "#ident"
     const val LINK = "#link"
     const val NEWS = "#news"
+
+    /** A jingle, transition or news opener before an item, not the item itself. */
+    fun isSound(mediaId: String): Boolean = mediaId.endsWith(IDENT) || mediaId.endsWith(LINK) || mediaId.endsWith(NEWS)
 }
 
 /**

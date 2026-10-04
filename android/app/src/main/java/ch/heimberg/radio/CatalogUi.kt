@@ -1,5 +1,6 @@
 package ch.heimberg.radio
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -103,8 +104,8 @@ fun CatalogSheet(state: RadioState, actions: RadioActions) {
                 item(key = "for-you") { ForYouPicks(state, insert) }
                 item(key = "quick") {
                     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickAction("♫", "Ein Song", Modifier.weight(1f)) { close(); actions.addSong() }
-                        QuickAction("📌", "Thema verfolgen", Modifier.weight(1f)) { close(); actions.suggestFollow("") }
+                        QuickAction(R.drawable.ic_music_notes, "Ein Song", Modifier.weight(1f)) { close(); actions.addSong() }
+                        QuickAction(R.drawable.ic_push_pin, "Thema verfolgen", Modifier.weight(1f)) { close(); actions.suggestFollow("") }
                     }
                 }
                 val rubrics = Catalog.rubrics(state.blocks, state.favorites)
@@ -153,7 +154,7 @@ private fun ForYouPicks(state: RadioState, insert: (BlockView) -> Unit) {
 
 /** A white button with an icon and a word, for what is not a block: a song, a topic to follow. */
 @Composable
-private fun QuickAction(icon: String, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun QuickAction(icon: Int, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
         modifier
             .height(48.dp)
@@ -164,7 +165,7 @@ private fun QuickAction(icon: String, label: String, modifier: Modifier = Modifi
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(icon, fontSize = 18.sp)
+        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = Nocturne.text)
         Spacer(Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -244,7 +245,7 @@ private fun BlockCard(block: BlockView, favorite: Boolean, showRubric: Boolean, 
 
 /** The ink button «＋ Einfügen» at the bottom of «Programm»: the one way to add something. */
 @Composable
-fun InsertButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun InsertButton(onClick: () -> Unit, modifier: Modifier = Modifier, expanded: Boolean = true) {
     Row(
         modifier
             .shadow(8.dp, RoundedCornerShape(999.dp))
@@ -253,12 +254,16 @@ fun InsertButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .background(Nocturne.accent)
             .clickable(onClick = onClick)
             .semantics { contentDescription = "Einfügen" }
-            .padding(start = 18.dp, end = 22.dp),
+            .animateContentSize()
+            .padding(start = if (expanded) 18.dp else 16.dp, end = if (expanded) 22.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(20.dp), tint = Nocturne.bg)
-        Spacer(Modifier.width(8.dp))
-        Text("Einfügen", style = MaterialTheme.typography.titleMedium, color = Nocturne.bg)
+        Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(24.dp), tint = Nocturne.bg)
+        // While the list scrolls down it shrinks to its ＋, so it covers less; scrolling up brings the word back.
+        if (expanded) {
+            Spacer(Modifier.width(8.dp))
+            Text("Einfügen", style = MaterialTheme.typography.titleMedium, color = Nocturne.bg)
+        }
     }
 }
 

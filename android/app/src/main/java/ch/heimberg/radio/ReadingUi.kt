@@ -1,5 +1,9 @@
 package ch.heimberg.radio
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -68,7 +72,9 @@ fun FollowedTopics(state: RadioState, actions: RadioActions) {
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (topic in follows.topics) {
-                InputChip(selected = false, onClick = { actions.unfollow(topic.id) }, label = { Text("📌 ${topic.topic}  ✕", maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                InputChip(selected = false, onClick = { actions.unfollow(topic.id) }, label = { Text(topic.topic, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_push_pin), null, Modifier.size(16.dp)) },
+                    trailingIcon = { Icon(painterResource(R.drawable.ic_x), "Nicht mehr verfolgen", Modifier.size(14.dp)) })
             }
         }
     }
@@ -92,7 +98,7 @@ fun ReadingListEntry(bookmark: Bookmark, actions: RadioActions) {
                 Text(bookmark.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (bookmark.showName.isNotBlank()) Text(bookmark.showName, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
             }
-            TextButton(onClick = { actions.removeBookmark(bookmark.itemId) }) { Text("✕", color = Nocturne.muted) }
+            IconButton(onClick = { actions.removeBookmark(bookmark.itemId) }) { Icon(painterResource(R.drawable.ic_x), "Von der Leseliste nehmen", Modifier.size(16.dp), tint = Nocturne.muted) }
         }
         if (bookmark.sources.isEmpty()) Text("Ohne Weblinks", style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(vertical = 4.dp))
         for (source in bookmark.sources) {

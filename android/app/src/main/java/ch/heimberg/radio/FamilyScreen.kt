@@ -136,9 +136,9 @@ private fun AvatarMenu(self: FamilyMember?, state: RadioState, actions: RadioAct
             Column {
                 Text("Alle in der Familie sehen es. Es bleibt auf deinem Radio-Server.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 Spacer(Modifier.size(8.dp))
-                TextButton(onClick = actions::chooseAvatar) { Text("🖼  Foto auswählen") }
-                TextButton(onClick = actions::takeAvatar) { Text("📷  Foto aufnehmen") }
-                if (self?.avatarUrl != null) TextButton(onClick = actions::removeAvatar) { Text("✕  Entfernen", color = Nocturne.danger) }
+                TextButton(onClick = actions::chooseAvatar) { IconText(R.drawable.ic_image, "Foto auswählen") }
+                TextButton(onClick = actions::takeAvatar) { IconText(R.drawable.ic_camera, "Foto aufnehmen") }
+                if (self?.avatarUrl != null) TextButton(onClick = actions::removeAvatar) { IconText(R.drawable.ic_trash, "Entfernen", Nocturne.danger) }
             }
         },
         confirmButton = { TextButton(onClick = { state.avatarMenuOpen = false }) { Text("Abbrechen") } },

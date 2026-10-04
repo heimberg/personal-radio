@@ -40,7 +40,7 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
     const kids = isKids(owner, parseListeners(env.LISTENERS)), stickers = (await new PlayStore(env.DB).stickers(owner)).length;
     const play = { play: { stickers, kids, ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
-    return unchangedOr(request, json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...spotify, ...mood, ...family, ...play,
+    return unchangedOr(request, json({ items: (await store.visibleItems(owner)).map(row => toView(row, config)), failures: await store.failureSummary(owner), ...(config?.name ? { station: config.name } : {}), ...spotify, ...mood, ...family, ...play,
       sounds: {
         ...(sounds.ident ? { identUrl: 'api/sounds/ident.wav', identUrls: idents, newsUrl: 'api/sounds/news.wav' } : {}),
         ...(sounds.hourChange ? { signalUrl: 'api/sounds/pips.wav', hourUrl: 'api/sounds/hour/' } : {}),
