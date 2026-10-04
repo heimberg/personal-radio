@@ -52,6 +52,10 @@ class TimelineTest {
     @Test fun rejectionsShowTheReason() {
         assertEquals("Quellenprüfung nicht bestanden – Nicht belegt: «X»", Labels.error("REJECTED: Nicht belegt: «X»"))
         assertEquals("Quellenprüfung nicht bestanden.", Labels.error("REJECTED"))
+        assertEquals("Unerwarteter Fehler (SOMETHING_NEW).", Labels.error("SOMETHING_NEW"))
+        assertEquals("Gemini antwortete nicht.", Labels.error("Gemini antwortete nicht."))
+        assert(Labels.error("INVALID_INPUT").startsWith("Die Quellen oder der Text"))
+        assertEquals("Produktion abgebrochen – Text zu lang", Labels.error("INVALID_INPUT: Text zu lang"))
     }
 
     @Test fun queueFollowsTheProgramOrderAndSkipsWhatWasPlayed() {

@@ -31,8 +31,42 @@ export class PipelineError extends Error {
   }
 }
 
+/** An https link without credentials. */
+function usableLink(link: string): boolean {
+  try { const url = new URL(link); return url.protocol === 'https:' && !url.username && !url.password; } catch { return false; }
+}
+
+/** The limits a draft accepts: at most this many sources and this many characters of excerpts together. */
+export const MAX_SOURCES = 8, MAX_SOURCE_CHARS = 24_000;
+
+/**
+ * Sources as a draft accepts them: tool and series sources come first and the web after, so the list is
+ * cut to [MAX_SOURCES] from the end, duplicate ids and unusable links are dropped, and the excerpts are
+ * shortened to fit [MAX_SOURCE_CHARS] together. Without this a show with live data and a full web search
+ * failed with INVALID_INPUT.
+ */
+export function fitSources(sources: Source[]): Source[] {
+  const ids = new Set<string>(), usable: Source[] = [];
+  for (const source of sources) {
+    if (usable.length >= MAX_SOURCES) break;
+    if (!source || !/^[a-zA-Z0-9_-]{1,80}$/.test(source.id) || ids.has(source.id) || !source.excerpt?.trim()) continue;
+    if (source.url !== '' && !usableLink(source.url)) continue;
+    if (!Number.isFinite(Date.parse(source.publishedAt)) || !Number.isFinite(Date.parse(source.retrievedAt))) continue;
+    ids.add(source.id);
+    usable.push({ ...source, title: source.title.slice(0, 300) });
+  }
+  // An equal share for every source, and what a short one leaves goes to the others.
+  let budget = MAX_SOURCE_CHARS;
+  return usable.map((source, index) => {
+    const share = Math.floor(budget / (usable.length - index));
+    const excerpt = source.excerpt.slice(0, Math.min(12_000, share));
+    budget -= excerpt.length;
+    return { ...source, excerpt };
+  });
+}
+
 function validateSources(sources: Source[]) {
-  if (!Array.isArray(sources) || sources.length < 1 || sources.length > 8) throw new PipelineError('INVALID_INPUT');
+  if (!Array.isArray(sources) || sources.length < 1 || sources.length > MAX_SOURCES) throw new PipelineError('INVALID_INPUT', `${Array.isArray(sources) ? sources.length : 0} Quellen`);
   const ids = new Set<string>(); let total = 0;
   for (const source of sources) {
     if (!source || typeof source.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(source.id) || ids.has(source.id) ||
@@ -40,14 +74,13 @@ function validateSources(sources: Source[]) {
         typeof source.excerpt !== 'string' || !source.excerpt.trim() || source.excerpt.length > 12_000 ||
         typeof source.publishedAt !== 'string' || !Number.isFinite(Date.parse(source.publishedAt)) ||
         typeof source.retrievedAt !== 'string' || !Number.isFinite(Date.parse(source.retrievedAt))) {
-      throw new PipelineError('INVALID_INPUT');
+      throw new PipelineError('INVALID_INPUT', `Quelle ${typeof source?.id === 'string' ? source.id.slice(0, 40) : '?'} unvollständig`);
     }
-    let url: URL;
-    try { url = new URL(source.url); } catch { throw new PipelineError('INVALID_INPUT'); }
-    if (url.protocol !== 'https:' || url.username || url.password) throw new PipelineError('INVALID_INPUT');
+    // The station's own material (a story's plan, the week's review) has no link; anything else is https.
+    if (source.url !== '' && !usableLink(source.url)) throw new PipelineError('INVALID_INPUT', `Quelle ${source.id}: Link nicht nutzbar`);
     ids.add(source.id); total += source.excerpt.length;
   }
-  if (total > 24_000) throw new PipelineError('INVALID_INPUT');
+  if (total > MAX_SOURCE_CHARS) throw new PipelineError('INVALID_INPUT', `${total} Zeichen Quellentext`);
 }
 
 /** Hard cap per individual segment, before any paid provider call. */
@@ -125,7 +158,8 @@ export class SegmentPipeline {
     const script = parseScript(await textProvider.generate(safeProfile, sources, direction), sources);
     const allowedTags = new Set([...safeProfile.topics, ...safeProfile.interests]);
     script.interestTags = script.interestTags?.filter(tag => allowedTags.has(tag)).slice(0, 30) ?? [];
-    if (script.text.length > 12_000 || [...script.text.trim().split(/\s+/)].length > 1400 || mode === 'podcast' && !script.turns) throw new PipelineError('INVALID_INPUT');
+    if (script.text.length > 12_000 || [...script.text.trim().split(/\s+/)].length > 1400) throw new PipelineError('INVALID_INPUT', 'Text zu lang');
+    if (mode === 'podcast' && !script.turns) throw new PipelineError('INVALID_INPUT', 'Dialog ohne Sprecherwechsel');
     return script;
   }
 

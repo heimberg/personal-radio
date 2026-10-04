@@ -25,7 +25,7 @@ import type { AgentConfig } from '../src/domain/agents.ts';
 import { NOTE_WINDOW_DAYS, listenerNotes } from '../src/domain/listener-notes.ts';
 import type { Weather } from './tools.ts';
 import type { Researcher } from './providers.ts';
-import { PipelineError } from './segment-pipeline.ts';
+import { PipelineError, fitSources } from './segment-pipeline.ts';
 import type { SegmentPipeline } from './segment-pipeline.ts';
 import { audioKeysOf } from './station-store.ts';
 import type { StationStore, TimelineRow } from './station-store.ts';
@@ -404,8 +404,9 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       } else sources = await collectSources(deps, owner, config, show, profile);
       // Mark sources before drafting: a rejected article is not retried endlessly at provider cost.
       await deps.store.markCovered(owner, sources.map(source => source.url), now);
-      // Tool results are evidence too; a show can live on them alone (a weather report).
-      sources = [...toolSources, ...sources];
+      // Tool results are evidence too; a show can live on them alone (a weather report). Together they must
+      // fit what a draft accepts.
+      sources = fitSources([...toolSources, ...sources]);
       // Nothing new to talk about is no fault: the item leaves the program quietly (the circuit breaker still counts it).
       if (!sources.length) {
         await deps.store.update(owner, row.id, { state: 'expired', lease_until: null, error: 'NO_SOURCES' }, deps.now());
@@ -1547,7 +1548,7 @@ export async function trialAgent(deps: StationDeps, owner: string, agent: TrialA
       const generator = deps.generator ? deps.generator(show.textProvider, show.format) : undefined;
       if (deps.generator && !generator) return { ok: false, error: 'NOT_CONFIGURED' };
       await deps.reserveGeneration(owner);
-      const fresh = await deps.pipeline.draft(config.profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
+      const fresh = await deps.pipeline.draft(config.profile, fitSources(sources), show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       return { ok: true, itemTitle: script.title, before, after: { text: scriptText(fresh) } };
     }
     if (!deps.editor) return { ok: false, error: 'NOT_CONFIGURED' };
