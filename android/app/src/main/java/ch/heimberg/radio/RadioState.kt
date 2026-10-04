@@ -235,7 +235,7 @@ class RadioState {
     /** Music starts within the hour: only then is Spotify worth a note on «Hören». */
     val musicSoon: Boolean get() {
         val horizon = Instant.now().plusSeconds(3_600)
-        return open.any { Looks.of(it).kind == Kind.MUSIC && (starts[it.id]?.isBefore(horizon) ?: true) }
+        return open.any { Looks.bringsMusic(it) && (starts[it.id]?.isBefore(horizon) ?: true) }
     }
 
     fun say(text: String) {

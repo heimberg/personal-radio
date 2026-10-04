@@ -179,10 +179,15 @@ const OWN_INPUT = {
   theme: { kind: 'theme', label: 'Thema', example: 'z. B. Der Mond' },
 } as const;
 
-/** The palette: every block, without those the owner hid. */
+/**
+ * The palette: every block, without those the owner hid. An own show named like a shown built-in block
+ * («Künstler-Stunde») would appear twice; the block stands for it.
+ */
 export function blockViews(config: StationConfig): BlockView[] {
   const hidden = new Set(config.hiddenBlocks ?? []);
-  return allBlockViews(config).filter(block => !hidden.has(block.id));
+  const shown = allBlockViews(config).filter(block => !hidden.has(block.id));
+  const builtIn = new Set(shown.filter(block => !block.own).map(block => block.name.trim().toLowerCase()));
+  return shown.filter(block => !block.own || !builtIn.has(block.name.trim().toLowerCase()));
 }
 
 /** Every block the palette can show, hidden or not (for managing the palette). */

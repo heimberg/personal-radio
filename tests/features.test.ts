@@ -141,3 +141,14 @@ test('features and place stories through the Worker', async () => {
     assert.equal((await call('/api/places/story', 'POST', { latitude: 'x', longitude: 7 })).status, 400);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('an own show named like a built-in block appears once in the palette, unless that block is hidden', () => {
+  const base = config();
+  const shows = [...base.shows, { ...base.shows[0], id: 'meine-kuenstler', name: 'Künstler-Stunde', enabled: true }, { ...base.shows[0], id: 'eigen', name: 'Meine Sendung', enabled: true }];
+  const palette = blockViews({ ...base, shows });
+  assert.equal(palette.filter(item => item.name === 'Künstler-Stunde').length, 1);
+  assert.ok(palette.some(item => item.id === 'kuenstler'));
+  assert.ok(palette.some(item => item.id === 'show:eigen'));
+  // With the block hidden, the own show is the only way to insert it.
+  assert.ok(blockViews({ ...base, shows, hiddenBlocks: ['kuenstler'] }).some(item => item.id === 'show:meine-kuenstler'));
+});

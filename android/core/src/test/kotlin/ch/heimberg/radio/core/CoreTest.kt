@@ -388,6 +388,22 @@ class CatalogTest {
         assertEquals(listOf("musik"), rubrics[2].second.map { it.id })
     }
 
+    @Test fun rubricsGoFromShortToLongWithOwnShowsLastAndConcertsUnderMusic() {
+        val music = listOf(
+            BlockView("show:k", "Meine Stunde", "Deine Sendung", minutes = 20.0, music = true, own = true),
+            BlockView("kuenstler", "Künstler-Stunde", "Eine Band", minutes = 60.0, music = true),
+            BlockView("konzerte", "Konzerte in der Nähe", "Wo deine Künstler auftreten", minutes = 2.0),
+            BlockView("musik", "Musikblock", "30 Minuten", minutes = 30.0, music = true),
+        )
+        assertEquals(listOf("konzerte", "musik", "kuenstler", "show:k"), Catalog.rubrics(music, emptySet())[2].second.map { it.id })
+        assertEquals(listOf("kuenstler", "konzerte", "musik", "show:k"), Catalog.rubrics(music, setOf("kuenstler"))[2].second.map { it.id })
+        val planned = { show: String -> TimelineItem("x", 1, show, "Show", "2026-10-04T12:00:00Z", "planned", 60.0) }
+        assertTrue(Looks.bringsMusic(planned("_block:themenstunde")))
+        assertTrue(Looks.bringsMusic(planned("_block:musik")))
+        assertFalse(Looks.bringsMusic(planned("_block:konzerte")))
+        assertEquals(Kind.DISCOVER, Looks.ofBlock(BlockView("themenstunde", "Themen-Stunde", "Ein Thema in Kapiteln", minutes = 60.0, music = true)).kind)
+    }
+
     @Test fun searchIgnoresCaseAndUmlauts() {
         assertEquals(listOf("ueberraschung"), Catalog.search(blocks, "uberrasch").map { it.id })
         assertEquals(listOf("morgen"), Catalog.search(blocks, "WETTER datum").map { it.id })

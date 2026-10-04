@@ -12,11 +12,14 @@ object Catalog {
 
     fun listed(blocks: List<BlockView>): List<BlockView> = blocks.filter { it.id !in NOT_LISTED }
 
-    /** Each rubric with its blocks, favourites first, then in the server's order; empty rubrics stay as tabs. */
+    /** Favourites first, then the station's blocks from short to long, the owner's own shows last. */
+    private fun order(favorites: Set<String>) = compareBy<BlockView>({ it.id !in favorites }, { it.own }, { it.minutes })
+
+    /** Each rubric with its blocks in [order]; empty rubrics stay as tabs. */
     fun rubrics(blocks: List<BlockView>, favorites: Set<String>): List<Pair<Kind, List<BlockView>>> {
         val listed = listed(blocks)
         return Kind.entries.map { kind ->
-            kind to listed.filter { Looks.ofBlock(it).kind == kind }.sortedBy { if (it.id in favorites) 0 else 1 }
+            kind to listed.filter { Looks.ofBlock(it).kind == kind }.sortedWith(order(favorites))
         }
     }
 
@@ -29,7 +32,7 @@ object Catalog {
                 val text = fold("${block.name} ${block.description} ${Looks.ofBlock(block).kind.label}")
                 words.all { it in text }
             }
-            .sortedBy { if (it.id in favorites) 0 else 1 }
+            .sortedWith(order(favorites))
     }
 
     /** Lower case and without accents, «ß» as «ss»: «Überraschung» and «uberraschung» meet. */

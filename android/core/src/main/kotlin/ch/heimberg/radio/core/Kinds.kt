@@ -22,11 +22,14 @@ object Looks {
         "weltpresse" to Look(Kind.NEWS, "🌐"), "streitgespraech" to Look(Kind.NEWS, "⚖️"), "dranbleiben" to Look(Kind.NEWS, "📌"),
         // Wissen
         "entdeckung" to Look(Kind.DISCOVER, "🔭"), "hintergrund" to Look(Kind.DISCOVER, "🎙️"), "vertiefung" to Look(Kind.DISCOVER, "🔍"),
-        "serie" to Look(Kind.DISCOVER, "📚"), "konzerte" to Look(Kind.DISCOVER, "🎟️"), "nachfrage" to Look(Kind.DISCOVER, "❓"),
+        "serie" to Look(Kind.DISCOVER, "📚"), "nachfrage" to Look(Kind.DISCOVER, "❓"),
         "ortsgeschichte" to Look(Kind.DISCOVER, "🏰"),
+        // The theme leads, the songs go with it: Wissen, though it needs Spotify (the ♫ after its name says so).
+        "themenstunde" to Look(Kind.DISCOVER, "🌙"),
         // Musik
-        "kuenstler" to Look(Kind.MUSIC, "🎸"), "genre" to Look(Kind.MUSIC, "🎛️"), "themenstunde" to Look(Kind.MUSIC, "🌙"),
+        "kuenstler" to Look(Kind.MUSIC, "🎸"), "genre" to Look(Kind.MUSIC, "🎛️"),
         "musik" to Look(Kind.MUSIC, "🎵"), "neu" to Look(Kind.MUSIC, "✨"), "song" to Look(Kind.MUSIC, "🎶"),
+        "konzerte" to Look(Kind.MUSIC, "🎟️"),
         // Geschichten
         "geschichte" to Look(Kind.STORY, "📖"), "mitmach" to Look(Kind.STORY, "🧩"),
         // Spezial
@@ -51,6 +54,15 @@ object Looks {
         item.showId.startsWith("_block:") -> BLOCKS[item.showId.removePrefix("_block:")] ?: if (item.hasMusic) MUSIC else SPOKEN
         item.hasMusic -> MUSIC
         else -> SPOKEN
+    }
+
+    /**
+     * Whether an item plays songs (and so needs Spotify): music items, except those filed under Musik that only
+     * talk about it («Konzerte»), plus those filed elsewhere that bring songs («Themen-Stunde» under Wissen).
+     */
+    fun bringsMusic(item: TimelineItem): Boolean {
+        val block = item.showId.takeIf { it.startsWith("_block:") }?.removePrefix("_block:")
+        return item.hasMusic || block == "themenstunde" || (of(item).kind == Kind.MUSIC && block != "konzerte")
     }
 
     /** A palette block: catalog IDs, «song», or the owner's shows («show:<id>», by their music flag). */
