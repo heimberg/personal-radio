@@ -643,7 +643,7 @@ test('a music block rotates playlist and AI groups, speaks where the triggers fi
   let aiTitle = 0;
   h.deps.musicWriter = {
     pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); },
-    pickSongs: async request => { songRequests.push(request); return Array.from({ length: request.count ?? 3 }, () => ({ title: `A${++aiTitle}`, artist: 'Neu!', announcement: '' })); },
+    pickSongs: async request => { songRequests.push(request); return Array.from({ length: request.count ?? 3 }, () => ({ title: `A${++aiTitle}`, artist: `Band ${aiTitle}`, announcement: '' })); },
     writeBlock: async request => { blockRequests.push(request); return request.moments.map((_, index) => `Moderation ${index}.`); },
   };
   const spoken: string[] = [];
@@ -659,7 +659,7 @@ test('a music block rotates playlist and AI groups, speaks where the triggers fi
   assert.deepEqual(loaded, [PLAYLIST]);
   const request = blockRequests[0];
   assert.deepEqual(request.moments.map((moment: any) => moment.triggers), [['block_start'], ['group_transition', 'before_track'], ['before_track'], ['group_transition'], ['block_end']]);
-  assert.deepEqual(request.moments[1], { triggers: ['group_transition', 'before_track'], fromGroup: 'Kaffee', toGroup: 'Entdeckungen', next: { artist: 'Neu!', title: 'A1' } });
+  assert.deepEqual(request.moments[1], { triggers: ['group_transition', 'before_track'], fromGroup: 'Kaffee', toGroup: 'Entdeckungen', next: { artist: 'Band 1', title: 'A1' } });
   assert.equal(request.blockName, 'Morgenmusik'); assert.equal(request.nextShow, 'Kurzbeitrag'); assert.equal(request.daytime, 'Morgen');
   assert.equal(songRequests[0].taste, 'Krautrock'); assert.equal(songRequests[0].announce, false);
   // Nothing from the owner's playlists reaches the AI.
@@ -670,8 +670,11 @@ test('a music block rotates playlist and AI groups, speaks where the triggers fi
   const second = (await scheduleShowNow(h.deps, OWNER, 'block'))!;
   assert.equal(await produceItem(h.deps, OWNER, second), 'ready');
   const tracks = toView((await h.store.getItem(OWNER, second))!, parsed).parts!.flatMap(part => part.kind === 'track' ? [part.title] : []);
-  assert.deepEqual(tracks.slice(0, 3), ['A5', 'A6', 'Geheim 5']);
-  assert.ok(songRequests[1].avoid.includes('Neu! – A1'));
+  assert.deepEqual(tracks.slice(0, 3), ['A7', 'A8', 'Geheim 5']);
+  assert.ok(songRequests[1].avoid.includes('Band 1 – A1'));
+  // The AI's own artists from the last block wait; the owner's playlist artists are never named to it.
+  assert.ok(songRequests[1].recentArtists.includes('Band 1'));
+  assert.ok(!songRequests[1].recentArtists.includes('Privat'));
   assert.doesNotMatch(JSON.stringify(songRequests[1]), /Geheim/);
 });
 

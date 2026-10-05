@@ -39,8 +39,10 @@ export interface BlockRequest {
 export interface SongPick { title: string; artist: string; announcement: string }
 export interface SongRequest {
   taste: string; interests: string[]; avoid: string[]; liked: string[]; disliked: string[];
-  /** Artists the owner listens to most on Spotify (the owner's choice to share them). */
+  /** Artists the owner listens to most on Spotify (the owner's choice to share them), a rotating selection. */
   listens: string[];
+  /** Artists the AI picked lately: not again for a while (only AI picks, never playlist tracks). */
+  recentArtists?: string[];
   announce: boolean; direction: EditorialDirection;
   /** The station's surprise level (0–100): how far the picks may stray from the taste. */
   surprise?: number;
@@ -252,10 +254,10 @@ export class GeminiMusicWriter implements MusicWriter {
       ? ' Zu jedem Song eine Ansage von höchstens 35 Wörtern, gesprochen von der Moderation: Künstler und Titel nennen, dazu höchstens eine allgemein bekannte, sichere Einordnung (Album, Jahr, Szene) oder eine Stimmung als Übergang. Erfinde keine Details; wenn du unsicher bist, bleib bei Künstler, Titel und Stimmung.'
       : ' Das Feld «announcement» bleibt leer.';
     const count = Math.min(15, Math.max(1, input.count ?? 3)), music = agentOf(input.direction?.agents, 'music');
-    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst ${input.count ? 'die nächsten Songs eines Musikblocks' : 'den nächsten Song zwischen zwei Wortbeiträgen'}. Schlage ${count} verschiedene Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers. ${music.instructions}${input.surprise !== undefined ? ` Überraschungsgrad ${input.surprise} von 100: je höher, desto mehr Unbekanntes und Genre-Fremdes; bei 0 nur Vertrautes.` : ''} Nichts aus «vermeiden». «hört» sind die Künstler, die er zurzeit am meisten hört: der Kern seines Geschmacks. Schlage etwa zur Hälfte Songs dieser Künstler vor, sonst nah verwandte, weniger bekannte Künstler, die er wahrscheinlich noch nicht kennt. «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
+    const result = await this.ask(`Du bist Musikredaktion eines persönlichen Radios und wählst ${input.count ? 'die nächsten Songs eines Musikblocks' : 'den nächsten Song zwischen zwei Wortbeiträgen'}. Schlage ${count} verschiedene Songs in Reihenfolge deiner Präferenz vor, passend zum Musikgeschmack des Hörers. ${music.instructions}${input.surprise !== undefined ? ` Überraschungsgrad ${input.surprise} von 100: je höher, desto mehr Unbekanntes und Genre-Fremdes; bei 0 nur Vertrautes.` : ''} Nichts aus «vermeiden» und keine Künstler aus «zuletzt gespielt». Jeder Künstler höchstens einmal. «hört» ist eine Auswahl der Künstler, die er zurzeit am meisten hört: der Kern seines Geschmacks. Höchstens ein Viertel der Songs von diesen Künstlern, sonst verwandte, weniger bekannte Künstler, die er wahrscheinlich noch nicht kennt. Mische bewusst breit: verschiedene Jahrzehnte (auch vor 1990 und ganz neu), Länder und Sprachen, Künstlerinnen und Künstler, Bekanntes neben Obskurem, und benachbarte Spielarten seines Geschmacks statt immer derselben Ecke; keine zwei Vorschläge aus derselben Szene hintereinander. «mag» und «mag nicht» sind Songs, die der Hörer bewertet hat: triff seinen Geschmack genauer. Nur Songs, die es sicher gibt; exakte Originaltitel und Künstler.${announce} Antworte als JSON: {"songs":[{"title":"...","artist":"...","announcement":"..."}]}.` +
       (input.announce ? personaPrompt(input.direction, 'brief') : ''),
       { geschmack: input.taste || 'nicht angegeben – orientiere dich an den Interessen', interessen: input.interests.slice(0, 30),
-        hört: input.listens.slice(0, 40), vermeiden: input.avoid.slice(0, 60), mag: input.liked.slice(0, 20), 'mag nicht': input.disliked.slice(0, 20) }, 'Gemini song pick', music.temperature) as { songs?: unknown[] };
+        hört: input.listens.slice(0, 40), 'zuletzt gespielt': (input.recentArtists ?? []).slice(0, 40), vermeiden: input.avoid.slice(0, 60), mag: input.liked.slice(0, 20), 'mag nicht': input.disliked.slice(0, 20) }, 'Gemini song pick', music.temperature) as { songs?: unknown[] };
     return (Array.isArray(result?.songs) ? result.songs : []).flatMap((value): SongPick[] => {
       const item = value as Record<string, unknown>;
       const title = text(item?.title, 200), artist = text(item?.artist, 100);

@@ -135,7 +135,8 @@ test('song picks: taste, reactions and avoid list go to Gemini; picks without ar
   assert.deepEqual(await writer.pickSongs(request), [{ title: 'Closer', artist: 'Nine Inch Nails', announcement: 'Jetzt: Closer.' }]);
   const input = JSON.parse(body.contents[0].parts[0].text);
   assert.deepEqual([input.geschmack, input.hört, input.vermeiden, input.mag, input['mag nicht']], ['Industrial', ['Nine Inch Nails'], ['A – B'], ['C – D'], ['E – F']]);
-  assert.match(body.systemInstruction.parts[0].text, /«hört» sind die Künstler/);
+  assert.match(body.systemInstruction.parts[0].text, /«hört» ist eine Auswahl der Künstler.*Höchstens ein Viertel.*Mische bewusst breit/);
+  assert.match(body.systemInstruction.parts[0].text, /keine Künstler aus «zuletzt gespielt»\. Jeder Künstler höchstens einmal/);
   assert.match(body.systemInstruction.parts[0].text, /höchstens 35 Wörtern[\s\S]*Du sprichst als Mira/);
   assert.equal((await writer.pickSongs({ ...request, announce: false }))[0].announcement, '');
 });
@@ -197,4 +198,24 @@ test('album covers come only from Spotify\'s image CDN', () => {
   assert.equal(albumImage([{ url: 'http://i.scdn.co/image/abc' }]), undefined);
   assert.equal(albumImage('nope'), undefined);
   assert.equal(albumImage([]), undefined);
+});
+
+test('artists rotate: the last tracks\' artists wait, top artists come in a different handful each time', async () => {
+  const { recentArtists, rotateListens, ARTIST_GAP, LISTENS_PER_PICK } = await import('../server/station/music.ts');
+  const rows = [
+    { script_json: JSON.stringify({ kind: 'song', parts: [{ kind: 'track', artist: 'The Notwist', title: 'a' }] }) },
+    { script_json: JSON.stringify({ kind: 'music_block', parts: [{ kind: 'track', artist: 'Privat', title: 'p', picked: 'playlist' }, { kind: 'track', artist: 'Björk', title: 'b', picked: 'ai' }] }) },
+  ];
+  const deps = { store: { recentItems: async () => rows } } as never;
+  const recent = await recentArtists(deps, 'o');
+  assert.deepEqual([...recent.all].sort(), ['bjork', 'notwist', 'privat']);
+  assert.deepEqual(recent.named, ['Björk', 'The Notwist'], 'playlist artists are never named to the AI');
+  const top = Array.from({ length: 30 }, (_, index) => `Artist ${index}`);
+  const one = rotateListens(['Björk', ...top], recent.all, () => 0.1), two = rotateListens(['Björk', ...top], recent.all, () => 0.9);
+  assert.equal(one.length, LISTENS_PER_PICK);
+  assert.ok(!one.includes('Björk'));
+  assert.notDeepEqual(one, two);
+  // Only played artists left: they come back rather than nothing.
+  assert.deepEqual(rotateListens(['Björk'], recent.all, () => 0.5), ['Björk']);
+  assert.ok(ARTIST_GAP >= 20);
 });
