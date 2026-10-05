@@ -135,7 +135,7 @@ test('song picks: taste, reactions and avoid list go to Gemini; picks without ar
   assert.deepEqual(await writer.pickSongs(request), [{ title: 'Closer', artist: 'Nine Inch Nails', announcement: 'Jetzt: Closer.' }]);
   const input = JSON.parse(body.contents[0].parts[0].text);
   assert.deepEqual([input.geschmack, input.hört, input.vermeiden, input.mag, input['mag nicht']], ['Industrial', ['Nine Inch Nails'], ['A – B'], ['C – D'], ['E – F']]);
-  assert.match(body.systemInstruction.parts[0].text, /«hört» ist eine Auswahl der Künstler.*Höchstens ein Drittel/);
+  assert.match(body.systemInstruction.parts[0].text, /«hört» ist eine Auswahl der Künstler.*Höchstens ein Viertel.*Mische bewusst breit/);
   assert.match(body.systemInstruction.parts[0].text, /keine Künstler aus «zuletzt gespielt»\. Jeder Künstler höchstens einmal/);
   assert.match(body.systemInstruction.parts[0].text, /höchstens 35 Wörtern[\s\S]*Du sprichst als Mira/);
   assert.equal((await writer.pickSongs({ ...request, announce: false }))[0].announcement, '');

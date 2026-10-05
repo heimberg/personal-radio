@@ -238,11 +238,13 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     const listens = rotateListens(deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [], recent.all, deps.random ?? Math.random);
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
-      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, recentArtists: recent.named, count: 5, surprise: surpriseLevel(config),
+      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, recentArtists: recent.named, count: 8, surprise: surpriseLevel(config),
       direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
-    // An artist heard lately waits; only if every pick is one, the first that Spotify knows plays anyway.
-    const ordered = [...picks.filter(pick => !recent.all.has(artistKey(pick.artist))), ...picks.filter(pick => recent.all.has(artistKey(pick.artist)))];
+    // An artist heard lately waits; only if every pick is one, the first that Spotify knows plays anyway. Among
+    // the fresh picks chance decides, not the AI's order: its first choice is the most predictable one.
+    const fresh = shuffled(picks.filter(pick => !recent.all.has(artistKey(pick.artist))), deps.random ?? Math.random);
+    const ordered = [...fresh, ...picks.filter(pick => recent.all.has(artistKey(pick.artist)))];
     let chosen: { pick: SongPick; uri: string; durationMs: number; imageUrl?: string } | null = null;
     for (const pick of ordered) {
       const track = await deps.catalog.find(pick);
@@ -261,9 +263,9 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
 }
 
 /** A track's artist is not picked again within this many tracks (songs, blocks, hours). */
-export const ARTIST_GAP = 25;
+export const ARTIST_GAP = 40;
 /** How many of the owner's top artists one pick sees: a rotating selection, so not always the same few lead. */
-export const LISTENS_PER_PICK = 12;
+export const LISTENS_PER_PICK = 8;
 
 const artistKey = (artist: string) => artist.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -283,13 +285,16 @@ export async function recentArtists(deps: StationDeps, owner: string): Promise<{
   return { all: new Set(tracks.map(track => artistKey(track.artist))), named: [...new Set(tracks.filter(track => track.ai).map(track => track.artist))] };
 }
 
+function shuffled<T>(items: T[], random: () => number): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; }
+  return copy;
+}
+
 /** A different handful of top artists each time, leaving out those played lately. */
 export function rotateListens(listens: string[], recent: Set<string>, random: () => number): string[] {
   const fresh = listens.filter(artist => !recent.has(artistKey(artist)));
-  const pool = fresh.length >= 3 ? fresh : listens;
-  const shuffled = [...pool];
-  for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
-  return shuffled.slice(0, LISTENS_PER_PICK);
+  return shuffled(fresh.length >= 3 ? fresh : listens, random).slice(0, LISTENS_PER_PICK);
 }
 
 export const MAX_BLOCK_TRACKS = 30;
@@ -411,7 +416,7 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
     });
     let found = 0;
     const waiting: SongPick[] = [];
-    for (const pick of picks) {
+    for (const pick of shuffled(picks, random)) {
       const key = artistKey(pick.artist);
       if (blockArtists.has(key)) continue;
       // Heard lately: only if the batch brings nothing else (a narrow taste must not leave the block empty).
