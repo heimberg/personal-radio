@@ -17,8 +17,8 @@
     "jose": "^6.2.12"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "typescript": "^7.0.2",
-    "wrangler": "^4.145.0"
+    "wrangler": "^4.147.0"
   }
 }
