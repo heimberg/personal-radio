@@ -1,6 +1,5 @@
-Die Jury-Kritik wird umgesetzt: bis zu zwei Überarbeitungen, die Redaktion darf dafür ganze Passagen streichen
-Im Text siehst du, ob überarbeitet wurde (z. B. 2,6 → 3,1)
-Was nur mit neuer Recherche ginge, sucht «Mehr dazu» zu diesem Beitrag zuerst
+Mehr Abwechslung in der Musik: ein Künstler kommt erst nach etwa 25 Songs wieder
+Deine Spotify-Lieblinge erscheinen in wechselnder Auswahl, höchstens ein Drittel der Songs
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

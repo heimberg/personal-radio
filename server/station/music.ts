@@ -234,14 +234,17 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     if (!deps.musicWriter) return fail('GEMINI_NOT_CONFIGURED');
     if (!deps.catalog) return fail('SPOTIFY_NOT_CONFIGURED');
     const history = await songHistory(deps, owner);
-    const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
+    const recent = await recentArtists(deps, owner);
+    const listens = rotateListens(deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [], recent.all, deps.random ?? Math.random);
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
-      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, surprise: surpriseLevel(config),
+      liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, recentArtists: recent.named, count: 5, surprise: surpriseLevel(config),
       direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
+    // An artist heard lately waits; only if every pick is one, the first that Spotify knows plays anyway.
+    const ordered = [...picks.filter(pick => !recent.all.has(artistKey(pick.artist))), ...picks.filter(pick => recent.all.has(artistKey(pick.artist)))];
     let chosen: { pick: SongPick; uri: string; durationMs: number; imageUrl?: string } | null = null;
-    for (const pick of picks) {
+    for (const pick of ordered) {
       const track = await deps.catalog.find(pick);
       if (track) { chosen = { pick, ...track }; break; }
     }
@@ -255,6 +258,38 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
   }
   return voiceParts(deps, owner, config, config.host.voiceId, row, pkg);
+}
+
+/** A track's artist is not picked again within this many tracks (songs, blocks, hours). */
+export const ARTIST_GAP = 25;
+/** How many of the owner's top artists one pick sees: a rotating selection, so not always the same few lead. */
+export const LISTENS_PER_PICK = 12;
+
+const artistKey = (artist: string) => artist.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * The artists of the last [ARTIST_GAP] tracks, newest first: [all] for the check in code, [named] only the
+ * AI's own picks, which may go to the AI (playlist tracks never do).
+ */
+export async function recentArtists(deps: StationDeps, owner: string): Promise<{ all: Set<string>; named: string[] }> {
+  const tracks: Array<{ artist: string; ai: boolean }> = [];
+  for (const row of (await deps.store.recentItems(owner, 120)).reverse()) {
+    if (!row.script_json || tracks.length >= ARTIST_GAP) continue;
+    try {
+      const pkg = JSON.parse(row.script_json) as Partial<HourPackage>;
+      for (const part of [...(pkg.parts ?? [])].reverse()) if (part.kind === 'track' && tracks.length < ARTIST_GAP) tracks.push({ artist: part.artist, ai: part.picked !== 'playlist' });
+    } catch { /* Skip corrupt rows. */ }
+  }
+  return { all: new Set(tracks.map(track => artistKey(track.artist))), named: [...new Set(tracks.filter(track => track.ai).map(track => track.artist))] };
+}
+
+/** A different handful of top artists each time, leaving out those played lately. */
+export function rotateListens(listens: string[], recent: Set<string>, random: () => number): string[] {
+  const fresh = listens.filter(artist => !recent.has(artistKey(artist)));
+  const pool = fresh.length >= 3 ? fresh : listens;
+  const shuffled = [...pool];
+  for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+  return shuffled.slice(0, LISTENS_PER_PICK);
 }
 
 export const MAX_BLOCK_TRACKS = 30;
@@ -331,6 +366,9 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
   const random = deps.random ?? Math.random;
   const history = await blockHistory(deps, owner, show.id);
   const reactions = await songHistory(deps, owner);
+  const recent = await recentArtists(deps, owner);
+  // Artists in this block so far: each AI pick brings a new one.
+  const blockArtists = new Set<string>();
   const used = new Set(history.uris);
   const problems: string[] = [];
 
@@ -338,7 +376,7 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
   // AI groups ask for a batch of picks and keep those Spotify resolves.
   const queues = new Map<number, BlockTrack[]>(), exhausted = new Set<number>();
   let aiBatches = 0;
-  const listens = deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [];
+  const listens = rotateListens(deps.listening ? await deps.listening.topArtists(owner, deps.now()) : [], recent.all, random);
   const refill = async (index: number, wanted: number) => {
     const group = groups[index], queue = queues.get(index) ?? [];
     queues.set(index, queue);
@@ -369,12 +407,24 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
     const picks = await deps.musicWriter!.pickSongs({
       taste: group.taste || config.music.taste, interests: [...config.profile.topics, ...config.profile.interests],
       avoid: [...history.names.slice(-60), ...[...queues.values()].flat().filter(track => track.picked === 'ai').map(track => `${track.artist} – ${track.title}`)], liked: reactions.liked, disliked: reactions.disliked,
-      listens, announce: false, count: Math.min(15, wanted + 2), surprise: surpriseLevel(config), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
+      listens, recentArtists: recent.named, announce: false, count: Math.min(15, wanted + 4), surprise: surpriseLevel(config), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let found = 0;
+    const waiting: SongPick[] = [];
     for (const pick of picks) {
+      const key = artistKey(pick.artist);
+      if (blockArtists.has(key)) continue;
+      // Heard lately: only if the batch brings nothing else (a narrow taste must not leave the block empty).
+      if (recent.all.has(key)) { waiting.push(pick); continue; }
       const track = await deps.catalog!.find(pick);
       if (!track || used.has(track.uri) || queue.some(item => item.uri === track.uri)) continue;
+      blockArtists.add(key);
+      queue.push({ ...track, title: pick.title, artist: pick.artist, group: index, picked: 'ai' }); found++;
+    }
+    for (const pick of found ? [] : waiting) {
+      const key = artistKey(pick.artist), track = await deps.catalog!.find(pick);
+      if (!track || blockArtists.has(key) || used.has(track.uri) || queue.some(item => item.uri === track.uri)) continue;
+      blockArtists.add(key);
       queue.push({ ...track, title: pick.title, artist: pick.artist, group: index, picked: 'ai' }); found++;
     }
     if (!found) exhausted.add(index);
