@@ -163,9 +163,20 @@ data class BlockList(val blocks: List<BlockView> = emptyList())
 @Serializable
 data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList(), val quality: Quality? = null)
 
-/** The quality jury's marks (1–5) after the final edit. */
+/**
+ * The quality jury's marks (1–5) after the final edit: what is left to fix, what would need research
+ * («Mehr dazu» looks for it), and the marks of each revision round.
+ */
 @Serializable
-data class Quality(val overall: Double, val notes: String = "")
+data class Quality(val overall: Double, val notes: String = "", val research: String = "", val rounds: List<Double> = emptyList()) {
+    /** One line for the transcript: the mark, how revisions went, then the jury's notes. */
+    fun line(): String {
+        val mark = { value: Double -> String.format(java.util.Locale.GERMAN, "%.1f", value) }
+        val revised = if (rounds.size > 1) "überarbeitet ${rounds.joinToString(" → ") { mark(it) }}" else null
+        return listOfNotNull("Qualität ${mark(overall)} von 5", revised, notes.takeIf { it.isNotBlank() }).joinToString(" · ") +
+            if (research.isNotBlank()) "\nFür «Mehr dazu»: $research" else ""
+    }
+}
 
 @Serializable
 data class TranscriptLine(val text: String, val speaker: String? = null, val song: Boolean = false)

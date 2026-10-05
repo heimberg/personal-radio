@@ -745,3 +745,12 @@ class InviteTest {
         assertTrue(created.message("Lea", null).contains(created.link))
     }
 }
+
+class QualityLineTest {
+    @Test fun theLineShowsMarkRevisionsNotesAndWhatNeedsResearch() {
+        assertEquals("Qualität 3,4 von 5 · Schluss schärfen", Quality(3.4, "Schluss schärfen").line())
+        assertEquals("Qualität 3,1 von 5 · überarbeitet 2,6 → 3,1 → 2,9 · Schluss schärfen\nFür «Mehr dazu»: Wer die Wässerer heute sind",
+            Quality(3.1, "Schluss schärfen", "Wer die Wässerer heute sind", listOf(2.6, 3.1, 2.9)).line())
+        assertEquals("Qualität 4,5 von 5", Quality(4.5).line())
+    }
+}

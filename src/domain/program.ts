@@ -24,7 +24,15 @@ export interface Script {
   /** The jury's marks (1–5) after the final edit. */
   quality?: QualityScore;
 }
-export interface QualityScore { hook: number; clarity: number; facts: number; novelty: number; length: number; overall: number; notes: string }
+export interface QualityScore {
+  hook: number; clarity: number; facts: number; novelty: number; length: number; overall: number;
+  /** What the editor can fix with the text and its sources (cut, reorder, sharpen). */
+  notes: string;
+  /** What the sources lack (new facts, voices): a hint for «Mehr dazu», never for the editor. */
+  research?: string;
+  /** The overall marks before each accepted or tried revision, then the final one, e.g. [3.1, 3.4]. */
+  rounds?: number[];
+}
 /** The station's on-air voice: who speaks, how, and in what style. Written by the owner. */
 export interface HostPersona {
   name: string; tone: string; style: string; instructions: string; cohostName?: string; voiceId?: string;

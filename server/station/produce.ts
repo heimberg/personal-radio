@@ -197,7 +197,9 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
         const parentSources = before.slice(0, 6).map((source, index) => ({ ...source, id: `p${index + 1}`, excerpt: source.excerpt.slice(0, 2500) }));
         toolSources.push(...parentSources);
         notes.push(`Der vorherige Beitrag hiess «${said.title}» und sagte bereits: «${said.text.replace(/\s+/g, ' ').slice(0, 1500)}». Wiederhole das nicht, sondern gehe tiefer.${parentSources.length ? ` Seine Quellen stehen in «p1» bis «p${parentSources.length}».` : ''}`);
-        researchPrompt = `Recherchiere Hintergründe, Ursachen, Folgen und neue Aspekte zu «${said.title}», die über einen kurzen Nachrichtenbeitrag hinausgehen.`;
+        // What the jury found missing in the first item is what this one looks for first.
+        const missing = said.quality?.research?.trim();
+        researchPrompt = `Recherchiere Hintergründe, Ursachen, Folgen und neue Aspekte zu «${said.title}», die über einen kurzen Nachrichtenbeitrag hinausgehen.${missing ? ` Vor allem: ${missing.slice(0, 300)}` : ''}`;
       }
       // Dranbleiben: research what is new about the topic since the last report.
       if (followId !== undefined && row.state === 'planned') {

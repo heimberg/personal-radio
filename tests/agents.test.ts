@@ -71,8 +71,10 @@ test('the final desk follows the switches and the jury\'s bar; editor and jury p
   const run = async (config: Parameters<typeof resolveAgents>[0]) => { calls.length = 0; return finishScript(editor, draft, sources, { agents: resolveAgents(config) }, context); };
   assert.equal((await run(undefined)).quality?.overall, 3.8);
   assert.deepEqual(calls, ['polish', 'judge']);
-  await run({ jury: { threshold: 4.5 } });
-  assert.deepEqual(calls, ['polish', 'judge', 'polish', 'judge']);
+  // Below the bar the editor gets the notes again, at most twice.
+  const revised = await run({ jury: { threshold: 4.5 } });
+  assert.deepEqual(calls, ['polish', 'judge', 'polish', 'judge', 'polish', 'judge']);
+  assert.deepEqual(revised.quality?.rounds, [3.8, 3.8, 3.8]);
   const unedited = await run({ editor: { enabled: false }, jury: { threshold: 5 } });
   assert.deepEqual(calls, ['judge']);
   assert.equal(unedited.text, draft.text);

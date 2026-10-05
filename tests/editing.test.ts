@@ -34,6 +34,36 @@ test('the final edit rewrites for the ear; below the bar the jury sends it back 
   assert.equal(result.quality?.overall, 4.2);
   assert.deepEqual(result.interestTags, ['Raumfahrt']);
   assert.deepEqual(calls, [{ step: 'polish', notes: undefined }, { step: 'judge' }, { step: 'polish', notes: 'Einstieg schwach' }, { step: 'judge' }]);
+  assert.deepEqual(result.quality?.rounds, [2.8, 4.2]);
+});
+
+test('a second round follows when the first revision stays below the bar; a worse one is dropped and what lacks research is kept', async () => {
+  const one = { title: 'Eins', text: 'Ein klarer Satz. Und noch ein kurzer Satz dazu, gut hörbar.', sourceIds: ['s1'] };
+  const two = { title: 'Zwei', text: 'Ein klarer Einstieg. Ein Gedanke pro Satz, und gut hörbar dazu.', sourceIds: ['s1'] };
+  const three = { title: 'Drei', text: 'Ein schwacher Einstieg, der wieder holpert und zu lang wird, leider.', sourceIds: ['s1'] };
+  const { fake, calls } = editor({
+    polish: [one, two, three],
+    judge: [{ ...marks(2.6, 'Einschub streichen'), research: 'Wer die Wässerer heute sind' }, marks(3.1, 'Schluss schärfen'), marks(2.9, 'schlechter')],
+  });
+  const result = await finishScript(fake, draft, sources, undefined, context);
+  assert.equal(result.title, 'Zwei');
+  assert.deepEqual(calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'Einschub streichen', 'Schluss schärfen']);
+  assert.deepEqual(result.quality?.rounds, [2.6, 3.1, 2.9]);
+  assert.equal(result.quality?.overall, 3.1);
+  assert.equal(result.quality?.research, 'Wer die Wässerer heute sind');
+});
+
+test('with the jury\'s notes the editor may cut whole passages; the jury keeps fixes and missing research apart', async () => {
+  const { GeminiScriptEditor } = await import('../server/editing.ts');
+  const asked: string[] = [];
+  const gemini = new GeminiScriptEditor(async system => { asked.push(system); return {}; });
+  await gemini.polish(draft, sources, undefined, context, 'Den Einschub streichen');
+  await gemini.polish(draft, sources, undefined, context);
+  await gemini.judge(draft, sources, undefined);
+  assert.match(asked[0], /darfst du ganze Passagen streichen.*Hinweise der Jury, die du beheben sollst: Den Einschub streichen/);
+  assert.match(asked[1], /Behalte alle Tatsachen/);
+  assert.match(asked[2], /gehört in research/);
+  assert.deepEqual(parseQuality({ ...marks(4), notes: 'a', research: '  Wer   heute? ' }).research, 'Wer heute?');
 });
 
 test('a rewrite that breaks the contract keeps the draft; a failing jury leaves no marks', async () => {
