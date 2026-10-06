@@ -131,3 +131,41 @@ test('the worker answers /join without an Access token, and everything else stil
   assert.equal((await worker.fetch(new Request('https://radio.example/join?code=AAAA-AAAA-AAAA-AAAA'), e)).status, 404);
   assert.equal((await worker.fetch(new Request('https://radio.example/api/invites'), e)).status, 401);
 });
+
+test('each listener has a daily limit (guests start smaller), the owner sees their use, and removing can erase the station', async () => {
+  const { generationLimit } = await import('../server/listeners.ts');
+  const { GUEST_DAILY_GENERATIONS } = await import('../server/invites.ts');
+  const db = sqliteD1(), { issuer } = fakeIssuer();
+  const deleted: string[] = [];
+  const e = env(db, { AUDIO: { get: async () => null, delete: async (key: string) => { deleted.push(key); }, list: async () => ({ objects: [{ key: 'backups/abc/2026-10-04.json' }] }) } as never });
+  const store = new InviteStore(db);
+  await store.redeem((await store.create('Tom', 'guest', NOW)).code, issuer, new Set(), NOW);
+  await store.redeem((await store.create('Lea', 'family', NOW)).code, issuer, new Set(), NOW);
+  forgetListeners();
+  const listeners = await listenersOf(e);
+  assert.equal(generationLimit('listener:tom', listeners, 24), GUEST_DAILY_GENERATIONS);
+  assert.equal(generationLimit('listener:lea', listeners, 24), 24);
+  const call = (method: string, path: string, body?: unknown) => inviteRoutes(new Request(`https://radio.example${path}`, { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    headers: { Origin: 'https://radio.example', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) } }), e, OWNER, new URL(`https://radio.example${path}`), undefined, issuer);
+  assert.equal((await call('PATCH', '/api/listeners/lea', { dailyGenerations: 6 }))!.status, 200);
+  assert.equal((await call('PATCH', '/api/listeners/lea', { dailyGenerations: 0 }))!.status, 400);
+  assert.equal(generationLimit('listener:lea', await listenersOf(e), 24), 6);
+  const today = new Date().toISOString().slice(0, 10);
+  db.raw.prepare('INSERT INTO daily_requests (owner_id, utc_day, requests) VALUES (?, ?, 4)').run('listener:lea', today);
+  db.raw.prepare('INSERT INTO daily_usage (owner_id, utc_day, characters) VALUES (?, ?, 900)').run('listener:lea', today);
+  const listed = await (await call('GET', '/api/invites'))!.json() as { listeners: Array<{ key: string; limit: number; usage: { today: { generations: number; characters: number } } }>; own: { limit: number } };
+  const lea = listed.listeners.find(item => item.key === 'lea')!;
+  assert.deepEqual([lea.limit, lea.usage.today], [6, { generations: 4, characters: 900 }]);
+  assert.equal(listed.own.limit, 24);
+  // Remove with all data: rows, audio, backups and the profile picture.
+  db.raw.prepare("INSERT INTO station_config (owner_id, config_json, updated_at) VALUES ('listener:lea', '{}', ?)").run(NOW.toISOString());
+  db.raw.prepare("INSERT INTO timeline_items (id, owner_id, seq, show_id, planned_at, state, estimated_minutes, attempts, created_at, updated_at, audio_key) VALUES ('t1', 'listener:lea', 1, 's', ?, 'played', 2, 0, ?, ?, 'audio/lea/t1.mp3')").run(NOW.toISOString(), NOW.toISOString(), NOW.toISOString());
+  const removed = await (await call('DELETE', '/api/listeners/lea?data=1'))!.json() as { erased: { objects: number } };
+  assert.equal(removed.erased.objects, 3);
+  assert.deepEqual(deleted.sort(), ['audio/lea/t1.mp3', 'avatars/lea', 'backups/abc/2026-10-04.json']);
+  for (const table of ['station_config', 'timeline_items', 'daily_requests', 'daily_usage']) {
+    assert.equal((db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE owner_id = 'listener:lea'`).get() as { n: number }).n, 0, table);
+  }
+  const { eraseStation } = await import('../server/erase.ts');
+  await assert.rejects(eraseStation(db, e.AUDIO, OWNER), /only a listener/);
+});

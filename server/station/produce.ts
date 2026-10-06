@@ -96,14 +96,29 @@ export async function notesFor(deps: StationDeps, owner: string, now: Date): Pro
 }
 
 /** Topic memory: titles of the most recent produced segments. */
+/** A topic field that came up this often within [FIELD_HOURS] waits; the writer and research look elsewhere. */
+export const FIELD_REPEAT = 2;
+export const FIELD_HOURS = 36;
+/** Marks a topic field (not a single item) in the list of recent topics. */
+export const FIELD_PREFIX = 'Themenfeld: ';
+
+/**
+ * What ran lately: the last titles, and the topic fields (the items' interest tags) that already came
+ * up [FIELD_REPEAT] times in [FIELD_HOURS] hours – «KI» three times a day is too much, even with different titles.
+ */
 export async function recentTopics(deps: StationDeps, owner: string): Promise<string[]> {
-  const titles: string[] = [];
-  for (const row of (await deps.store.recentItems(owner, 30)).reverse()) {
+  const titles: string[] = [], fields = new Map<string, number>();
+  const since = deps.now().getTime() - FIELD_HOURS * 3_600_000;
+  for (const row of (await deps.store.recentItems(owner, 40)).reverse()) {
     if (!row.script_json || !['voicing', 'ready', 'played', 'skipped', 'archived'].includes(row.state)) continue;
-    try { const title = (JSON.parse(row.script_json) as Script).title; if (title) titles.push(title); } catch { /* Skip corrupt rows. */ }
-    if (titles.length >= 15) break;
+    try {
+      const script = JSON.parse(row.script_json) as Script;
+      if (script.title && titles.length < 15) titles.push(script.title);
+      if (Date.parse(row.updated_at) >= since) for (const tag of new Set(script.interestTags ?? [])) fields.set(tag, (fields.get(tag) ?? 0) + 1);
+    } catch { /* Skip corrupt rows. */ }
   }
-  return titles;
+  const crowded = [...fields].filter(([, count]) => count >= FIELD_REPEAT).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([tag]) => `${FIELD_PREFIX}${tag}`);
+  return [...crowded, ...titles];
 }
 
 /** `continue`: part of the work is done and saved; the rest follows in a new queue message (a fresh invocation). */

@@ -1,4 +1,5 @@
 import { GeminiVoiceCatalog, GEMINI_VOICES, pcmToWav } from '../providers.ts';
+import { generationLimit, listenersOf } from '../listeners.ts';
 import { listMistralVoices } from '../mistral-voices.ts';
 import { StationStore } from '../station-store.ts';
 import { previewKey, previewText } from '../sounds.ts';
@@ -70,7 +71,7 @@ export async function voiceRoutes(request: Request, env: Environment, owner: str
     } else if (!wav(input.source) || !wav(input.consent)) return json({ error: 'invalid_voice', detail: 'Aufnahmen fehlen oder sind zu lang' }, 400);
     try {
       // A new voice is a paid call: it counts like a production.
-      await new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24));
+      await new D1DailyCounter(env.DB).reserve(owner, generationLimit(owner, await listenersOf(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24)));
       const voice = action === 'design'
         ? await catalog.design({ name, description: String(input.description).trim().slice(0, 600), ...(input.gender ? { gender: input.gender as 'female' | 'male' } : {}) })
         : await catalog.replicate({ name, source: input.source as string, consent: input.consent as string });

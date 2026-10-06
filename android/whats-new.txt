@@ -1,5 +1,8 @@
-Studio → Entwickler: jeder KI-Aufruf der letzten zwei Tage mit Prompt, Antwort, Dauer und Tokens
-Die Recherche sucht mit einem kleineren, günstigeren Modell (Gemini 2.5 Flash Lite)
+Neue Hörer richten ihr Radio in drei Schritten ein: Interessen, Stimme, Musik
+Einladen: Verbrauch und Tageslimit pro Hörer; beim Entfernen auf Wunsch alle Daten löschen
+Kein Themenfeld mehr dreimal am Tag: das Radio setzt den Schwerpunkt anderswo
+Qualität: Sendungen unter der Latte mit den Notizen der Jury und einem Vorschlag
+Mehr Puffer offline: etwa eine halbe Stunde Wort liegt vorab auf dem Handy
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

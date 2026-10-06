@@ -386,6 +386,18 @@ export class StationStore {
       .bind(owner, entry.itemId, entry.showId, entry.overall, entry.at.toISOString()).run();
   }
 
+  /** The jury's latest notes on a show's items, newest first (what keeps it below the bar). */
+  async juryNotes(owner: string, showId: string, limit = 3): Promise<string[]> {
+    const rows = (await this.db.prepare('SELECT script_json FROM timeline_items WHERE owner_id = ? AND show_id = ? AND script_json IS NOT NULL ORDER BY seq DESC LIMIT 12')
+      .bind(owner, showId).all<{ script_json: string }>()).results;
+    const notes: string[] = [];
+    for (const row of rows) {
+      try { const note = (JSON.parse(row.script_json) as { quality?: { notes?: unknown } }).quality?.notes; if (typeof note === 'string' && note.trim()) notes.push(note.trim()); } catch { /* Skip corrupt rows. */ }
+      if (notes.length >= limit) break;
+    }
+    return notes;
+  }
+
   async qualityLog(owner: string, since: Date): Promise<Array<{ showId: string; overall: number; createdAt: string }>> {
     return (await this.db.prepare('SELECT show_id, overall, created_at FROM quality_log WHERE owner_id = ? AND created_at >= ? ORDER BY created_at')
       .bind(owner, since.toISOString()).all<{ show_id: string; overall: number; created_at: string }>()).results

@@ -102,8 +102,11 @@ export const PRE_PRODUCED = ' Der Beitrag ist vorproduziert und läuft später: 
 
 /** Topic memory: recent segment titles the next draft must not repeat. */
 export function avoidTopicsPrompt(direction: EditorialDirection | undefined): string {
-  const topics = (direction?.avoidTopics ?? []).map(topic => topic.trim().slice(0, 160)).filter(Boolean).slice(0, 15);
-  return topics.length ? ` Diese Themen liefen kürzlich; wiederhole sie nicht, ausser es gibt wirklich Neues: ${topics.map(topic => `«${topic}»`).join(', ')}.` : '';
+  const all = (direction?.avoidTopics ?? []).map(topic => topic.trim().slice(0, 160)).filter(Boolean);
+  const fields = all.filter(topic => topic.startsWith('Themenfeld: ')).map(topic => topic.slice('Themenfeld: '.length)).slice(0, 5);
+  const topics = all.filter(topic => !topic.startsWith('Themenfeld: ')).slice(0, 15);
+  return (topics.length ? ` Diese Themen liefen kürzlich; wiederhole sie nicht, ausser es gibt wirklich Neues: ${topics.map(topic => `«${topic}»`).join(', ')}.` : '') +
+    (fields.length ? ` Diese Themenfelder kamen in den letzten anderthalb Tagen schon mehrfach vor; wenn die Quellen es erlauben, setze den Schwerpunkt anderswo: ${fields.map(field => `«${field}»`).join(', ')}.` : '');
 }
 
 /** Single-host brief, shared by every text provider so the station sounds the same regardless of model. */

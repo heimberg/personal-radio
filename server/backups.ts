@@ -8,7 +8,7 @@ export const BACKUPS_KEPT = 8;
 const DATE = /^\d{4}-\d{2}-\d{2}(-vorher)?$/;
 
 /** The bucket folder of one owner: a hash, so no email address ends up in a key. */
-async function folder(owner: string): Promise<string> {
+export async function backupFolder(owner: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(owner)));
   return `backups/${Array.from(digest.slice(0, 8), byte => byte.toString(16).padStart(2, '0')).join('')}/`;
 }
@@ -16,7 +16,7 @@ async function folder(owner: string): Promise<string> {
 /** The copies of [owner], newest first (`2026-10-04`, or `…-vorher` for the state before a restore). */
 export async function listBackups(env: Environment, owner: string): Promise<string[]> {
   if (!env.AUDIO.list) return [];
-  const prefix = await folder(owner);
+  const prefix = await backupFolder(owner);
   const { objects } = await env.AUDIO.list({ prefix, limit: 100 });
   return objects.map(object => object.key.slice(prefix.length).replace(/\.json$/, '')).filter(name => DATE.test(name)).sort().reverse();
 }
@@ -25,7 +25,7 @@ export async function listBackups(env: Environment, owner: string): Promise<stri
 export async function backupStation(env: Environment, owner: string, now: Date, name = now.toISOString().slice(0, 10)): Promise<boolean> {
   const config = await new StationStore(env.DB).getConfig(owner);
   if (!config) return false;
-  const prefix = await folder(owner);
+  const prefix = await backupFolder(owner);
   await env.AUDIO.put(`${prefix}${name}.json`, new TextEncoder().encode(JSON.stringify(config)), { httpMetadata: { contentType: 'application/json' } });
   for (const old of (await listBackups(env, owner)).slice(BACKUPS_KEPT)) await env.AUDIO.delete(`${prefix}${old}.json`);
   return true;
@@ -44,7 +44,7 @@ export async function backupRoutes(request: Request, env: Environment, owner: st
   if (body.error) return body.error;
   const name = (body.value as { name?: unknown } | null)?.name;
   if (typeof name !== 'string' || !DATE.test(name)) return json({ error: 'invalid_backup' }, 400);
-  const object = await env.AUDIO.get(`${await folder(owner)}${name}.json`);
+  const object = await env.AUDIO.get(`${await backupFolder(owner)}${name}.json`);
   if (!object) return json({ error: 'not_found' }, 404);
   let config;
   try { config = parseStationConfig(JSON.parse(await new Response(object.body).text())); }

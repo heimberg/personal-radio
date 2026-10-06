@@ -17,7 +17,7 @@ import type { StationDeps } from './station.ts';
 import { meteredFetch } from './usage.ts';
 import { PlayStore } from './play.ts';
 import { FollowStore } from './follow.ts';
-import { forKids, isKids, listenersNow, listenersOf } from './listeners.ts';
+import { forKids, generationLimit, isKids, listenersNow, listenersOf } from './listeners.ts';
 import { familyMembers } from './family.ts';
 import type { AudioObjects, Member } from './family.ts';
 import type { Environment } from './http.ts';
@@ -119,7 +119,7 @@ export function stationDeps(env: Environment, owner: string): StationDeps {
     store: new StationStore(env.DB, kids ? forKids : undefined), pipeline: pipelineFor(env), audio: env.AUDIO,
     fetchFeed: url => fetchFeed(url),
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
-    reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)),
+    reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, generationLimit(owner, listenersNow(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24))),
     podcastAvailable: Boolean(env.GEMINI_API_KEY), compressSpeech: env.SPEECH_MP3 === 'on', now: () => new Date(), random: Math.random,
     generator: (provider, format) => {
       const providers = providersFor(env);

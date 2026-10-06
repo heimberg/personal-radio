@@ -147,3 +147,20 @@ test('a rejected fact check gets one repair: the editor drops the unsupported cl
   assert.equal(reviews, 2);
   assert.match((await store.getItem('o', other))!.error!, /REJECTED/);
 });
+
+test('a topic field that came up twice in a day and a half is named as crowded; older ones and single ones are not', async () => {
+  const { recentTopics, FIELD_PREFIX } = await import('../server/station/produce.ts');
+  const { avoidTopicsPrompt } = await import('../server/providers.ts');
+  const now = new Date('2026-10-06T12:00:00Z');
+  const row = (title: string, tags: string[], hoursAgo: number) => ({ state: 'played', updated_at: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+    script_json: JSON.stringify({ title, text: 'x', sourceIds: [], interestTags: tags }) });
+  const rows = [row('Alt', ['KI'], 60), row('Chips', ['KI', 'Technik'], 20), row('Roboter', ['KI'], 5), row('Mond', ['Raumfahrt'], 2)];
+  const deps = { now: () => now, store: { recentItems: async () => rows } } as never;
+  const topics = await recentTopics(deps, 'o');
+  assert.deepEqual(topics.filter(topic => topic.startsWith(FIELD_PREFIX)), [`${FIELD_PREFIX}KI`]);
+  assert.deepEqual(topics.filter(topic => !topic.startsWith(FIELD_PREFIX)), ['Mond', 'Roboter', 'Chips', 'Alt']);
+  const prompt = avoidTopicsPrompt({ avoidTopics: topics });
+  assert.match(prompt, /wiederhole sie nicht, ausser es gibt wirklich Neues: «Mond», «Roboter», «Chips», «Alt»\./);
+  assert.match(prompt, /Themenfelder kamen in den letzten anderthalb Tagen schon mehrfach vor; .*«KI»\./);
+  assert.doesNotMatch(prompt, /«Themenfeld/);
+});

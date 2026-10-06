@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,9 +95,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, version: String, padd
                     if (page == null) StationHero(settings, state)
                     Cards(settings, state, actions)
                 }
-                state.studioMissing -> Note("Das Radio ist noch nicht eingerichtet. Ein Tipp legt es mit den Standardsendungen an; danach passt du hier alles an.") {
-                    FilledTonalButton(onClick = actions::setUpStation, enabled = !state.settingUp) { Text(if (state.settingUp) "Wird eingerichtet …" else "Radio einrichten") }
-                }
+                state.studioMissing -> FirstStart(state, actions)
                 else -> Text("Einstellungen werden geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
             }
             if (page == null) More(state, actions)
@@ -549,6 +548,69 @@ private fun RecordButton(state: RadioState, done: Int, needed: Int, onClick: () 
         Spacer(Modifier.width(12.dp))
         if (!state.recording && done > 0) {
             Text(if (done >= needed) "✓ $done s" else "$done s – zu kurz", style = MaterialTheme.typography.bodySmall, color = if (done >= needed) Nocturne.accentLight else Nocturne.danger)
+        }
+    }
+}
+
+/** Suggestions for the first start; anything else can be typed. */
+private val INTEREST_IDEAS = listOf(
+    "Wissenschaft", "Raumfahrt", "Natur", "Tiere", "Geschichte", "Technik", "Klima", "Gesundheit", "Kultur", "Film",
+    "Literatur", "Kunst", "Musik", "Sport", "Politik", "Wirtschaft", "Reisen", "Essen", "Schweiz", "Philosophie",
+)
+
+/**
+ * The first start, in three steps: what interests you, which voice speaks, what music you like. Everything
+ * can be changed later in the studio; «Überspringen» takes the defaults.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FirstStart(state: RadioState, actions: RadioActions) {
+    var step by remember { mutableStateOf(0) }
+    val interests = remember { mutableStateListOf<String>() }
+    var custom by remember { mutableStateOf("") }
+    var voiceId by remember { mutableStateOf<String?>(null) }
+    var taste by remember { mutableStateOf("") }
+    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("WILLKOMMEN · ${step + 1} VON 3", style = Kicker, color = Nocturne.muted)
+        when (step) {
+            0 -> {
+                Text("Was interessiert dich?", style = MaterialTheme.typography.headlineSmall)
+                Text("Wähle ein paar Themen. Daraus recherchiert das Radio deine Beiträge.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (idea in (INTEREST_IDEAS + interests.filter { it !in INTEREST_IDEAS })) {
+                        FilterChip(selected = idea in interests, onClick = { if (idea in interests) interests.remove(idea) else interests.add(idea) }, label = { Text(idea) })
+                    }
+                }
+                OutlinedTextField(custom, { custom = it.take(40) }, label = { Text("Eigenes Thema, z. B. Vulkane") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = { TextButton(onClick = { custom.trim().takeIf { it.length >= 2 && it !in interests }?.let(interests::add); custom = "" }, enabled = custom.isNotBlank()) { Text("Dazu") } })
+            }
+            1 -> {
+                Text("Wer moderiert?", style = MaterialTheme.typography.headlineSmall)
+                Text("Tippe auf eine Stimme, um sie zu hören.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
+                val voices = state.voices.filter { !it.own }.take(12)
+                if (voices.isEmpty()) Text("Die Stimmen werden geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (voice in voices) {
+                        FilterChip(selected = voiceId == voice.id, onClick = { voiceId = voice.id; actions.previewVoice(voice.id) }, label = { Text(voice.name) })
+                    }
+                }
+            }
+            else -> {
+                Text("Welche Musik magst du?", style = MaterialTheme.typography.headlineSmall)
+                Text("Zwischen den Beiträgen laufen Songs über Spotify. Ein paar Stichworte genügen.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
+                OutlinedTextField(taste, { taste = it.take(300) }, label = { Text("z. B. Indie, Jazz, Schweizer Mundart") }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (step > 0) TextButton(onClick = { step-- }) { Text("Zurück") }
+            Spacer(Modifier.weight(1f))
+            if (step < 2) {
+                TextButton(onClick = { step++ }) { Text(if (step == 0 && interests.isEmpty() || step == 1 && voiceId == null) "Überspringen" else "Weiter") }
+            } else {
+                FilledTonalButton(onClick = { actions.setUpStation(interests.toList(), voiceId, taste.trim()) }, enabled = !state.settingUp) {
+                    Text(if (state.settingUp) "Wird eingerichtet …" else "Radio starten")
+                }
+            }
         }
     }
 }

@@ -152,8 +152,12 @@ class ApiClient(private val connection: Connection) {
     }
 
     /** First start: a station with the default shows in the phone's time zone, planned right away. */
-    suspend fun setUp(timezone: String) {
-        withContext(Dispatchers.IO) { request("POST", "api/setup", JSONObject().put("timezone", timezone).toString()) }
+    /** The first start: a station with the default shows, plus what the first-start flow asked. */
+    suspend fun setUp(timezone: String, interests: List<String> = emptyList(), voiceId: String? = null, taste: String = "") {
+        val body = JSONObject().put("timezone", timezone).put("interests", JSONArray(interests))
+        voiceId?.let { body.put("voiceId", it) }
+        if (taste.isNotBlank()) body.put("taste", taste)
+        withContext(Dispatchers.IO) { request("POST", "api/setup", body.toString()) }
     }
 
     /** The show formats with the lengths the server accepts; [ShowFormat] keeps them for the editor. */
@@ -181,7 +185,10 @@ class ApiClient(private val connection: Connection) {
         InviteOverview.created(request("POST", "api/invites", JSONObject().put("name", name).put("kind", kind.wire).toString()))
     }
     suspend fun deleteInvite(id: String) { withContext(Dispatchers.IO) { request("DELETE", "api/invites/$id") } }
-    suspend fun removeListener(key: String) { withContext(Dispatchers.IO) { request("DELETE", "api/listeners/$key") } }
+    suspend fun removeListener(key: String, eraseData: Boolean) { withContext(Dispatchers.IO) { request("DELETE", "api/listeners/$key" + if (eraseData) "?data=1" else "") } }
+    suspend fun setListenerLimit(key: String, dailyGenerations: Int?) {
+        withContext(Dispatchers.IO) { request("PATCH", "api/listeners/$key", JSONObject().put("dailyGenerations", dailyGenerations ?: JSONObject.NULL).toString()) }
+    }
 
     suspend fun llmCalls(before: Long?, failedOnly: Boolean): List<ch.heimberg.radio.core.LlmCall> = withContext(Dispatchers.IO) {
         val query = listOfNotNull(before?.let { "before=$it" }, if (failedOnly) "failed=1" else null).joinToString("&")

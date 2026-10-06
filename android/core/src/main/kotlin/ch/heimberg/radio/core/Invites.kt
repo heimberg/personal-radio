@@ -63,13 +63,29 @@ data class Invite(val id: String, val name: String, val kind: String, val expire
 }
 
 @Serializable
-data class InvitedListener(val key: String, val name: String, val kind: String, val since: String? = null, val removable: Boolean = false) {
+data class UsageCount(val generations: Int = 0, val characters: Int = 0)
+
+/** What a station used today and in the last seven days. */
+@Serializable
+data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount()) {
+    /** «Heute 4 von 6 · 7 Tage 30 Produktionen» */
+    fun line(limit: Int): String = "Heute ${today.generations} von $limit · 7 Tage ${week.generations} Produktionen"
+}
+
+@Serializable
+data class InvitedListener(
+    val key: String, val name: String, val kind: String, val since: String? = null, val removable: Boolean = false,
+    val limit: Int = 0, val ownLimit: Int? = null, val usage: StationUsage = StationUsage(),
+) {
     val listenerKind: ListenerKind get() = ListenerKind.of(kind)
 }
 
+@Serializable
+data class OwnStation(val limit: Int = 0, val usage: StationUsage = StationUsage())
+
 /** `GET /api/invites`: whether invitations work on this Worker, the invitations and who listens. */
 @Serializable
-data class InviteOverview(val ready: Boolean = false, val invites: List<Invite> = emptyList(), val listeners: List<InvitedListener> = emptyList()) {
+data class InviteOverview(val ready: Boolean = false, val invites: List<Invite> = emptyList(), val listeners: List<InvitedListener> = emptyList(), val own: OwnStation? = null) {
     /** Still waiting to be used, newest first. */
     val open: List<Invite> get() = invites.filter { it.usedAt == null && !it.expired }
 

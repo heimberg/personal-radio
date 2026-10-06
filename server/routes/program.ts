@@ -7,7 +7,7 @@ import { stationSounds } from '../../src/domain/station.ts';
 import { activeMood } from '../../src/domain/mood.ts';
 import { PlayStore } from '../play.ts';
 import { IDENT_VARIANTS, hourKey, hourText, identJingle, newsOpener, timeSignal } from '../sounds.ts';
-import { isKids, listenersOf } from '../listeners.ts';
+import { generationLimit, isKids, listenersOf } from '../listeners.ts';
 import { FamilyStore, familyMembers, messageLine } from '../family.ts';
 import { json, readJson, statusFor } from '../http.ts';
 import type { Environment } from '../http.ts';
@@ -42,7 +42,7 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     ]);
     // Today's use against the daily limits: the app warns once a limit is 80 % used.
     const budget = { budget: {
-      generations: [today.generations, Math.max(1, Number(env.DAILY_GENERATIONS) || 24)],
+      generations: [today.generations, generationLimit(owner, listeners, Math.max(1, Number(env.DAILY_GENERATIONS) || 24))],
       speech: [today.characters, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)],
     } };
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).

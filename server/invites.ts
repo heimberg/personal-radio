@@ -13,7 +13,10 @@ export const KINDS: ListenerKind[] = ['family', 'kids', 'guest'];
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export interface InviteRow { id: string; name: string; kind: ListenerKind; created_at: string; expires_at: string; used_at: string | null; owner_id: string | null }
-export interface InvitedListenerRow { client_id: string; owner_id: string; name: string; kind: ListenerKind; token_id: string; created_at: string }
+export interface InvitedListenerRow { client_id: string; owner_id: string; name: string; kind: ListenerKind; token_id: string; created_at: string; daily_generations?: number | null }
+
+/** Guests start with a smaller daily production limit; the owner can change it. */
+export const GUEST_DAILY_GENERATIONS = 12;
 
 /** Creates and deletes Access service tokens (Cloudflare API, `Access: Service Tokens Edit`). */
 export interface TokenIssuer {
@@ -86,7 +89,7 @@ export class InviteStore {
   }
 
   async listeners(): Promise<InvitedListenerRow[]> {
-    return (await this.db.prepare('SELECT client_id, owner_id, name, kind, token_id, created_at FROM invited_listeners ORDER BY created_at').all<InvitedListenerRow>()).results;
+    return (await this.db.prepare('SELECT client_id, owner_id, name, kind, token_id, created_at, daily_generations FROM invited_listeners ORDER BY created_at').all<InvitedListenerRow>()).results;
   }
 
   /**
@@ -109,10 +112,17 @@ export class InviteStore {
       await this.db.prepare('UPDATE invites SET used_at = NULL, owner_id = NULL WHERE id = ?').bind(invite.id).run();
       throw error;
     }
-    await this.db.prepare('INSERT INTO invited_listeners (client_id, owner_id, name, kind, token_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(token.clientId, owner, invite.name, invite.kind, token.id, now.toISOString()).run();
+    await this.db.prepare('INSERT INTO invited_listeners (client_id, owner_id, name, kind, token_id, created_at, daily_generations) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(token.clientId, owner, invite.name, invite.kind, token.id, now.toISOString(), invite.kind === 'guest' ? GUEST_DAILY_GENERATIONS : null).run();
     forgetListeners();
     return { clientId: token.clientId, clientSecret: token.clientSecret, name: invite.name };
+  }
+
+  /** A listener's own daily production limit; null returns to the Worker's. */
+  async setLimit(owner: string, dailyGenerations: number | null): Promise<boolean> {
+    const row = await this.db.prepare('UPDATE invited_listeners SET daily_generations = ? WHERE owner_id = ? RETURNING owner_id').bind(dailyGenerations, owner).first();
+    forgetListeners();
+    return !!row;
   }
 
   /** Takes a listener's access away: the token is revoked, the station's data stays until it is cleaned up. */

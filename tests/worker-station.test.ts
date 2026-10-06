@@ -130,6 +130,15 @@ test('station API: configure, plan, produce via queue, stream audio with ranges 
     assert.deepEqual(insights.notes, []);
     assert.ok(insights.usage.days[0].models.some((model: any) => model.provider === 'ask' && model.model === 'test' && model.calls >= 2));
     assert.equal(insights.usage.limits.generations, 24);
+    assert.deepEqual([insights.weakShows, insights.juryBar], [[], 3.5]);
+    // A show the jury keeps marking below its bar shows up with its latest notes.
+    const at = new Date().toISOString();
+    for (const [n, mark] of [[1, 2.8], [2, 3.0], [3, 3.2]] as const) env.DB.raw.prepare('INSERT INTO quality_log (owner_id, item_id, show_id, overall, created_at) VALUES (?, ?, ?, ?, ?)').run('owner@example.test', `q${n}`, 'kurz', mark, at);
+    env.DB.raw.prepare(`INSERT INTO timeline_items (id, owner_id, seq, show_id, planned_at, state, estimated_minutes, attempts, created_at, updated_at, script_json)
+      VALUES ('jury', 'owner@example.test', -1, 'kurz', ?, 'archived', 2, 0, ?, ?, ?)`).run(at, at, at, JSON.stringify({ title: 't', text: 'x', sourceIds: [], quality: { overall: 3, notes: 'Einstieg zu langsam' } }));
+    const weak = (await (await call('/api/insights')).json() as any).weakShows;
+    assert.deepEqual(weak.map((show: any) => [show.showId, show.average, show.count, show.notes]), [['kurz', 3, 3, ['Einstieg zu langsam']]]);
+    env.DB.raw.prepare("DELETE FROM timeline_items WHERE id = 'jury'").run();
     assert.equal((await call('/api/insights/reasons', { method: 'DELETE' })).status, 200);
     insights = await (await call('/api/insights')).json() as any;
     assert.deepEqual(insights.reasons, []);
