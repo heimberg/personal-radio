@@ -5,17 +5,19 @@ import kotlinx.serialization.json.put
 
 enum class FeedbackAction(val wire: String) { LIKE("like"), DISLIKE("dislike"), SKIP("skip"), COMPLETE("complete") }
 
-/** Why a spoken item was rated down; repeated reasons steer the station's writer, editor and jury. */
-enum class FeedbackReason(val wire: String, val label: String) {
+/** Why an item was rated down; repeated reasons teach the station: spoken ones the writer, editor and jury, music ones the music desk. */
+enum class FeedbackReason(val wire: String, val label: String, val music: Boolean = false) {
     TOO_LONG("too_long", "Zu lang"), BORING("boring", "Langweilig"), TONE("tone", "Falscher Ton"),
-    KNOWN("known", "Kenn ich schon"), WRONG("wrong", "Fehlerhaft");
+    KNOWN("known", "Kenn ich schon"), WRONG("wrong", "Fehlerhaft"),
+    NOT_MY_STYLE("not_my_style", "Nicht mein Stil", true), HEARD_TOO_OFTEN("heard_too_often", "Zu oft gehört", true),
+    TOO_WILD("too_wild", "Zu wild", true), TOO_CALM("too_calm", "Zu ruhig", true), WRONG_MOMENT("wrong_moment", "Passt gerade nicht", true);
 
     /** Body for `POST /api/timeline/{id}/reason`. */
     fun toJson(): String = buildJsonObject { put("reason", wire) }.toString()
 
     companion object {
-        /** Songs between items get no reason: the reasons are about spoken content. */
-        fun asksFor(showId: String?): Boolean = showId != "_musik"
+        /** The reasons offered for an item: about its music or about what was said. */
+        fun forItem(music: Boolean): List<FeedbackReason> = entries.filter { it.music == music }
     }
 }
 

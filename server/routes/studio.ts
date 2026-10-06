@@ -163,7 +163,7 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
       weakShows, juryBar: bar,
       byShow: byShow.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
       reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
-      notes: listenerNotes(counts),
+      notes: [...listenerNotes(counts), ...listenerNotes(counts, 'music')],
       quality: quality.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
       changes, usage, timezone: config?.timezone ?? 'UTC',
     }, 200);

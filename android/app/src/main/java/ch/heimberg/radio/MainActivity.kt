@@ -413,9 +413,12 @@ class MainActivity private constructor(
             val result = runCatching { api.send(FeedbackPolicy.rating(id, liked)) }
             if (result.isSuccess) state.ratings[id] = liked
             state.say(result.fold({ getString(if (liked) R.string.liked else R.string.disliked) }, { it.message ?: "" }))
-            val showId = state.open.firstOrNull { it.id == id }?.showId
-            // One optional tap after 👎: repeated reasons teach the station's writer, editor and jury.
-            if (!liked && result.isSuccess && FeedbackReason.asksFor(showId)) state.reasonFor = id
+            val item = (state.open + state.heard).firstOrNull { it.id == id }
+            // One optional tap after 👎: repeated reasons teach the writer, editor and jury, or for songs the music desk.
+            if (!liked && result.isSuccess) {
+                state.reasonMusic = item?.let(ch.heimberg.radio.core.Looks::bringsMusic) ?: false
+                state.reasonFor = id
+            }
         }
     }
 

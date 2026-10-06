@@ -219,3 +219,18 @@ test('artists rotate: the last tracks\' artists wait, top artists come in a diff
   assert.deepEqual(rotateListens(['Björk'], recent.all, () => 0.5), ['Björk']);
   assert.ok(ARTIST_GAP >= 20);
 });
+
+test('music reasons teach the music desk, spoken ones the writer; a song rated down carries its reason', async () => {
+  const { listenerNotes } = await import('../src/domain/listener-notes.ts');
+  const counts = [{ reason: 'too_wild' as const, count: 3 }, { reason: 'too_long' as const, count: 2 }, { reason: 'too_calm' as const, count: 1 }];
+  assert.deepEqual(listenerNotes(counts, 'music'), ['Songs waren ihm zuletzt oft zu wild: ruhigere, zugänglichere Stücke wählen.']);
+  assert.equal(listenerNotes(counts).length, 1);
+  assert.match(listenerNotes(counts)[0], /zu lang/);
+  const { songHistory } = await import('../server/station/music.ts');
+  const deps = { store: {
+    recentItems: async () => [{ id: 's1', show_id: '_musik', script_json: JSON.stringify({ parts: [{ kind: 'track', artist: 'Napalm Death', title: 'Scum' }] }) }],
+    feedback: async () => [{ itemId: 's1', action: 'dislike', listenedRatio: 1, interests: [], createdAt: '' }],
+    reasonsByItem: async () => new Map([['s1', 'too_wild']]),
+  } } as never;
+  assert.deepEqual((await songHistory(deps, 'o')).disliked, ['Napalm Death – Scum (zu wild)']);
+});

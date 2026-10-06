@@ -83,8 +83,8 @@ class FeedbackTest {
         assertEquals(0.0, FeedbackPolicy.onLeave("a", false, 5, 0).listenedRatio)
         assertEquals("""{"action":"like","listenedRatio":1.0}""", FeedbackPolicy.rating("a", true).toJson())
         assertEquals("""{"reason":"too_long"}""", FeedbackReason.TOO_LONG.toJson())
-        assertTrue(FeedbackReason.asksFor("entdecken"))
-        assertFalse(FeedbackReason.asksFor("_musik"))
+        assertEquals(listOf("too_long", "boring", "tone", "known", "wrong"), FeedbackReason.forItem(music = false).map { it.wire })
+        assertEquals(listOf("not_my_style", "heard_too_often", "too_wild", "too_calm", "wrong_moment"), FeedbackReason.forItem(music = true).map { it.wire })
     }
 }
 

@@ -376,6 +376,13 @@ export class StationStore {
     return rows.filter(row => isFeedbackReason(row.reason)).map(row => ({ reason: row.reason as FeedbackReason, count: Number(row.count) }));
   }
 
+  /** The reason given with each recent 👎, by item. */
+  async reasonsByItem(owner: string): Promise<Map<string, FeedbackReason>> {
+    const rows = (await this.db.prepare('SELECT item_id, reason FROM feedback_events WHERE owner_id = ? AND reason IS NOT NULL ORDER BY id DESC LIMIT 200')
+      .bind(owner).all<{ item_id: string; reason: string }>()).results;
+    return new Map(rows.filter(row => isFeedbackReason(row.reason)).map(row => [row.item_id, row.reason as FeedbackReason]));
+  }
+
   /** The owner starts over: collected reasons no longer steer the prompts. */
   async clearReasons(owner: string) {
     await this.db.prepare('UPDATE feedback_events SET reason = NULL WHERE owner_id = ? AND reason IS NOT NULL').bind(owner).run();

@@ -225,6 +225,8 @@ class RadioState {
     var detail by mutableStateOf<String?>(null)
     private var messages by mutableIntStateOf(0)
     var reasonFor by mutableStateOf<String?>(null)
+    /** The item rated down plays songs: the dialog asks about the music. */
+    var reasonMusic by mutableStateOf(false)
     var sleepOpen by mutableStateOf(false)
     var blockAsk by mutableStateOf<BlockView?>(null)
     var actionsFor by mutableStateOf<TimelineItem?>(null)
