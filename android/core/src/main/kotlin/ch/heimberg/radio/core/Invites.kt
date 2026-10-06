@@ -91,6 +91,9 @@ data class MoneyBudget(val limit: Double = 0.0, val spent: Double = 0.0) {
 data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount(), val costs: CostSpan? = null, val budget: MoneyBudget? = null) {
     /** «Heute 4 von 6 · 7 Tage 30 Produktionen» */
     fun line(limit: Int): String = "Heute ${today.generations} von $limit · 7 Tage ${week.generations} Produktionen"
+
+    /** One short line for the list: «heute 4 von 24 · CHF 0.40». */
+    fun compact(limit: Int): String = listOfNotNull("heute ${today.generations} von $limit", costs?.let { CostSpan.chf(it.today) }).joinToString(" · ")
 }
 
 @Serializable

@@ -136,6 +136,8 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
   const agents = resolveAgents(config.agents);
   const row = await deps.store.lease(owner, itemId, now, minutes(now, LEASE_MINUTES));
   if (!row) return 'skipped';
+  // The step it is in, for the app's progress; showing it never fails a production.
+  const stage = (name: string) => deps.store.update(owner, row.id, { stage: name }, deps.now()).catch(() => {});
   const fail = async (error: string) => { await deps.store.update(owner, row.id, { state: 'failed', lease_until: null, error }, deps.now()); return 'failed' as const; };
   // A building block added from the app is produced with its template.
   const block = blockOf(row.show_id);
@@ -233,6 +235,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       const instructions = [expandPlaceholders(configured.instructions, values), ...notes].filter(Boolean).join(' ');
       show = { ...configured, instructions, researchPrompt };
     }
+    if (!show || isMusicHour(show.format) || show.format === 'music_block') await stage('music');
     if (!show) return await produceSong(deps, owner, config, row, fail);
     if (isMusicHour(show.format)) return await produceMusicHour(deps, owner, config, show, row, fail);
     if (show.format === 'music_block') return await produceMusicBlock(deps, owner, config, show, row, fail);
@@ -243,6 +246,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (deps.generator && !generator) return fail(show.textProvider === 'ask' ? 'ASK_NOT_CONFIGURED' : 'GEMINI_NOT_CONFIGURED');
       if (show.sourceMode === 'web' && !deps.researcher) return fail('GEMINI_NOT_CONFIGURED');
       await deps.reserveGeneration(owner);
+      await stage('research');
       const profile: Profile = { ...config.profile, interestWeights: learnedWeights(await deps.store.feedback(owner), now.getTime()) };
       // A look back talks about the recent topics on purpose.
       const avoidTopics = row.show_id === REVIEW_SHOW ? [] : await recentTopics(deps, owner);
@@ -275,10 +279,12 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       }
       const direction = { instructions: [show.instructions, followNote].filter(Boolean).join(' '), targetMinutes: show.targetMinutes, stationName: config.name, persona: config.host, avoidTopics, agents,
         listenerNotes: await notesFor(deps, owner, now), ...(episode?.kind === 'geschichte' ? { story: true } : {}) };
+      await stage('writing');
       let script = await deps.pipeline.draft(profile, sources, show.format === 'podcast' ? 'podcast' : 'brief', direction, generator);
       // Final desk: rewrite for the ear, connect to the program, score; facts are checked on the final text.
       const context = await stationContext(deps, owner, config, row, now);
-      if (deps.editor) script = await finishScript(deps.editor, script, sources, direction, context);
+      if (deps.editor) { await stage('editing'); script = await finishScript(deps.editor, script, sources, direction, context); }
+      await stage('checking');
       try { await deps.pipeline.review(script, sources, show.verification, agentOf(agents, 'verifier').instructions); }
       catch (error) {
         // A rejected script gets one repair: the editor drops or narrows the unsupported claims, then the check runs again.
@@ -302,6 +308,7 @@ export async function produceItem(deps: StationDeps, owner: string, itemId: stri
       if (followed) await deps.follows?.reported(owner, followed.id, followed.known, deps.now());
       current = { ...current, ...patch };
     }
+    await stage('voicing');
     const script = JSON.parse(current.script_json ?? 'null') as Script;
     const format = script.turns ? 'podcast' : 'brief';
     // The show's own voice wins; otherwise the host persona speaks.

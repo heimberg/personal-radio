@@ -813,3 +813,14 @@ class WeakShowTest {
         assertTrue(insights.weakShows[1].hint.startsWith("Mehr oder andere Quellen"))
     }
 }
+
+class ProductionStagesTest {
+    @Test fun stepsReadAsProgress() {
+        assertEquals("Schritt 2 von 5: Text · noch etwa 3 Minuten", ProductionStages.line("writing"))
+        assertEquals("Schritt 5 von 5: Stimme · noch etwa eine Minute", ProductionStages.line("voicing"))
+        assertEquals(-1, ProductionStages.index(null))
+        assertEquals(null, ProductionStages.index("music"))
+        val item = TimelineJson.parse("""{"items":[{"id":"a","seq":1,"showId":"s","showName":"S","plannedAt":"x","state":"planned","estimatedMinutes":3,"stage":"checking"}]}""").single()
+        assertEquals(3, ProductionStages.index(item.stage))
+    }
+}

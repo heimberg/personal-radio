@@ -38,6 +38,8 @@ export function toView(row: TimelineRow, config: StationConfig | null): Timeline
     // The right answer stays on the server until the listener answered.
     ...(quiz ? { quiz: { question: quiz.question, options: quiz.options, ...(quiz.answered !== undefined ? { answered: quiz.answered, correct: quiz.correct } : {}) } } : {}),
     plannedAt: row.planned_at, state: row.state, estimatedMinutes: row.estimated_minutes, updatedAt: row.updated_at,
+    // The step while a production runs (it holds the lease); a waiting or retried item shows none.
+    ...(row.stage && (row.state === 'planned' || row.state === 'voicing') && !row.error && row.lease_until && row.lease_until > new Date().toISOString() ? { stage: row.stage } : {}),
     ...(script.title ? { title: script.title } : {}),
     ...(sources.length ? { sources: sources.map(source => ({ title: source.title, url: source.url })) } : {}),
     ...(script.interestTags?.length ? { interestTags: script.interestTags } : {}),

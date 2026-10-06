@@ -149,6 +149,8 @@ export type TimelinePartView =
   | { kind: 'track'; spotifyUri: string; title: string; artist: string; durationMs: number; imageUrl?: string };
 export interface FailureSummary { count: number; latestError?: string; latestAt?: string }
 export interface TimelineItemView {
+  /** The production step while it runs: research, writing, editing, checking, voicing or music. */
+  stage?: string;
   /** 🎲 a surprise the planner mixed in; it can be swapped for another one. */
   surprise?: boolean;
   /** Overall mark (1–5) of the quality jury, for spoken items that went through the final edit. */

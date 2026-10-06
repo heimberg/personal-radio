@@ -301,6 +301,22 @@ private fun PlayButton(state: RadioState, actions: RadioActions, extent: Dp) {
     }
 }
 
+/** The steps of a production as a bar of five, and in words; music shows only the words. */
+@Composable
+internal fun StageProgress(stage: String?, ink: androidx.compose.ui.graphics.Color) {
+    val at = ch.heimberg.radio.core.ProductionStages.index(stage)
+    Spacer(Modifier.height(16.dp))
+    if (at != null) {
+        Row(Modifier.fillMaxWidth().semantics { contentDescription = ch.heimberg.radio.core.ProductionStages.line(stage) }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            ch.heimberg.radio.core.ProductionStages.SPOKEN.forEachIndexed { index, _ ->
+                Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(ink.copy(alpha = if (index <= at) 0.9f else 0.25f)))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+    Text(ch.heimberg.radio.core.ProductionStages.line(stage), style = MaterialTheme.typography.labelMedium, color = ink.copy(alpha = 0.8f))
+}
+
 /**
  * Before anything plays: an ink card with what is ready and what comes first, and one big «Jetzt hören».
  * The rating buttons wait until there is something to rate.
@@ -328,11 +344,13 @@ private fun StartState(state: RadioState, actions: RadioActions) {
         Text(
             when {
                 ready > 0 && first != null -> "$ready ${if (ready == 1) "Beitrag" else "Beiträge"} fertig · als Erstes: ${first.displayTitle}"
-                first != null -> "Der erste Beitrag wird gerade produziert – das dauert ein paar Minuten."
+                first != null -> "Als Erstes entsteht: ${first.displayTitle}"
                 else -> "Tippe auf «Jetzt hören», dann plant und produziert der Server dein Programm."
             },
             style = MaterialTheme.typography.bodyLarge, color = Nocturne.bg.copy(alpha = 0.85f), maxLines = 3, overflow = TextOverflow.Ellipsis,
         )
+        // While the first item is made: its steps, so a new listener sees that something happens.
+        if (ready == 0 && first != null) StageProgress(first.stage, Nocturne.bg)
         Spacer(Modifier.height(20.dp))
         Row(
             Modifier
