@@ -30,10 +30,15 @@ test('the app sets up a new station and reads the editorial agents', async () =>
   }), env as never);
   try {
     assert.equal((await call('/api/setup', { method: 'POST', body: '{}', headers: { Origin: 'https://evil.example' } })).status, 403);
-    const created = await call('/api/setup', { method: 'POST', body: JSON.stringify({ timezone: 'America/New_York' }) });
+    const created = await call('/api/setup', { method: 'POST', body: JSON.stringify({ timezone: 'America/New_York',
+      interests: ['Raumfahrt', '  Natur  ', 'Raumfahrt', 42], voiceId: 'Kore', taste: 'Indie, Krautrock' }) });
     assert.equal(created.status, 201);
-    const { config } = await created.json() as { config: { timezone: string; shows: Array<{ id: string }> } };
+    const { config } = await created.json() as { config: { timezone: string; shows: Array<{ id: string }>; profile: { interests: string[] }; host: { voiceId?: string }; music: { taste: string } } };
     assert.equal(config.timezone, 'America/New_York');
+    // The first-start flow's choices are in the new station.
+    assert.deepEqual(config.profile.interests, ['Raumfahrt', 'Natur']);
+    assert.equal(config.host.voiceId, 'Kore');
+    assert.equal(config.music.taste, 'Indie, Krautrock');
     assert.ok(config.shows.some(show => show.id === 'entdecken'));
     assert.equal(((await (await call('/api/station')).json()) as { config: { timezone: string } }).config.timezone, 'America/New_York');
     // A second setup never overwrites the station.

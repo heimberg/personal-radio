@@ -18,7 +18,7 @@ interface StudioActions {
     fun saveStudio()
     fun discardStudio()
     /** First start: sets up the station with the default shows. */
-    fun setUpStation()
+    fun setUpStation(interests: List<String> = emptyList(), voiceId: String? = null, taste: String = "")
     /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
     fun loadInsights()
     fun loadDiagnostics()
@@ -32,7 +32,8 @@ interface StudioActions {
     fun loadInvites()
     fun createInvite(name: String, kind: ch.heimberg.radio.core.ListenerKind)
     fun deleteInvite(id: String)
-    fun removeListener(key: String)
+    fun removeListener(key: String, eraseData: Boolean = false)
+    fun setListenerLimit(key: String, dailyGenerations: Int?)
     fun loadAgents()
     fun loadListening()
     fun connectListening()
@@ -95,16 +96,18 @@ class StudioController(private val ref: HostRef) : StudioActions {
         loadStudio(force = true)
     }
 
-    override fun setUpStation() {
+    override fun setUpStation(interests: List<String>, voiceId: String?, taste: String) {
         if (state.settingUp) return
         state.settingUp = true
         host.scope.launch {
-            val result = runCatching { api.setUp(java.util.TimeZone.getDefault().id) }
+            val result = runCatching { api.setUp(java.util.TimeZone.getDefault().id, interests, voiceId, taste) }
             state.settingUp = false
             state.say(result.fold({ "Dein Radio ist eingerichtet. Das erste Programm wird produziert." }, { host.failure(it) }))
             if (result.isSuccess) {
                 loadStudio(force = true)
                 host.changed()
+                // The first program is on its way: «Hören» shows it as it arrives.
+                state.tab = Tab.LISTEN
             }
         }
     }
@@ -153,9 +156,17 @@ class StudioController(private val ref: HostRef) : StudioActions {
         host.scope.launch { runCatching { api.deleteInvite(id) }.onSuccess { state.say("Einladung zurückgezogen."); loadInvites() }.onFailure { state.say(host.failure(it)) } }
     }
 
-    override fun removeListener(key: String) {
+    override fun removeListener(key: String, eraseData: Boolean) {
         state.removeListenerAsk = null
-        host.scope.launch { runCatching { api.removeListener(key) }.onSuccess { state.say("Zugang entfernt."); loadInvites() }.onFailure { state.say(host.failure(it)) } }
+        host.scope.launch {
+            runCatching { api.removeListener(key, eraseData) }
+                .onSuccess { state.say(if (eraseData) "Zugang und alle Daten entfernt." else "Zugang entfernt."); loadInvites() }
+                .onFailure { state.say(host.failure(it)) }
+        }
+    }
+
+    override fun setListenerLimit(key: String, dailyGenerations: Int?) {
+        host.scope.launch { runCatching { api.setListenerLimit(key, dailyGenerations) }.onSuccess { loadInvites() }.onFailure { state.say(host.failure(it)) } }
     }
 
     override fun loadLlmCalls(more: Boolean) {

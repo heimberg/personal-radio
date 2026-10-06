@@ -369,7 +369,21 @@ data class Insights(
     val changes: List<String> = emptyList(),
     /** Productions per show in the last seven days, most first: where the costs go. */
     val byShow: List<Pair<String, Int>> = emptyList(),
+    /** Shows the jury keeps marking below its bar (30 days), weakest first, with its latest notes. */
+    val weakShows: List<WeakShow> = emptyList(),
+    val juryBar: Double = 0.0,
 ) {
+    data class WeakShow(val showName: String, val average: Double, val count: Int, val notes: List<String>) {
+        /** What to try first: a sharper instruction when the notes are about the text, more sources when they are about substance. */
+        val hint: String get() {
+            val text = notes.joinToString(" ").lowercase()
+            return when {
+                listOf("quelle", "fakt", "beleg", "recherche", "fehlt", "tiefe", "neu").any { it in text } -> "Mehr oder andere Quellen geben (Feeds oder Recherche-Auftrag der Sendung)."
+                listOf("einstieg", "hook", "länge", "lang", "struktur", "faden", "klar").any { it in text } -> "Die Anweisungen der Sendung schärfen, etwa Einstieg, Länge oder roten Faden."
+                else -> "Die Anweisungen der Sendung oder ihre Quellen anpassen; ein Probelauf unter Redaktion zeigt den Unterschied."
+            }
+        }
+    }
     data class UsageDay(val day: String, val generations: Int, val ttsCharacters: Int, val models: List<ModelUse>) {
         /** Speech requests: the calls to the speech models. */
         val speechRequests: Int get() = models.filter { "tts" in it.model && !it.model.endsWith(":abgelehnt") }.sumOf { it.calls }
@@ -404,6 +418,12 @@ data class Insights(
                     val b = element as? JsonObject ?: return@mapNotNull null
                     b.text("showName").ifBlank { b.text("showId") } to number(b, "count").toInt()
                 }.orEmpty(),
+                weakShows = (root["weakShows"] as? JsonArray)?.mapNotNull { element ->
+                    val w = element as? JsonObject ?: return@mapNotNull null
+                    WeakShow(w.text("showName").ifBlank { w.text("showId") }, number(w, "average"), number(w, "count").toInt(),
+                        (w["notes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty())
+                }.orEmpty(),
+                juryBar = number(root, "juryBar"),
                 quality = (root["quality"] as? JsonArray)?.mapNotNull { element ->
                     val q = element as? JsonObject ?: return@mapNotNull null
                     QualityMark(q.text("createdAt").take(10), q.text("showName"), number(q, "overall"))

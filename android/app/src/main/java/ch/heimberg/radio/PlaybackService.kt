@@ -412,11 +412,14 @@ class PlaybackService : MediaLibraryService() {
         return MediaItem.Builder().setMediaId(step.mediaId).setUri(uri).setMediaMetadata(metadata.build()).build()
     }
 
-    /** Downloads upcoming spoken segments into the cache while the network is available. */
+    /**
+     * Downloads upcoming spoken segments into the cache while the network is available: about the next
+     * half hour of speech, so a tunnel or a dead spot does not stop the program (the cache keeps 300 MB).
+     */
     private fun prefetch(items: List<SpeechStep>) {
         val connection = connection ?: return
         scope.launch(Dispatchers.IO) {
-            for (item in items.take(4)) {
+            for (item in items.take(PREFETCH_STEPS)) {
                 runCatching {
                     val spec = DataSpec(Uri.parse(connection.resolve(item.audioUrl)))
                     CacheWriter(dataSourceFactory.createDataSource(), spec, null, null).cache()
@@ -628,6 +631,8 @@ class PlaybackService : MediaLibraryService() {
 
         /** Spotify reports the end; the placeholder only runs out if Spotify never does. */
         private const val SPOTIFY_MARGIN_MS = 60_000L
+        /** Spoken parts kept ready ahead of playback. */
+        private const val PREFETCH_STEPS = 12
         private const val SPOTIFY_RETRY_MS = 2 * 60_000L
     }
 }

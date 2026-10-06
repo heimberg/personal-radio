@@ -740,6 +740,9 @@ class InviteTest {
         assertEquals(listOf("a"), overview.open.map { it.id })
         assertEquals(ListenerKind.KIDS, overview.invites[0].listenerKind)
         assertEquals(ListenerKind.GUEST, overview.listeners[0].listenerKind)
+        val used = InviteOverview.parse("""{"listeners":[{"key":"lea","name":"Lea","kind":"family","limit":6,"ownLimit":6,"usage":{"today":{"generations":4,"characters":900},"week":{"generations":30}}}],"own":{"limit":24}}""")
+        assertEquals("Heute 4 von 6 · 7 Tage 30 Produktionen", used.listeners[0].usage.line(used.listeners[0].limit))
+        assertEquals(24, used.own?.limit)
         val created = InviteOverview.created("""{"id":"a","code":"K7QM-ABCD-2345-WXYZ","link":"https://radio.example/join?code=K7QM-ABCD-2345-WXYZ","expiresAt":"x"}""")
         assertTrue(created.message("Lea", "Radio Heimberg").contains("«Radio Heimberg»"))
         assertTrue(created.message("Lea", null).contains(created.link))
@@ -766,5 +769,17 @@ class LlmCallTest {
         assertFalse(calls[1].failed || calls[1].speech)
         assertEquals("1,0 s · 1234 → 56 Tokens", calls[1].meta)
         assertEquals("1,8 s", calls[0].meta)
+    }
+}
+
+class WeakShowTest {
+    @Test fun weakShowsParseWithAHintFromTheNotes() {
+        val insights = Insights.parse("""{"usage":{"days":[],"limits":{}},"juryBar":3.5,"weakShows":[
+            {"showId":"kurz","showName":"Kurzbeitrag","average":3.0,"count":4,"notes":["Einstieg zu langsam"]},
+            {"showId":"hg","showName":"Hintergrund","average":3.2,"count":3,"notes":["Es fehlen Fakten zur Lage heute"]}]}""")
+        assertEquals(3.5, insights.juryBar)
+        assertEquals(listOf("Kurzbeitrag", "Hintergrund"), insights.weakShows.map { it.showName })
+        assertTrue(insights.weakShows[0].hint.startsWith("Die Anweisungen der Sendung schärfen"))
+        assertTrue(insights.weakShows[1].hint.startsWith("Mehr oder andere Quellen"))
     }
 }

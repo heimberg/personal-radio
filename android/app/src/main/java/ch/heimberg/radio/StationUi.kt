@@ -159,6 +159,16 @@ fun QualityContent(state: RadioState, actions: RadioActions) {
         QualityBars(days, insights.changes.toSet())
         if (insights.changes.isNotEmpty()) Text("Senkrechte Linie: Tag, an dem du die Redaktion geändert hast.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     }
+    if (insights.weakShows.isNotEmpty()) {
+        Text("UNTER DER LATTE (${"%.1f".format(insights.juryBar)})", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 6.dp))
+        for (show in insights.weakShows) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text("${show.showName} · ★ ${"%.1f".format(show.average)} aus ${show.count}", style = MaterialTheme.typography.titleSmall)
+                for (note in show.notes) Text("«$note»", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text("Vorschlag: ${show.hint}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
     Text("WAS DU BEMÄNGELT HAST", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 6.dp))
     if (insights.reasons.isEmpty()) Text("Nichts. Mit 👎 und einem Grund lernt das Radio, was dich stört.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     for (reason in insights.reasons) {
@@ -528,6 +538,7 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
         }
     }
     Text("Hören mit", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    overview.own?.let { own -> Text("Du: ${own.usage.line(own.limit)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
     if (overview.listeners.isEmpty()) Text("Noch niemand – nur du.", style = MaterialTheme.typography.bodyMedium)
     for (listener in overview.listeners) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -535,16 +546,35 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
                 Text(listener.name.replaceFirstChar(Char::uppercase), style = MaterialTheme.typography.bodyMedium)
                 Text(listOfNotNull(listener.listenerKind.label, listener.since?.let { "seit ${day(it)}" }, if (!listener.removable) "im Worker eingetragen" else null).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                Text(listener.usage.line(listener.limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
             }
-            if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Entfernen") }
+            if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Verwalten") }
         }
     }
     state.removeListenerAsk?.let { listener ->
+        var erase by remember(listener.key) { mutableStateOf(false) }
+        var limit by remember(listener.key) { mutableStateOf(listener.limit) }
         AlertDialog(
             onDismissRequest = { state.removeListenerAsk = null },
-            title = { Text("${listener.name} entfernen?") },
-            text = { Text("Die App von ${listener.name} kommt sofort nicht mehr auf dein Radio. Für einen neuen Zugang braucht es eine neue Einladung.") },
-            confirmButton = { TextButton(onClick = { actions.removeListener(listener.key) }) { Text("Entfernen") } },
+            title = { Text(listener.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Produktionen pro Tag", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { limit = (limit - 2).coerceAtLeast(1) }) { Text("−") }
+                        Text("$limit", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { limit = (limit + 2).coerceAtMost(500) }) { Text("+") }
+                        TextButton(onClick = { actions.setListenerLimit(listener.key, limit); state.removeListenerAsk = null }, enabled = limit != listener.limit) { Text("Speichern") }
+                    }
+                    Text("Entfernen: Die App von ${listener.name} kommt sofort nicht mehr auf dein Radio. Für einen neuen Zugang braucht es eine neue Einladung.",
+                        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = erase, onCheckedChange = { erase = it })
+                        Text("Auch alle Daten löschen (Programm, Audio, Einstellungen, Nachrichten)", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { actions.removeListener(listener.key, erase) }) { Text(if (erase) "Entfernen und löschen" else "Entfernen") } },
             dismissButton = { TextButton(onClick = { state.removeListenerAsk = null }) { Text("Abbrechen") } },
             containerColor = Nocturne.surface,
         )

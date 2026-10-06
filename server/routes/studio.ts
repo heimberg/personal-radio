@@ -6,12 +6,12 @@ import type { TrialAgent } from '../station.ts';
 import { ConfigError, MOOD_IDS, defaultStationConfig, formatList, parseStationConfig } from '../../src/domain/station.ts';
 import type { MoodId, StationConfig } from '../../src/domain/station.ts';
 import { endOfDay } from '../../src/domain/mood.ts';
-import { AGENTS, parseAgentConfig } from '../../src/domain/agents.ts';
+import { AGENTS, agentOf, parseAgentConfig, resolveAgents } from '../../src/domain/agents.ts';
 import { AGENT_PRESETS } from '../../src/domain/agent-presets.ts';
 import { usageSummary } from '../usage.ts';
 import { FEATURES, featureOn, parseFeatures, parseHiddenBlocks } from '../../src/domain/features.ts';
 import { allBlockViews } from '../../src/domain/blocks.ts';
-import { isKids, listenersOf } from '../listeners.ts';
+import { generationLimit, isKids, listenersOf } from '../listeners.ts';
 import { FEEDBACK_REASONS, NOTE_MIN_COUNT, NOTE_WINDOW_DAYS, listenerNotes } from '../../src/domain/listener-notes.ts';
 import { json, readJson } from '../http.ts';
 import { backupRoutes } from '../backups.ts';
@@ -48,10 +48,24 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (!sameOrigin) return json({ error: 'origin_rejected' }, 403);
     if (await store.getConfig(owner)) return json({ error: 'already_configured' }, 409);
-    const body = await readJson(request, 1024);
+    const body = await readJson(request, 4096);
     if (body.error) return body.error;
-    const timezone = (body.value as { timezone?: unknown } | null)?.timezone;
-    const config = defaultStationConfig({ timezone: typeof timezone === 'string' ? timezone : undefined });
+    // The first-start flow may bring interests, a voice and a music taste; the rest are the defaults.
+    const input = (body.value ?? {}) as { timezone?: unknown; interests?: unknown; voiceId?: unknown; taste?: unknown };
+    const base = defaultStationConfig({ timezone: typeof input.timezone === 'string' ? input.timezone : undefined });
+    const interests = Array.isArray(input.interests)
+      ? [...new Set(input.interests.filter((item): item is string => typeof item === 'string').map(item => item.replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))].slice(0, 20) : [];
+    let config = base;
+    try {
+      config = parseStationConfig({
+        ...base,
+        ...(interests.length ? { profile: { ...base.profile, interests } } : {}),
+        ...(typeof input.voiceId === 'string' && input.voiceId.trim() ? { host: { ...base.host, voiceId: input.voiceId.trim().slice(0, 100) } } : {}),
+        ...(typeof input.taste === 'string' && input.taste.trim() ? { music: { ...base.music, taste: input.taste.trim().slice(0, 300) } } : {}),
+      });
+    } catch (error) {
+      return json({ error: 'invalid_setup', detail: error instanceof Error ? error.message.slice(0, 200) : 'ungültig' }, 400);
+    }
     await store.saveConfig(owner, config, new Date());
     await refreshProgram(env, owner, false);
     return json({ config }, 201);
@@ -133,12 +147,20 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
     const now = new Date(), since = new Date(now.getTime() - 30 * 86_400_000);
     const [counts, quality, changes, usage, config, byShow] = await Promise.all([
       store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
-      usageSummary(env.DB, owner, now, 14, { generations: Math.max(1, Number(env.DAILY_GENERATIONS) || 24), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
+      usageSummary(env.DB, owner, now, 14, { generations: generationLimit(owner, await listenersOf(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24)), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
         env.GEMINI_API_KEY ? { model: env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts', liteModel: env.GEMINI_TTS_LITE_MODEL || 'gemini-3.8-flash-lite-tts', dailyRequests: Math.max(1, Number(env.GEMINI_TTS_DAILY_REQUESTS) || 100) } : undefined),
       store.getConfig(owner),
       store.producedByShow(owner, new Date(now.getTime() - 7 * 86_400_000)),
     ]);
+    // Shows the jury keeps marking below its bar over 30 days (at least three marks), weakest first, with its latest notes.
+    const bar = agentOf(config?.agents ? resolveAgents(config.agents) : undefined, 'jury').threshold;
+    const perShow = new Map<string, number[]>();
+    for (const entry of quality) perShow.set(entry.showId, [...perShow.get(entry.showId) ?? [], entry.overall]);
+    const weak = [...perShow].map(([showId, marks]) => ({ showId, count: marks.length, average: Math.round(marks.reduce((sum, mark) => sum + mark, 0) / marks.length * 10) / 10 }))
+      .filter(show => show.count >= 3 && show.average < bar).sort((a, b) => a.average - b.average).slice(0, 5);
+    const weakShows = await Promise.all(weak.map(async show => ({ ...show, showName: showNameOf(show.showId, config), notes: await store.juryNotes(owner, show.showId) })));
     return json({
+      weakShows, juryBar: bar,
       byShow: byShow.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
       reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
       notes: listenerNotes(counts),

@@ -8,7 +8,7 @@ import { AGENTS, resolveAgents } from '../src/domain/agents.ts';
  * A further listener: their owner ID in the database, whether the station is for a child, and for those
  * who joined by invitation their name and whether they are a guest (an own station, but not in the family).
  */
-export interface Listener { owner: string; kids: boolean; guest?: boolean; name?: string }
+export interface Listener { owner: string; kids: boolean; guest?: boolean; name?: string; dailyGenerations?: number }
 
 export type ListenerKind = 'family' | 'kids' | 'guest';
 
@@ -32,7 +32,7 @@ export function parseListeners(value: string | undefined): Map<string, Listener>
   return listeners;
 }
 
-interface InvitedRow { client_id: string; owner_id: string; name: string; kind: ListenerKind }
+interface InvitedRow { client_id: string; owner_id: string; name: string; kind: ListenerKind; daily_generations?: number | null }
 
 // Per isolate for half a minute: every request needs the listeners, joining is rare.
 let cached: { at: number; db: unknown; rows: InvitedRow[] } | null = null;
@@ -48,8 +48,10 @@ export function forgetListeners() { cached = null; }
 export async function listenersOf(env: { LISTENERS?: string; DB: { prepare(sql: string): { all<T>(): Promise<{ results: T[] }> } } }, now = Date.now()): Promise<Map<string, Listener>> {
   const listeners = parseListeners(env.LISTENERS);
   if (!cached || cached.db !== env.DB || now - cached.at > CACHE_MS) {
-    const rows = await env.DB.prepare('SELECT client_id, owner_id, name, kind FROM invited_listeners ORDER BY created_at').all<InvitedRow>()
-      .then(result => result.results).catch(() => [] as InvitedRow[]);
+    // Before migration 0019 there is no limit column: read without it.
+    const read = async (columns: string) => (await env.DB.prepare(`SELECT ${columns} FROM invited_listeners ORDER BY created_at`).all<InvitedRow>()).results;
+    const rows = await read('client_id, owner_id, name, kind, daily_generations')
+      .catch(() => read('client_id, owner_id, name, kind')).catch(() => [] as InvitedRow[]);
     cached = { at: now, db: env.DB, rows };
   }
   return withInvited(listeners, cached.rows);
@@ -58,7 +60,8 @@ export async function listenersOf(env: { LISTENERS?: string; DB: { prepare(sql: 
 function withInvited(listeners: Map<string, Listener>, rows: InvitedRow[]): Map<string, Listener> {
   for (const row of rows) {
     if (listeners.has(row.client_id)) continue;
-    listeners.set(row.client_id, { owner: row.owner_id, kids: row.kind === 'kids', guest: row.kind === 'guest', name: row.name });
+    listeners.set(row.client_id, { owner: row.owner_id, kids: row.kind === 'kids', guest: row.kind === 'guest', name: row.name,
+      ...(typeof row.daily_generations === 'number' && row.daily_generations > 0 ? { dailyGenerations: row.daily_generations } : {}) });
   }
   return listeners;
 }
@@ -74,6 +77,12 @@ export function listenersNow(env: { LISTENERS?: string; DB: unknown }): Map<stri
 /** Every station the Worker keeps: the owner first, then the listeners. */
 export function allOwners(ownerEmail: string | undefined, listeners: Map<string, Listener>): string[] {
   return [...new Set([...(ownerEmail ? [ownerEmail.toLowerCase()] : []), ...[...listeners.values()].map(listener => listener.owner)])];
+}
+
+/** A station's daily production limit: its own (invited listeners) or the Worker's. */
+export function generationLimit(owner: string, listeners: Map<string, Listener>, fallback: number): number {
+  for (const listener of listeners.values()) if (listener.owner === owner && listener.dailyGenerations) return listener.dailyGenerations;
+  return fallback;
 }
 
 export const isKids = (owner: string, listeners: Map<string, Listener>) => [...listeners.values()].some(listener => listener.owner === owner && listener.kids);

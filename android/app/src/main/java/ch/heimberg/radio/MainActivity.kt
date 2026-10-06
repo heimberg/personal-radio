@@ -702,6 +702,8 @@ class MainActivity private constructor(
                 state.heard = timeline.items.filter { it.isHeard }
                 mitmachen.stickersNow(timeline.play.stickers)
                 state.play = timeline.play
+                // A new listener (often just joined by invitation): nothing planned, nothing heard – maybe not set up yet.
+                if (!state.loaded && state.open.isEmpty() && state.heard.isEmpty()) studio.loadStudio()
                 state.loaded = true
                 renderTimes()
             }

@@ -66,6 +66,8 @@ private const val LONG_MESSAGE = 90
 fun RadioApp(state: RadioState, actions: RadioActions, version: String) {
     val snackbar = remember { SnackbarHostState() }
     // Messages stay short on screen; a long one (an error with Spotify's words) opens in full on «Details».
+    // Not set up yet: the first-start flow in the studio comes first.
+    LaunchedEffect(state.studioMissing) { if (state.studioMissing) state.tab = Tab.STUDIO }
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
         val long = message.text.length > LONG_MESSAGE

@@ -3,6 +3,8 @@ import type { Environment } from '../http.ts';
 import { StationStore } from '../station-store.ts';
 import { allOwners, listenersOf, parseListeners, type ListenerKind } from '../listeners.ts';
 import { InviteStore, KINDS, cloudflareIssuer, normalizeCode, type TokenIssuer } from '../invites.ts';
+import { eraseStation } from '../erase.ts';
+import { avatarKey } from '../family.ts';
 
 const APP_APK = 'app/personal-radio.apk';
 
@@ -20,15 +22,29 @@ export async function inviteRoutes(request: Request, env: Environment, owner: st
   if (request.method !== 'GET' && request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
   const invites = new InviteStore(env.DB), now = new Date();
   if (url.pathname === '/api/invites' && request.method === 'GET') {
-    const [open, joined] = await Promise.all([invites.list(now), invites.listeners()]);
+    const since = new Date(now.getTime() - 6 * 86_400_000).toISOString().slice(0, 10), today = now.toISOString().slice(0, 10);
+    const [open, joined, generations, speech] = await Promise.all([invites.list(now), invites.listeners(),
+      env.DB.prepare('SELECT owner_id, utc_day, requests FROM daily_requests WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; requests: number }>(),
+      env.DB.prepare('SELECT owner_id, utc_day, characters FROM daily_usage WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; characters: number }>()]);
+    // What each station used: productions and spoken characters, today and over seven days.
+    const usage = (station: string) => {
+      const mine = <T extends { owner_id: string; utc_day: string }>(rows: T[]) => rows.filter(row => row.owner_id === station);
+      const g = mine(generations.results), c = mine(speech.results);
+      return { today: { generations: g.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.requests), 0), characters: c.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.characters), 0) },
+        week: { generations: g.reduce((sum, row) => sum + Number(row.requests), 0), characters: c.reduce((sum, row) => sum + Number(row.characters), 0) } };
+    };
+    const fallback = Math.max(1, Number(env.DAILY_GENERATIONS) || 24);
     const fromSecret = [...parseListeners(env.LISTENERS).values()].map(listener => ({
       key: listener.owner.slice('listener:'.length), name: listener.owner.slice('listener:'.length), kind: listener.kids ? 'kids' : 'family', removable: false,
+      limit: fallback, usage: usage(listener.owner),
     }));
     return json({
       ready: !!issuer,
       invites: open.map(row => ({ id: row.id, name: row.name, kind: row.kind, expiresAt: row.expires_at, usedAt: row.used_at,
         expired: !row.used_at && row.expires_at <= now.toISOString() })),
-      listeners: [...fromSecret, ...joined.map(row => ({ key: row.owner_id.slice('listener:'.length), name: row.name, kind: row.kind, since: row.created_at, removable: true }))],
+      listeners: [...fromSecret, ...joined.map(row => ({ key: row.owner_id.slice('listener:'.length), name: row.name, kind: row.kind, since: row.created_at, removable: true,
+        limit: row.daily_generations ?? fallback, ownLimit: row.daily_generations ?? null, usage: usage(row.owner_id) }))],
+      own: { limit: fallback, usage: usage(owner) },
     }, 200);
   }
   if (url.pathname === '/api/invites' && request.method === 'POST') {
@@ -45,9 +61,24 @@ export async function inviteRoutes(request: Request, env: Environment, owner: st
   const inviteMatch = url.pathname.match(/^\/api\/invites\/([0-9a-f-]{36})$/);
   if (inviteMatch && request.method === 'DELETE') return await invites.remove(inviteMatch[1]) ? json({ removed: true }, 200) : json({ error: 'not_found' }, 404);
   const listenerMatch = url.pathname.match(/^\/api\/listeners\/([a-z0-9-]{2,40})$/);
+  if (listenerMatch && request.method === 'PATCH') {
+    const body = await readJson(request, 500);
+    if (body.error) return body.error;
+    const raw = (body.value as { dailyGenerations?: unknown } | undefined)?.dailyGenerations;
+    const limit = raw === null ? null : Number(raw);
+    if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 500)) return json({ error: 'invalid_limit', detail: 'Zwischen 1 und 500 Produktionen pro Tag.' }, 400);
+    return await invites.setLimit(`listener:${listenerMatch[1]}`, limit) ? json({ dailyGenerations: limit }, 200) : json({ error: 'not_found' }, 404);
+  }
   if (listenerMatch && request.method === 'DELETE') {
     if (!issuer) return json({ error: 'invites_not_configured' }, 409);
-    return await invites.removeListener(`listener:${listenerMatch[1]}`, issuer) ? json({ removed: true }, 200) : json({ error: 'not_found' }, 404);
+    const station = `listener:${listenerMatch[1]}`;
+    if (!await invites.removeListener(station, issuer)) return json({ error: 'not_found' }, 404);
+    // «Auch alle Daten löschen»: the station goes too, not just the access.
+    if (url.searchParams.get('data') === '1') {
+      const erased = await eraseStation(env.DB, env.AUDIO, station, avatarKey({ key: listenerMatch[1], owner: station, name: '', kids: false }));
+      return json({ removed: true, erased }, 200);
+    }
+    return json({ removed: true }, 200);
   }
   return json({ error: 'method_not_allowed' }, 405);
 }
