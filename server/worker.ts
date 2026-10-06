@@ -17,6 +17,31 @@ import { programRoutes } from './routes/program.ts';
 import { itemRoutes } from './routes/items.ts';
 import { segmentRoutes } from './routes/segments.ts';
 import { inviteRoutes, joinRoutes } from './routes/invites.ts';
+import { devRoutes } from './routes/dev.ts';
+import { withCallContext } from './trace.ts';
+
+/** One authenticated request of [owner]. */
+async function route(request: Request, env: Environment, owner: string, url: URL, ctx?: ExecutionContext): Promise<Response> {
+  if (url.pathname === '/') return landingPage(url);
+  if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+  if (url.pathname === '/api/testing/reset-daily-limits') {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
+    const utcDay = new Date().toISOString().slice(0, 10);
+    try {
+      for (const table of ['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests']) {
+        await env.DB.prepare(`DELETE FROM ${table} WHERE owner_id = ? AND utc_day = ?`).bind(owner, utcDay).run();
+      }
+    } catch { return json({ error: 'quota_reset_unavailable' }, 503); }
+    return json({ reset: true, utcDay }, 200);
+  }
+  for (const routes of [inviteRoutes, devRoutes, voiceRoutes, studioRoutes, familyRoutes, listeningRoutes, listenerRoutes, programRoutes, itemRoutes]) {
+    const response = await routes(request, env, owner, url, ctx);
+    if (response) return response;
+  }
+  if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);
+  return segmentRoutes(request, env, owner, url);
+}
 
 export default {
   async fetch(request: Request, env: Environment, ctx?: ExecutionContext): Promise<Response> {
@@ -26,25 +51,8 @@ export default {
     const auth = await authenticate(request, env);
     if (auth.owner === null) return json({ error: 'unauthorized', reason: auth.reason }, 401);
     const owner = auth.owner;
-    if (url.pathname === '/') return landingPage(url);
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
-    if (url.pathname === '/api/testing/reset-daily-limits') {
-      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
-      if (request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
-      const utcDay = new Date().toISOString().slice(0, 10);
-      try {
-        for (const table of ['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests']) {
-          await env.DB.prepare(`DELETE FROM ${table} WHERE owner_id = ? AND utc_day = ?`).bind(owner, utcDay).run();
-        }
-      } catch { return json({ error: 'quota_reset_unavailable' }, 503); }
-      return json({ reset: true, utcDay }, 200);
-    }
-    for (const routes of [inviteRoutes, voiceRoutes, studioRoutes, familyRoutes, listeningRoutes, listenerRoutes, programRoutes, itemRoutes]) {
-      const response = await routes(request, env, owner, url, ctx);
-      if (response) return response;
-    }
-    if (url.pathname !== '/api/segments') return json({ error: 'not_found' }, 404);
-    return segmentRoutes(request, env, owner, url);
+    // Provider calls made for this request (and the work it hands to waitUntil) belong to this station.
+    return withCallContext({ owner }, () => route(request, env, owner, url, ctx));
   },
 
   /** Cron: keep every station's program filled ahead of playback (each only while its listener listens). */
@@ -60,7 +68,7 @@ export default {
       for (const owner of owners) ctx.waitUntil(backupStation(env, owner, now).catch(error => console.error('backup failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
     }
     for (const owner of owners) {
-      ctx.waitUntil(refreshProgram(env, owner, true).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
+      ctx.waitUntil(withCallContext({ owner }, () => refreshProgram(env, owner, true)).catch(error => console.error('program refresh failed', error instanceof Error ? error.message.slice(0, 160) : 'unknown')));
     }
   },
 
@@ -74,7 +82,7 @@ export default {
         const deps = stationDeps(env, owner);
         try {
           // A long hour is voiced in several invocations: the next part follows in a new message.
-          if (await produceItem(deps, owner, body.itemId) === 'continue') await env.PRODUCTION.send({ owner, itemId: body.itemId });
+          if (await withCallContext({ owner, itemId: body.itemId }, () => produceItem(deps, owner, body.itemId!)) === 'continue') await env.PRODUCTION.send({ owner, itemId: body.itemId });
         } catch (error) {
           const detail = error instanceof Error ? error.message.slice(0, 300) : 'unknown';
           console.error('segment production failed', detail.slice(0, 160));

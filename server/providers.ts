@@ -203,18 +203,33 @@ export interface Researcher { research(request: ResearchRequest): Promise<Resear
  * become source material, grouped by that result; ungrounded text is discarded. The scripts are then
  * written from these sources exactly like from feed articles, so the usual checks apply.
  */
+/** Grounded search runs on the small model: it only finds and quotes sources, the writing comes later. */
+export const RESEARCH_MODEL = 'gemini-2.5-flash-lite';
+
 export class GeminiResearcher implements Researcher {
   private key: string;
   private model: string;
+  private fallback?: string;
   private fetcher: Fetch;
-  constructor(config: { key: string; model?: string }, fetcher: Fetch = fetch) {
+  /** [fallback] takes over for good when the project does not offer [model] (404/400). */
+  constructor(config: { key: string; model?: string; fallback?: string }, fetcher: Fetch = fetch) {
     if (!config.key) throw new Error('Gemini configuration incomplete');
-    this.key = config.key; this.model = geminiModel(config.model, 'gemini-3.8-flash'); this.fetcher = fetcher;
+    this.key = config.key; this.model = geminiModel(config.model, RESEARCH_MODEL); this.fetcher = fetcher;
+    const fallback = config.fallback ? geminiModel(config.fallback, 'gemini-3.8-flash') : undefined;
+    if (fallback && fallback !== this.model) this.fallback = fallback;
   }
   async research(request: ResearchRequest): Promise<ResearchResult> {
+    try { return await this.search(this.model, request); }
+    catch (error) {
+      if (!this.fallback || !(error instanceof ProviderError) || (error.status !== 404 && error.status !== 400)) throw error;
+      this.model = this.fallback; this.fallback = undefined;
+      return this.search(this.model, request);
+    }
+  }
+  private async search(model: string, request: ResearchRequest): Promise<ResearchResult> {
     const brief = request.brief.trim().slice(0, 1000) || 'Finde aktuelle, wenig bekannte Entwicklungen zu meinen Interessen.';
     const agent = request.agent ?? agentOf(undefined, 'research');
-    const { grounding } = await geminiGenerate(this.fetcher, this.key, this.model, {
+    const { grounding } = await geminiGenerate(this.fetcher, this.key, model, {
       systemInstruction: { parts: [{ text: `Du recherchierst für ein persönliches deutschsprachiges Radio. Nutze die Google-Suche. ${agent.instructions}` }] },
       contents: [{ role: 'user', parts: [{ text: JSON.stringify({ auftrag: brief, interessen: request.interests.slice(0, 30),
         heute: request.now.toISOString().slice(0, 10), bereits_behandelt: request.avoidTopics.slice(0, 15) }) }] }],

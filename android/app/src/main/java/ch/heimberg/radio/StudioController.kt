@@ -22,6 +22,8 @@ interface StudioActions {
     /** Usage and quality, the agents, the listening profile: loaded when their card opens. */
     fun loadInsights()
     fun loadDiagnostics()
+    /** Developer view: the newest provider calls, or the next page with [more]. */
+    fun loadLlmCalls(more: Boolean = false)
     /** Sicherungen: list, copy now, bring one back. */
     fun loadBackups()
     fun backupNow()
@@ -154,6 +156,15 @@ class StudioController(private val ref: HostRef) : StudioActions {
     override fun removeListener(key: String) {
         state.removeListenerAsk = null
         host.scope.launch { runCatching { api.removeListener(key) }.onSuccess { state.say("Zugang entfernt."); loadInvites() }.onFailure { state.say(host.failure(it)) } }
+    }
+
+    override fun loadLlmCalls(more: Boolean) {
+        val before = if (more) state.llmCalls?.lastOrNull()?.id else null
+        host.scope.launch {
+            runCatching { api.llmCalls(before, state.llmFailedOnly) }
+                .onSuccess { page -> state.llmCalls = if (more) state.llmCalls.orEmpty() + page else page }
+                .onFailure { state.say(host.failure(it)) }
+        }
     }
 
     override fun loadDiagnostics() {

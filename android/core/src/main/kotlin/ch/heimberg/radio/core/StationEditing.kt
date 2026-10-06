@@ -428,3 +428,27 @@ data class ListeningProfile(val connected: Boolean, val artists: List<String>) {
         }
     }
 }
+
+/** One provider call in the owner's developer view (`GET /api/dev/calls`). */
+@kotlinx.serialization.Serializable
+data class LlmCall(
+    val id: Long, val at: String, val station: String? = null, val itemId: String? = null, val provider: String, val model: String,
+    val purpose: String, val status: Int, val ms: Long, val inputTokens: Long = 0, val outputTokens: Long = 0,
+    val request: String = "", val response: String = "",
+) {
+    val failed: Boolean get() = status >= 400
+    /** Speech models answer with audio; their «request» is the text to speak. */
+    val speech: Boolean get() = model.contains("tts", ignoreCase = true) || provider == "mistral" || request.startsWith("TEXT:")
+    /** «1,8 s · 1 234 → 56 Tokens» */
+    val meta: String get() {
+        val seconds = String.format(java.util.Locale.GERMAN, "%.1f s", ms / 1000.0)
+        val tokens = if (inputTokens + outputTokens > 0) " · $inputTokens → $outputTokens Tokens" else ""
+        return "$seconds$tokens"
+    }
+
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+        fun parse(body: String): List<LlmCall> =
+            ((json.parseToJsonElement(body).jsonObject["calls"]) as? JsonArray)?.mapNotNull { runCatching { json.decodeFromJsonElement(serializer(), it) }.getOrNull() }.orEmpty()
+    }
+}

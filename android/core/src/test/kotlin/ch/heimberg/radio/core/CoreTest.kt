@@ -754,3 +754,17 @@ class QualityLineTest {
         assertEquals("Qualität 4,5 von 5", Quality(4.5).line())
     }
 }
+
+class LlmCallTest {
+    @Test fun callsParseWithMetaAndKinds() {
+        val calls = LlmCall.parse("""{"calls":[
+            {"id":2,"at":"2026-10-06T08:01:00Z","station":"Lea","provider":"gemini","model":"gemini-3.8-flash-tts","purpose":"Aufruf","status":500,"ms":1840,"request":"TEXT: Hallo","response":"kaputt"},
+            {"id":1,"at":"2026-10-06T08:00:00Z","station":"Papa","itemId":"i1","provider":"gemini","model":"gemini-2.5-flash-lite","purpose":"Du recherchierst.","status":200,"ms":950,"inputTokens":1234,"outputTokens":56,"request":"SYSTEM: x","response":"y","extra":true},
+            {"broken":true}]}""")
+        assertEquals(listOf(2L, 1L), calls.map { it.id })
+        assertTrue(calls[0].failed && calls[0].speech)
+        assertFalse(calls[1].failed || calls[1].speech)
+        assertEquals("1,0 s · 1234 → 56 Tokens", calls[1].meta)
+        assertEquals("1,8 s", calls[0].meta)
+    }
+}
