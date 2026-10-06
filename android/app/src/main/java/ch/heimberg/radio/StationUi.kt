@@ -47,6 +47,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.CostSpan
@@ -536,6 +538,41 @@ private fun BudgetRow(budget: MoneyBudget?, station: String?, title: String, flo
     )
 }
 
+/**
+ * One station in «Hören mit», compact: name, today's productions and costs, and a thin bar for its budget.
+ * A tap shows the rest (seven days, 30 days of costs, the budget to set); «Verwalten» limits or removes.
+ */
+@Composable
+private fun ListenerRow(
+    name: String, kind: String, usage: ch.heimberg.radio.core.StationUsage, limit: Int, station: String, budgetTitle: String, floor: Int,
+    actions: RadioActions, manage: (() -> Unit)? = null,
+) {
+    var open by remember(station) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { open = !open }.padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.bodyMedium)
+                Text(usage.compact(limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (manage != null) TextButton(onClick = manage) { Text("Verwalten") }
+            Text(if (open) "▴" else "▾", color = Nocturne.muted, modifier = Modifier.padding(start = 4.dp))
+        }
+        usage.budget?.let { budget ->
+            val color = if (budget.share >= 0.8) Nocturne.kind(Kind.NEWS) else Nocturne.text
+            Canvas(Modifier.fillMaxWidth().height(4.dp).padding(top = 2.dp).semantics { contentDescription = budget.line() }) {
+                drawRoundRect(Nocturne.divider, cornerRadius = CornerRadius(2.dp.toPx()))
+                drawRoundRect(color, size = Size(size.width * budget.share.toFloat().coerceIn(0f, 1f), size.height), cornerRadius = CornerRadius(2.dp.toPx()))
+            }
+        }
+        if (open) {
+            Text(kind, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(top = 4.dp))
+            Text(usage.line(limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+            usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+            BudgetRow(usage.budget, station, budgetTitle, floor, actions)
+        }
+    }
+}
+
 /** Shows the station's usage at a glance for the card summary. */
 fun usageSummary(insights: Insights?): String {
     val today = insights?.days?.firstOrNull() ?: return "Produktionen, Sprache und Aufrufe pro Tag"
@@ -587,23 +624,13 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
     }
     Text("Hören mit", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
     overview.own?.let { own ->
-        Text("Du: ${own.usage.line(own.limit)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-        own.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
-        BudgetRow(own.usage.budget, "own", "Monatsbudget, dein Sender", overview.budgetFloor, actions)
+        ListenerRow("Du", "Besitzer", own.usage, own.limit, "own", "Monatsbudget, dein Sender", overview.budgetFloor, actions)
     }
     if (overview.listeners.isEmpty()) Text("Noch niemand – nur du.", style = MaterialTheme.typography.bodyMedium)
     for (listener in overview.listeners) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(listener.name.replaceFirstChar(Char::uppercase), style = MaterialTheme.typography.bodyMedium)
-                Text(listOfNotNull(listener.listenerKind.label, listener.since?.let { "seit ${day(it)}" }, if (!listener.removable) "im Worker eingetragen" else null).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-                Text(listener.usage.line(listener.limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
-                listener.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
-                BudgetRow(listener.usage.budget, listener.key, "Monatsbudget, ${listener.name}", overview.budgetFloor, actions)
-            }
-            if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Verwalten") }
-        }
+        val kind = listOfNotNull(listener.listenerKind.label, listener.since?.let { "seit ${day(it)}" }, if (!listener.removable) "im Worker eingetragen" else null).joinToString(" · ")
+        ListenerRow(listener.name.replaceFirstChar(Char::uppercase), kind, listener.usage, listener.limit, listener.key, "Monatsbudget, ${listener.name}", overview.budgetFloor, actions,
+            manage = if (listener.removable) ({ state.removeListenerAsk = listener }) else null)
     }
     state.removeListenerAsk?.let { listener ->
         var erase by remember(listener.key) { mutableStateOf(false) }

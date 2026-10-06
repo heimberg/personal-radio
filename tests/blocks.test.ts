@@ -68,6 +68,13 @@ test('a weather block comes right after the playing item and is produced with da
   assert.deepEqual((await h.store.openItems('o')).map(item => item.id), [first, id, second, last]);
   assert.equal(toView((await h.store.getItem('o', id))!, null).showName, 'Wetter');
   assert.equal(await produceItem(h.deps, 'o', id), 'ready');
+  // The last step stays recorded, but a finished item shows no progress.
+  const produced = (await h.store.getItem('o', id))!;
+  assert.equal(produced.stage, 'voicing');
+  assert.equal(toView(produced, null).stage, undefined);
+  const running = { ...produced, state: 'planned' as const, stage: 'writing', lease_until: new Date(Date.now() + 60_000).toISOString() };
+  assert.equal(toView(running, null).stage, 'writing');
+  assert.equal(toView({ ...running, error: 'TIMEOUT' }, null).stage, undefined, 'a retry waiting with an error shows none');
   assert.match(h.seen.direction!.instructions!, /Heute ist Montag, 28\. September 2026; der Beitrag läuft voraussichtlich am Morgen\. Das aktuelle Wetter steht in der Quelle «wetter»\./);
   assert.deepEqual(h.seen.sources.map(item => item.id), ['wetter']);
   // Without a place the weather cannot be told.

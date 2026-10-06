@@ -155,7 +155,7 @@ The Worker runs now. You set up the station in the app (step 9); opening its add
 3. **Android package:** `ch.heimberg.radio` with the SHA-1 fingerprint of your signing key (step 7; the Android workflow prints it in the step *Prepare signing key*).
 4. **User Management:** while the app is in development mode, add the Spotify account you listen with.
 5. On the Worker, add the variable `SPOTIFY_CLIENT_ID` (type *Text*) and the secret `SPOTIFY_CLIENT_SECRET`. Optionally set `SPOTIFY_MARKET` (default `CH`).
-6. In the app: **Studio → Spotify-Hörprofil → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional). The login opens in the browser behind your Access login; then return to the app.
+6. In the app: **Studio → Musik → Mit Spotify verbinden** to share your top artists and private playlists with the song picks (optional). The login opens in the browser behind your Access login; then return to the app.
 
 ### 7. Create the Android signing key
 

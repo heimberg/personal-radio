@@ -1,5 +1,6 @@
-Monatsbudget in Franken: für alle Sender, deinen eigenen und jeden Hörer
-Bei 80 % kommt eine Warnung, danach nur noch wenige Beiträge am Tag
+Studio aufgeräumt: «Mein Radio», «Programm» und «Betrieb»; Spotify jetzt unter «Musik»
+Der erste Beitrag zeigt, wie weit er ist: Recherche, Text, Prüfung, Stimme
+Einladen: pro Person eine kurze Zeile mit Budgetbalken, Details per Antippen
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

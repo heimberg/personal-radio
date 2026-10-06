@@ -59,6 +59,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import ch.heimberg.radio.core.Kind
 import ch.heimberg.radio.core.StudioSettings
 import ch.heimberg.radio.core.VoiceGroups
@@ -150,7 +152,7 @@ private fun StationHero(settings: StudioSettings, state: RadioState) {
 private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioActions) {
     val edit = actions::editStudio
     // What the station does on its own and which blocks the palette shows: one place for all of it.
-    if (state.studioCard == null) Text("EINSTELLUNGEN", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp))
+    Section("MEIN RADIO", "Wie dein Sender klingt und was er spielt", state)
     Card("funktionen", R.drawable.ic_puzzle, Kind.SPECIAL, "Funktionen", state.features?.summary ?: "Was das Radio von selbst macht, und die Bausteine", state) { FeaturesContent(state, actions) }
     Card("sender", R.drawable.ic_microphone, Kind.NEWS, "Sender und Moderation", "${settings.name} · ${settings.hostName} · ${settings.tone}", state) {
         Field("Name des Senders", settings.name) { edit(settings.copy(name = it.take(60))) }
@@ -201,12 +203,14 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Interests(settings, actions)
     }
     val songs = when (settings.between) { 0 -> "Keine Songs zwischen Beiträgen"; 1 -> "1 Song zwischen Beiträgen"; else -> "${settings.between} Songs zwischen Beiträgen" }
-    Card("musik", R.drawable.ic_music_notes, Kind.MUSIC, "Musik", songs + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
+    val spotify = if (state.listening?.connected == true) " · Spotify verbunden" else ""
+    Card("musik", R.drawable.ic_music_notes, Kind.MUSIC, "Musik", songs + spotify + if (settings.taste.isNotBlank()) " · ${settings.taste.take(40)}" else "", state) {
         Text(if (settings.between == 0) "Songs zwischen Beiträgen: aus" else songs, style = MaterialTheme.typography.bodyMedium)
         Slider(value = settings.between.toFloat(), onValueChange = { edit(settings.between(Math.round(it))) }, valueRange = 0f..3f, steps = 2)
         Field("Musikgeschmack", settings.taste, hint = "Genres, Künstler, Stimmungen – so konkret wie möglich.", lines = 2) { edit(settings.copy(taste = it.take(500))) }
         Toggle("Kurze Ansage vor jedem Song", null, settings.announce) { edit(settings.copy(announce = it)) }
-        Text("Dein Spotify-Hörprofil verbindest du unten unter «Spotify-Hörprofil».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        Text("Spotify-Hörprofil", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        ListeningContent(state, actions)
     }
     val sounds = listOf(settings.ident, settings.hourChange, settings.linker, settings.bed).count { it }
     Card("sound", R.drawable.ic_speaker, Kind.NEWS, "Stationssound", "$sounds von 4 an", state) {
@@ -215,27 +219,37 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         Toggle("Live-Übergänge", "Die Moderation verbindet die Beiträge kurz vor der Sendung", settings.linker) { edit(settings.copy(linker = it)) }
         Toggle("Klangteppich", "Leise Musik unter kurzen Moderationen", settings.bed) { edit(settings.copy(bed = it)) }
     }
-    if (state.isHost) {
-        val open = state.invites?.open?.size ?: 0
-        val listening = state.invites?.listeners?.size
-        Card("einladen", R.drawable.ic_users, Kind.STORY, "Einladen", when {
-            listening == null -> "Familie, Kinder oder Gäste mit eigenem Sender"
-            else -> "$listening Hörer${if (open > 0) " · $open offen" else ""}"
-        }, state) { InvitesContent(state, actions) }
-        Card("entwickler", R.drawable.ic_sparkle, Kind.SPECIAL, "Entwickler: KI-Aufrufe", "Jeder Aufruf der letzten zwei Tage, mit Prompt und Antwort", state) { LlmCallsContent(state, actions) }
-    }
     val station = state.station
     if (station != null) {
-        if (state.studioCard == null) Text("PROGRAMM UND REDAKTION", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 4.dp))
+        Section("PROGRAMM", "Sendungen, Quellen und wer sie schreibt und prüft", state)
         Card("sendungen", R.drawable.ic_radio, Kind.DISCOVER, "Sendungen", "${station.shows.count { it.enabled }} aktiv von ${station.shows.size}", state) { ShowsContent(state, actions) }
         Card("feeds", R.drawable.ic_newspaper, Kind.NEWS, "Feeds", if (station.feeds.isEmpty()) "Keine" else station.feeds.joinToString(", ") { it.name }, state) { FeedsContent(state, actions) }
         val changed = station.agents.size
         Card("redaktion", R.drawable.ic_pen_nib, Kind.STORY, "Redaktion", if (changed == 0) "Alle Agenten wie ausgeliefert" else "$changed ${if (changed == 1) "Agent" else "Agenten"} angepasst", state) { AgentsContent(state, actions) }
         Card("qualitaet", R.drawable.ic_star, Kind.SPECIAL, "Qualität", "Noten der Jury und was du bemängelt hast", state) { QualityContent(state, actions) }
-        Card("sicherungen", R.drawable.ic_rewind, Kind.STORY, "Sicherungen", "Jeden Sonntag, die letzten acht – wiederherstellbar", state) { BackupsContent(state, actions) }
-        Card("diagnose", R.drawable.ic_warning_circle, Kind.NEWS, "Diagnose", "Die letzten Fehler und ihr Grund", state) { DiagnosticsContent(state, actions) }
+        Section("BETRIEB", if (state.isHost) "Wer mithört, was es kostet und ob alles läuft" else "Was es kostet und ob alles läuft", state)
+        if (state.isHost) {
+            val open = state.invites?.open?.size ?: 0
+            val listening = state.invites?.listeners?.size
+            Card("einladen", R.drawable.ic_users, Kind.STORY, "Einladen", when {
+                listening == null -> "Familie, Kinder oder Gäste mit eigenem Sender"
+                else -> "$listening Hörer${if (open > 0) " · $open offen" else ""}"
+            }, state) { InvitesContent(state, actions) }
+        }
         Card("verbrauch", R.drawable.ic_chart_bar, Kind.DISCOVER, "Verbrauch", usageSummary(state.insights), state) { UsageContent(state, actions) }
-        Card("spotify", R.drawable.ic_headphones, Kind.MUSIC, "Spotify-Hörprofil", when (state.listening?.connected) { true -> "Verbunden"; false -> "Nicht verbunden"; null -> "Deine Top-Künstler für die Songauswahl" }, state) { ListeningContent(state, actions) }
+        Card("diagnose", R.drawable.ic_warning_circle, Kind.NEWS, "Diagnose", "Die letzten Fehler und ihr Grund", state) { DiagnosticsContent(state, actions) }
+        Card("sicherungen", R.drawable.ic_rewind, Kind.STORY, "Sicherungen", "Jeden Sonntag, die letzten acht – wiederherstellbar", state) { BackupsContent(state, actions) }
+        if (state.isHost) Card("entwickler", R.drawable.ic_sparkle, Kind.SPECIAL, "Entwickler: KI-Aufrufe", "Jeder Aufruf der letzten zwei Tage, mit Prompt und Antwort", state) { LlmCallsContent(state, actions) }
+    }
+}
+
+/** A group of settings in the overview: a kicker and one line on what is in it; hidden while a page is open. */
+@Composable
+private fun Section(title: String, detail: String, state: RadioState) {
+    if (state.studioCard != null) return
+    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 4.dp).semantics { heading() }) {
+        Text(title, style = Kicker, color = Nocturne.muted)
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = Nocturne.faint)
     }
 }
 
@@ -243,7 +257,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
 private val PAGE_TITLES = mapOf(
     "funktionen" to "Funktionen", "sender" to "Sender und Moderation", "stimme" to "Stimme", "ort" to "Wo du hörst",
     "interessen" to "Interessen", "musik" to "Musik", "sound" to "Stationssound", "sendungen" to "Sendungen", "feeds" to "Feeds",
-    "redaktion" to "Redaktion", "qualitaet" to "Qualität", "verbrauch" to "Verbrauch", "diagnose" to "Diagnose", "sicherungen" to "Sicherungen", "spotify" to "Spotify-Hörprofil",
+    "redaktion" to "Redaktion", "qualitaet" to "Qualität", "verbrauch" to "Verbrauch", "diagnose" to "Diagnose", "sicherungen" to "Sicherungen", "einladen" to "Einladen", "entwickler" to "Entwickler: KI-Aufrufe",
 )
 
 /**

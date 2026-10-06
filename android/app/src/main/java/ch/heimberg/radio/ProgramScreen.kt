@@ -336,7 +336,7 @@ fun ItemRow(
             // At least the width of «23:45»; with large system fonts the column grows instead of cutting the time.
             Column(Modifier.widthIn(min = 58.dp)) {
                 Text(timeLabel ?: start?.let(clock::format) ?: "", style = display(22), color = if (live) Nocturne.live else Nocturne.text, maxLines = 1, softWrap = false)
-                Text(if (live) liveLabel else if (item.state == "ready") "" else Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+                Text(if (live) liveLabel else if (item.state == "ready") "" else ch.heimberg.radio.core.ProductionStages.SPOKEN.firstOrNull { it.wire == item.stage }?.label ?: Labels.state(item.state), style = MaterialTheme.typography.labelSmall, color = Nocturne.muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
             }
             val barHeight = (14 + item.estimatedMinutes * 4).toInt().coerceIn(30, 84).dp
             Spacer(Modifier.width(4.dp))

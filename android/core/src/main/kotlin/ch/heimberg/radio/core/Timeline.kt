@@ -35,6 +35,8 @@ data class TimelineItem(
     val choice: StoryChoice? = null,
     /** A quiz question about this item. */
     val quiz: Quiz? = null,
+    /** The production step while it runs (research, writing, editing, checking, voicing, music). */
+    val stage: String? = null,
 ) {
     val displayTitle: String get() = title ?: showName
     val hasMusic: Boolean get() = parts.any { it.isTrack }
@@ -259,5 +261,34 @@ object Labels {
         "SERIES_REMOVED" -> "Die Serie gibt es nicht mehr."
         // An unknown code word is never shown bare; a sentence from the server is shown as it is.
         else -> if (Regex("^[A-Z_]+$").matches(code)) "Unerwarteter Fehler ($code)." else code
+    }
+}
+
+/**
+ * The steps of a spoken production, as the app shows them while the first item is made. The minutes are a
+ * rough guess of what is left from each step on (provider times vary).
+ */
+object ProductionStages {
+    data class Step(val wire: String, val label: String, val minutesLeft: Int)
+
+    val SPOKEN = listOf(
+        Step("research", "Recherche", 4), Step("writing", "Text", 3), Step("editing", "Schlussredaktion", 2),
+        Step("checking", "Faktencheck", 2), Step("voicing", "Stimme", 1),
+    )
+
+    /** Where in [SPOKEN] [stage] is; -1 before the first step (waiting for its turn), null for music. */
+    fun index(stage: String?): Int? = when (stage) {
+        "music" -> null
+        null -> -1
+        else -> SPOKEN.indexOfFirst { it.wire == stage }
+    }
+
+    /** «Schritt 2 von 5: Text · noch etwa 3 Minuten» */
+    fun line(stage: String?): String {
+        val at = index(stage) ?: return "Die Musik wird zusammengestellt …"
+        if (at < 0) return "Wartet auf den Start · erfahrungsgemäss 5–10 Minuten"
+        val step = SPOKEN[at]
+        val left = if (step.minutesLeft == 1) "noch etwa eine Minute" else "noch etwa ${step.minutesLeft} Minuten"
+        return "Schritt ${at + 1} von ${SPOKEN.size}: ${step.label} · $left"
     }
 }

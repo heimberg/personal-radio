@@ -3,7 +3,7 @@
 import type { Environment } from './http.ts';
 
 /** The newest migration this code needs; a test keeps it in step with migrations/. */
-export const LATEST_MIGRATION = '0021_budgets.sql';
+export const LATEST_MIGRATION = '0022_item_stage.sql';
 
 export interface Health { ok: boolean; checks: { database: boolean; migrations: boolean; storage: boolean; speech: boolean; access: boolean } }
 
