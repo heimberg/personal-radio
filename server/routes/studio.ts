@@ -1,4 +1,5 @@
 import { PipelineError } from '../segment-pipeline.ts';
+import { BUDGET_FLOOR, budgetStatus, dailyGenerationLimit } from '../budget.ts';
 import { fetchFeed, FeedError, validateFeedUrl } from '../feed.ts';
 import { StationStore } from '../station-store.ts';
 import { showNameOf, trialAgent } from '../station.ts';
@@ -150,12 +151,15 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
     const isHost = owner === env.ALLOWED_EMAIL?.toLowerCase(), prices = priceList(env);
     const [counts, quality, changes, usage, config, byShow, costs] = await Promise.all([
       store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
-      usageSummary(env.DB, owner, now, 14, { generations: generationLimit(owner, await listenersOf(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24)), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
+      usageSummary(env.DB, owner, now, 14, { generations: await dailyGenerationLimit(env, owner, await listenersOf(env)), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
         env.GEMINI_API_KEY ? { model: env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts', liteModel: env.GEMINI_TTS_LITE_MODEL || 'gemini-3.8-flash-lite-tts', dailyRequests: Math.max(1, Number(env.GEMINI_TTS_DAILY_REQUESTS) || 100) } : undefined),
       store.getConfig(owner),
       store.producedByShow(owner, new Date(now.getTime() - 7 * 86_400_000)),
       isHost ? totalCosts(env.DB, now, prices) : costsByOwner(env.DB, now, prices).then(all => all.get(owner) ?? { today: 0, month: 0 }),
     ]);
+    // The budget that applies here: the whole Worker's for the owner, the station's own for a listener.
+    const budgets = await budgetStatus(env.DB, now, prices);
+    const budget = isHost ? budgets.server : budgets.stations.get(owner);
     // Shows the jury keeps marking below its bar over 30 days (at least three marks), weakest first, with its latest notes.
     const bar = agentOf(config?.agents ? resolveAgents(config.agents) : undefined, 'jury').threshold;
     const perShow = new Map<string, number[]>();
@@ -169,7 +173,7 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
       reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
       notes: [...listenerNotes(counts), ...listenerNotes(counts, 'music')],
       quality: quality.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
-      changes, usage: { ...usage, costs: { ...costs, scope: isHost ? 'server' : 'station' } }, timezone: config?.timezone ?? 'UTC',
+      changes, usage: { ...usage, costs: { ...costs, scope: isHost ? 'server' : 'station', ...(budget ? { budget } : {}), budgetFloor: BUDGET_FLOOR } }, timezone: config?.timezone ?? 'UTC',
     }, 200);
   }
   if (url.pathname === '/api/insights/reasons') {

@@ -375,6 +375,9 @@ data class Insights(
     /** Estimated provider costs: the whole server's for the owner ([wholeServer]), else this station's. */
     val costs: CostSpan? = null,
     val wholeServer: Boolean = false,
+    /** The monthly budget that applies (the whole server's for the owner), if set. */
+    val budget: MoneyBudget? = null,
+    val budgetFloor: Int = 4,
 ) {
     data class WeakShow(val showName: String, val average: Double, val count: Int, val notes: List<String>) {
         /** What to try first: a sharper instruction when the notes are about the text, more sources when they are about substance. */
@@ -429,6 +432,8 @@ data class Insights(
                 juryBar = number(root, "juryBar"),
                 costs = (usage?.get("costs") as? JsonObject)?.let { CostSpan(number(it, "today"), number(it, "month")) },
                 wholeServer = (usage?.get("costs") as? JsonObject)?.text("scope") == "server",
+                budget = ((usage?.get("costs") as? JsonObject)?.get("budget") as? JsonObject)?.let { MoneyBudget(number(it, "limit"), number(it, "spent")) },
+                budgetFloor = (number(usage?.get("costs") as? JsonObject, "budgetFloor").toInt()).takeIf { it > 0 } ?: 4,
                 quality = (root["quality"] as? JsonArray)?.mapNotNull { element ->
                     val q = element as? JsonObject ?: return@mapNotNull null
                     QualityMark(q.text("createdAt").take(10), q.text("showName"), number(q, "overall"))

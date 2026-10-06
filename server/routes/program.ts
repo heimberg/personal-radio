@@ -1,4 +1,5 @@
 import { PipelineError } from '../segment-pipeline.ts';
+import { budgetAlerts, currentBudgets, dailyGenerationLimit, type BudgetStatus } from '../budget.ts';
 import { healthAlerts } from '../alerts.ts';
 import { ProviderError } from '../providers.ts';
 import { StationStore } from '../station-store.ts';
@@ -42,9 +43,13 @@ export async function programRoutes(request: Request, env: Environment, owner: s
       store.usageToday(owner, new Date().toISOString().slice(0, 10)),
     ]);
     // Today's use against the daily limits: the app warns once a limit is 80 % used.
+    // And the station's monthly budget in francs, when it has one.
+    const budgets = await currentBudgets(env).catch(() => ({ stations: new Map() }) as BudgetStatus);
+    const ownBudget = budgets.stations.get(owner);
     const budget = { budget: {
-      generations: [today.generations, generationLimit(owner, listeners, Math.max(1, Number(env.DAILY_GENERATIONS) || 24))],
+      generations: [today.generations, await dailyGenerationLimit(env, owner, listeners)],
       speech: [today.characters, Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000)],
+      ...(ownBudget ? { money: [ownBudget.spent, ownBudget.limit] } : {}),
     } };
     // The Spotify client ID is public; the app needs it to connect to the Spotify app (App Remote).
     const spotify = env.SPOTIFY_CLIENT_ID ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID } } : {};
@@ -56,7 +61,8 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     // Only the owner hands out invitations.
     const isHost = owner === env.ALLOWED_EMAIL?.toLowerCase();
     // The owner also hears about trouble with the providers or a stuck production (on every station).
-    const alerts = isHost ? await healthAlerts(env.DB, new Date()).catch(() => []) : [];
+    const nameOf = (station: string) => station === owner ? 'deines Senders' : `von ${[...listeners.values()].find(item => item.owner === station)?.name ?? station.slice('listener:'.length)}`;
+    const alerts = isHost ? [...await healthAlerts(env.DB, new Date()).catch(() => []), ...budgetAlerts(budgets, new Date(), nameOf)] : [];
     const host = isHost ? { host: true, ...(alerts.length ? { alerts } : {}) } : {};
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
     const play = { play: { stickers: stickerList.length, kids: isKids(owner, listeners), ask: !!(sounds.linker && env.GEMINI_API_KEY) } };

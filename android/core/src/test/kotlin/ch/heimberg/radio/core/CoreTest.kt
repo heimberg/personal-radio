@@ -320,6 +320,17 @@ class NoticeStateTest {
         val overview = InviteOverview.parse("""{"own":{"limit":24,"usage":{"costs":{"today":0.1,"month":2}}}}""")
         assertEquals(CostSpan(0.1, 2.0), overview.own?.usage?.costs)
     }
+
+    @Test fun monthlyBudgetsReadAndWarn() {
+        val overview = InviteOverview.parse("""{"serverBudget":{"limit":20,"spent":17},"budgetFloor":4,"listeners":[{"key":"lea","name":"Lea","kind":"guest","usage":{"budget":{"limit":5,"spent":5.5}}}]}""")
+        assertEquals("Budget: CHF 17.00 von CHF 20.00 im Monat (85 %)", overview.serverBudget?.line())
+        assertEquals(true, overview.listeners.single().usage.budget?.usedUp)
+        val insights = Insights.parse("""{"usage":{"days":[],"costs":{"today":1,"month":2,"budget":{"limit":10,"spent":2}}}}""")
+        assertEquals(MoneyBudget(10.0, 2.0), insights.budget)
+        assertEquals("Monatsbudget zu 85 % verbraucht.", Budget(money = listOf(4.25, 5.0)).warning())
+        assertEquals(true, Budget(money = listOf(5.0, 5.0)).warning()!!.startsWith("Das Monatsbudget ist aufgebraucht"))
+        assertEquals(null, Budget(money = listOf(1.0, 5.0)).warning())
+    }
 }
 
 class StationSoundTest {

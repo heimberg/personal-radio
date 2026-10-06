@@ -34,6 +34,8 @@ interface StudioActions {
     fun deleteInvite(id: String)
     fun removeListener(key: String, eraseData: Boolean = false)
     fun setListenerLimit(key: String, dailyGenerations: Int?)
+    /** A monthly budget in francs for `server`, `own` or a listener; null removes it. */
+    fun setBudget(station: String, monthlyChf: Double?)
     fun loadAgents()
     fun loadListening()
     fun connectListening()
@@ -167,6 +169,14 @@ class StudioController(private val ref: HostRef) : StudioActions {
 
     override fun setListenerLimit(key: String, dailyGenerations: Int?) {
         host.scope.launch { runCatching { api.setListenerLimit(key, dailyGenerations) }.onSuccess { loadInvites() }.onFailure { state.say(host.failure(it)) } }
+    }
+
+    override fun setBudget(station: String, monthlyChf: Double?) {
+        host.scope.launch {
+            runCatching { api.setBudget(station, monthlyChf) }
+                .onSuccess { state.say(if (monthlyChf == null) "Budget entfernt." else "Budget gespeichert."); loadInvites(); loadInsights() }
+                .onFailure { state.say(host.failure(it)) }
+        }
     }
 
     override fun loadLlmCalls(more: Boolean) {

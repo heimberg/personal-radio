@@ -204,15 +204,20 @@ object TimelineJson {
 
 /** Today's use against the daily limits, each as [used, limit]. */
 @Serializable
-data class Budget(val generations: List<Long> = emptyList(), val speech: List<Long> = emptyList()) {
-    /** A warning once a limit is at least 80 % used, else null. */
+data class Budget(val generations: List<Long> = emptyList(), val speech: List<Long> = emptyList(), val money: List<Double> = emptyList()) {
+    /** A warning once a limit or the station's monthly budget is at least 80 % used, else null. */
     fun warning(): String? {
         fun share(pair: List<Long>) = if (pair.size == 2 && pair[1] > 0) pair[0].toDouble() / pair[1] else 0.0
         val parts = listOfNotNull(
             share(generations).takeIf { it >= 0.8 }?.let { "Produktionen ${Math.round(it * 100)} %" },
             share(speech).takeIf { it >= 0.8 }?.let { "Sprachausgabe ${Math.round(it * 100)} %" },
         )
-        return if (parts.isEmpty()) null else "Tageslimit fast erreicht: ${parts.joinToString(", ")}. Danach wartet die Produktion bis morgen."
+        val month = (if (money.size == 2 && money[1] > 0) money[0] / money[1] else 0.0).takeIf { it >= 0.8 }?.let {
+            if (it >= 1) "Das Monatsbudget ist aufgebraucht: bis Monatsende macht das Radio nur noch wenige Beiträge am Tag."
+            else "Monatsbudget zu ${Math.round(it * 100)} % verbraucht."
+        }
+        val day = if (parts.isEmpty()) null else "Tageslimit fast erreicht: ${parts.joinToString(", ")}. Danach wartet die Produktion bis morgen."
+        return listOfNotNull(month, day).joinToString(" ").ifEmpty { null }
     }
 }
 
