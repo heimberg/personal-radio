@@ -42,6 +42,10 @@ class ProductionNotices(private val context: Context) {
         }
         notices.ready.forEach(::ready)
         notices.failure?.let(::failed)
+        notices.alerts.forEach { alert ->
+            notify(ALERT_ID + Math.floorMod(alert.id.substringBefore(':').hashCode(), 10), builder(context.getString(R.string.notice_alert), alert.text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(alert.text)).build())
+        }
         notices.message?.let { notify(MESSAGE_ID, builder(context.getString(R.string.notice_family), it.line).setStyle(NotificationCompat.BigTextStyle().bigText(it.line)).build()) }
         budget(timeline)
     }
@@ -92,6 +96,7 @@ class ProductionNotices(private val context: Context) {
         const val FAILURE_ID = 4201
         const val MESSAGE_ID = 4202
         const val BUDGET_ID = 4203
+        const val ALERT_ID = 4210
     }
 }
 

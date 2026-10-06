@@ -83,8 +83,8 @@ class FeedbackTest {
         assertEquals(0.0, FeedbackPolicy.onLeave("a", false, 5, 0).listenedRatio)
         assertEquals("""{"action":"like","listenedRatio":1.0}""", FeedbackPolicy.rating("a", true).toJson())
         assertEquals("""{"reason":"too_long"}""", FeedbackReason.TOO_LONG.toJson())
-        assertTrue(FeedbackReason.asksFor("entdecken"))
-        assertFalse(FeedbackReason.asksFor("_musik"))
+        assertEquals(listOf("too_long", "boring", "tone", "known", "wrong"), FeedbackReason.forItem(music = false).map { it.wire })
+        assertEquals(listOf("not_my_style", "heard_too_often", "too_wild", "too_calm", "wrong_moment"), FeedbackReason.forItem(music = true).map { it.wire })
     }
 }
 
@@ -300,6 +300,25 @@ class NoticeStateTest {
         val notices = second.update(Timeline(listOf(TimelineItem("hour", 1, "s", "Show", "2026-09-28T08:00:00Z", "ready", 60.0))))
         assertEquals(listOf("hour"), notices.ready.map { it.id })
         assertEquals(NoticeState(), NoticeState.parse("kaputt"))
+    }
+
+    @Test fun serverWarningsAreReportedOnceEvenOnTheFirstLook() {
+        val tracker = NoticeTracker()
+        val alert = HealthAlert("quota:gemini:2026-10-06", "Gemini: Kontingent erschöpft")
+        assertEquals(listOf(alert), tracker.update(Timeline(emptyList(), alerts = listOf(alert))).alerts)
+        val again = NoticeTracker(NoticeState.parse(tracker.state.toJson()))
+        assertEquals(emptyList(), again.update(Timeline(emptyList(), alerts = listOf(alert))).alerts)
+        val stalled = HealthAlert("stalled:2026-10-06", "Die Produktion stockt")
+        assertEquals(listOf(stalled), again.update(Timeline(emptyList(), alerts = listOf(alert, stalled))).alerts)
+    }
+
+    @Test fun costsReadInFrancs() {
+        assertEquals("heute ca. CHF 0.40 · 30 Tage ca. CHF 12.05", CostSpan(0.4, 12.05).line())
+        val insights = Insights.parse("""{"usage":{"days":[],"limits":{},"costs":{"today":1.2,"month":9.5,"scope":"server"}}}""")
+        assertEquals(CostSpan(1.2, 9.5), insights.costs)
+        assertEquals(true, insights.wholeServer)
+        val overview = InviteOverview.parse("""{"own":{"limit":24,"usage":{"costs":{"today":0.1,"month":2}}}}""")
+        assertEquals(CostSpan(0.1, 2.0), overview.own?.usage?.costs)
     }
 }
 

@@ -49,6 +49,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import ch.heimberg.radio.core.CostSpan
 import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.AgentSettings
 import ch.heimberg.radio.core.Insights
@@ -259,6 +260,14 @@ fun UsageContent(state: RadioState, actions: RadioActions) {
     val today = insights.days.firstOrNull()
     if (today == null) return Text("Noch kein Verbrauch.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     Meter("Produktionen heute", today.generations, insights.generationLimit)
+    insights.costs?.let { costs ->
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+            Text(if (insights.wholeServer) "Kosten, alle Sender" else "Kosten", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text("${CostSpan.chf(costs.today)} heute", style = MaterialTheme.typography.titleSmall)
+        }
+        Text("30 Tage ca. ${CostSpan.chf(costs.month)} · geschätzt aus den Tokens und Listenpreisen, die Rechnung des Anbieters gilt",
+            style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    }
     if (insights.byShow.isNotEmpty()) {
         Text("Letzte 7 Tage nach Sendung", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
         for ((show, count) in insights.byShow) {
@@ -538,7 +547,10 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
         }
     }
     Text("Hören mit", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-    overview.own?.let { own -> Text("Du: ${own.usage.line(own.limit)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+    overview.own?.let { own ->
+        Text("Du: ${own.usage.line(own.limit)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        own.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+    }
     if (overview.listeners.isEmpty()) Text("Noch niemand – nur du.", style = MaterialTheme.typography.bodyMedium)
     for (listener in overview.listeners) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -547,6 +559,7 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
                 Text(listOfNotNull(listener.listenerKind.label, listener.since?.let { "seit ${day(it)}" }, if (!listener.removable) "im Worker eingetragen" else null).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 Text(listener.usage.line(listener.limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                listener.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
             }
             if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Verwalten") }
         }

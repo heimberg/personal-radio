@@ -121,7 +121,12 @@ data class Timeline(
     val budget: Budget? = null,
     /** This phone belongs to the station's owner: it may invite others. */
     val host: Boolean = false,
+    /** For the owner: a provider keeps failing or productions are stuck. Each id is reported once. */
+    val alerts: List<HealthAlert> = emptyList(),
 )
+
+@Serializable
+data class HealthAlert(val id: String, val text: String)
 
 /**
  * The station's sound; null = off. Jingles between music and speech ([identUrls], else the single

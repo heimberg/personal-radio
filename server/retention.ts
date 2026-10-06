@@ -25,7 +25,7 @@ const dayBefore = (now: Date, days: number) => before(now, days).slice(0, 10);
 export async function pruneDatabase(db: D1Database, now: Date): Promise<void> {
   const statements = [
     db.prepare('DELETE FROM covered_sources WHERE covered_at < ?').bind(before(now, RETENTION_DAYS.covered_sources)),
-    ...['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests', 'model_usage']
+    ...['daily_requests', 'daily_usage', 'daily_feed_requests', 'daily_linker_requests', 'model_usage', 'owner_usage']
       .map(table => db.prepare(`DELETE FROM ${table} WHERE utc_day < ?`).bind(dayBefore(now, RETENTION_DAYS.daily))),
     db.prepare('DELETE FROM quality_log WHERE created_at < ?').bind(before(now, RETENTION_DAYS.quality_log)),
     db.prepare('DELETE FROM feedback_events WHERE created_at < ?').bind(before(now, RETENTION_DAYS.feedback_events)),

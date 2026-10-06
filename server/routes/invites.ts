@@ -5,6 +5,8 @@ import { allOwners, listenersOf, parseListeners, type ListenerKind } from '../li
 import { InviteStore, KINDS, cloudflareIssuer, normalizeCode, type TokenIssuer } from '../invites.ts';
 import { eraseStation } from '../erase.ts';
 import { avatarKey } from '../family.ts';
+import { costsByOwner, priceList } from '../costs.ts';
+import { healthCheck } from '../health.ts';
 
 const APP_APK = 'app/personal-radio.apk';
 
@@ -23,15 +25,17 @@ export async function inviteRoutes(request: Request, env: Environment, owner: st
   const invites = new InviteStore(env.DB), now = new Date();
   if (url.pathname === '/api/invites' && request.method === 'GET') {
     const since = new Date(now.getTime() - 6 * 86_400_000).toISOString().slice(0, 10), today = now.toISOString().slice(0, 10);
-    const [open, joined, generations, speech] = await Promise.all([invites.list(now), invites.listeners(),
+    const [open, joined, generations, speech, costs] = await Promise.all([invites.list(now), invites.listeners(),
       env.DB.prepare('SELECT owner_id, utc_day, requests FROM daily_requests WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; requests: number }>(),
-      env.DB.prepare('SELECT owner_id, utc_day, characters FROM daily_usage WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; characters: number }>()]);
-    // What each station used: productions and spoken characters, today and over seven days.
+      env.DB.prepare('SELECT owner_id, utc_day, characters FROM daily_usage WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; characters: number }>(),
+      costsByOwner(env.DB, now, priceList(env))]);
+    // What each station used: productions and spoken characters, today and over seven days, and an estimate of its costs.
     const usage = (station: string) => {
       const mine = <T extends { owner_id: string; utc_day: string }>(rows: T[]) => rows.filter(row => row.owner_id === station);
       const g = mine(generations.results), c = mine(speech.results);
       return { today: { generations: g.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.requests), 0), characters: c.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.characters), 0) },
-        week: { generations: g.reduce((sum, row) => sum + Number(row.requests), 0), characters: c.reduce((sum, row) => sum + Number(row.characters), 0) } };
+        week: { generations: g.reduce((sum, row) => sum + Number(row.requests), 0), characters: c.reduce((sum, row) => sum + Number(row.characters), 0) },
+        costs: costs.get(station) ?? { today: 0, month: 0 } };
     };
     const fallback = Math.max(1, Number(env.DAILY_GENERATIONS) || 24);
     const fromSecret = [...parseListeners(env.LISTENERS).values()].map(listener => ({
@@ -101,6 +105,11 @@ code{font:700 20px/1.4 ui-monospace,monospace;letter-spacing:1px;background:#fff
 export async function joinRoutes(request: Request, env: Environment, url: URL, issuer: TokenIssuer | null = cloudflareIssuer(env)): Promise<Response> {
   const invites = new InviteStore(env.DB), now = new Date(), ip = clientIp(request);
   const wrong = async () => { await invites.attempt(ip, now); };
+  if (url.pathname === '/join/health') {
+    if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const health = await healthCheck(env);
+    return json(health, health.ok ? 200 : 503);
+  }
   if (url.pathname === '/join/redeem') {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
     if (await invites.blocked(ip, now)) return json({ error: 'too_many_attempts', detail: 'Zu viele falsche Codes. Versuch es in einer Stunde wieder.' }, 429);

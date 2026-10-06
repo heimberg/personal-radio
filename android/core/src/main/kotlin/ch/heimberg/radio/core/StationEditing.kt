@@ -372,6 +372,9 @@ data class Insights(
     /** Shows the jury keeps marking below its bar (30 days), weakest first, with its latest notes. */
     val weakShows: List<WeakShow> = emptyList(),
     val juryBar: Double = 0.0,
+    /** Estimated provider costs: the whole server's for the owner ([wholeServer]), else this station's. */
+    val costs: CostSpan? = null,
+    val wholeServer: Boolean = false,
 ) {
     data class WeakShow(val showName: String, val average: Double, val count: Int, val notes: List<String>) {
         /** What to try first: a sharper instruction when the notes are about the text, more sources when they are about substance. */
@@ -424,6 +427,8 @@ data class Insights(
                         (w["notes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty())
                 }.orEmpty(),
                 juryBar = number(root, "juryBar"),
+                costs = (usage?.get("costs") as? JsonObject)?.let { CostSpan(number(it, "today"), number(it, "month")) },
+                wholeServer = (usage?.get("costs") as? JsonObject)?.text("scope") == "server",
                 quality = (root["quality"] as? JsonArray)?.mapNotNull { element ->
                     val q = element as? JsonObject ?: return@mapNotNull null
                     QualityMark(q.text("createdAt").take(10), q.text("showName"), number(q, "overall"))

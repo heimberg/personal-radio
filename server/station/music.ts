@@ -15,6 +15,8 @@ import { PARTS_PER_RUN } from './core.ts';
 import type { StationDeps } from './core.ts';
 import { scheduledShow } from './plan.ts';
 import { notesFor, recentTopics } from './produce.ts';
+import { FEEDBACK_REASONS } from '../../src/domain/listener-notes.ts';
+import type { FeedbackReason } from '../../src/domain/listener-notes.ts';
 import type { ProduceOutcome } from './produce.ts';
 
 /** Stored in script_json: the hour's speech and tracks in playing order. */
@@ -205,6 +207,7 @@ export async function voiceParts(deps: StationDeps, owner: string, config: Stati
 export async function songHistory(deps: StationDeps, owner: string): Promise<{ recent: string[]; liked: string[]; disliked: string[] }> {
   const rows = (await deps.store.recentItems(owner, 120)).filter(row => row.show_id === MUSIC_SHOW_ID && row.script_json);
   const reactions = new Map<string, string>();
+  const reasons = await deps.store.reasonsByItem?.(owner).catch(() => new Map()) ?? new Map();
   for (const event of await deps.store.feedback(owner)) {
     if (event.action === 'like' || event.action === 'dislike') reactions.set(event.itemId, event.action);
     else if (event.action === 'skip' && event.listenedRatio < 0.3 && !reactions.has(event.itemId)) reactions.set(event.itemId, 'dislike');
@@ -217,7 +220,9 @@ export async function songHistory(deps: StationDeps, owner: string): Promise<{ r
       const name = `${track.artist} – ${track.title}`;
       recent.push(name);
       if (reactions.get(row.id) === 'like') liked.push(name);
-      if (reactions.get(row.id) === 'dislike') disliked.push(name);
+      // With the reason, if one was given: «… (zu wild)» tells the music desk what to avoid.
+      const reason = reasons.get(row.id);
+      if (reactions.get(row.id) === 'dislike') disliked.push(reason ? `${name} (${FEEDBACK_REASONS[reason as FeedbackReason].label.toLowerCase()})` : name);
     } catch { /* Skip corrupt rows. */ }
   }
   return { recent: [...new Set(recent)].reverse(), liked: liked.reverse(), disliked: disliked.reverse() };
@@ -239,6 +244,7 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     const picks = await deps.musicWriter.pickSongs({
       taste: config.music.taste, interests: [...config.profile.topics, ...config.profile.interests], avoid: history.recent,
       liked: history.liked, disliked: history.disliked, announce: config.music.announce, listens, recentArtists: recent.named, count: 8, surprise: surpriseLevel(config),
+      notes: await notesFor(deps, owner, deps.now(), 'music'),
       direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     // An artist heard lately waits; only if every pick is one, the first that Spotify knows plays anyway. Among
@@ -372,6 +378,7 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
   const history = await blockHistory(deps, owner, show.id);
   const reactions = await songHistory(deps, owner);
   const recent = await recentArtists(deps, owner);
+  const musicNotes = await notesFor(deps, owner, deps.now(), 'music');
   // Artists in this block so far: each AI pick brings a new one.
   const blockArtists = new Set<string>();
   const used = new Set(history.uris);
@@ -412,7 +419,7 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
     const picks = await deps.musicWriter!.pickSongs({
       taste: group.taste || config.music.taste, interests: [...config.profile.topics, ...config.profile.interests],
       avoid: [...history.names.slice(-60), ...[...queues.values()].flat().filter(track => track.picked === 'ai').map(track => `${track.artist} – ${track.title}`)], liked: reactions.liked, disliked: reactions.disliked,
-      listens, recentArtists: recent.named, announce: false, count: Math.min(15, wanted + 4), surprise: surpriseLevel(config), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
+      listens, recentArtists: recent.named, notes: musicNotes, announce: false, count: Math.min(15, wanted + 4), surprise: surpriseLevel(config), direction: { stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
     });
     let found = 0;
     const waiting: SongPick[] = [];

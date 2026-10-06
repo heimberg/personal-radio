@@ -91,8 +91,8 @@ export async function headlines(deps: StationDeps, owner: string, config: Statio
 }
 
 /** The owner's repeated reasons for 👎 in the last weeks, as notes for the prompts. */
-export async function notesFor(deps: StationDeps, owner: string, now: Date): Promise<string[]> {
-  return listenerNotes(await deps.store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)));
+export async function notesFor(deps: StationDeps, owner: string, now: Date, kind: 'speech' | 'music' = 'speech'): Promise<string[]> {
+  return listenerNotes(await deps.store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), kind);
 }
 
 /** Topic memory: titles of the most recent produced segments. */

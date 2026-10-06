@@ -175,9 +175,10 @@ private fun Dialogs(state: RadioState, actions: RadioActions) {
         )
     }
     state.reasonFor?.let { itemId ->
-        ChoiceDialog("Warum weniger?", FeedbackReason.entries.map { it.label }, dismiss = "Egal", onDismiss = { state.reasonFor = null }) { index ->
+        val reasons = FeedbackReason.forItem(state.reasonMusic)
+        ChoiceDialog(if (state.reasonMusic) "Was passt an der Musik nicht?" else "Warum weniger?", reasons.map { it.label }, dismiss = "Egal", onDismiss = { state.reasonFor = null }) { index ->
             state.reasonFor = null
-            actions.reason(itemId, FeedbackReason.entries[index])
+            actions.reason(itemId, reasons[index])
         }
     }
     if (state.sleepOpen) {
