@@ -223,6 +223,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
             listening == null -> "Familie, Kinder oder Gäste mit eigenem Sender"
             else -> "$listening Hörer${if (open > 0) " · $open offen" else ""}"
         }, state) { InvitesContent(state, actions) }
+        Card("entwickler", R.drawable.ic_sparkle, Kind.SPECIAL, "Entwickler: KI-Aufrufe", "Jeder Aufruf der letzten zwei Tage, mit Prompt und Antwort", state) { LlmCallsContent(state, actions) }
     }
     val station = state.station
     if (station != null) {

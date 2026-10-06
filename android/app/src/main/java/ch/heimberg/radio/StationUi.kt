@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -545,6 +546,60 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
             text = { Text("Die App von ${listener.name} kommt sofort nicht mehr auf dein Radio. Für einen neuen Zugang braucht es eine neue Einladung.") },
             confirmButton = { TextButton(onClick = { actions.removeListener(listener.key) }) { Text("Entfernen") } },
             dismissButton = { TextButton(onClick = { state.removeListenerAsk = null }) { Text("Abbrechen") } },
+            containerColor = Nocturne.surface,
+        )
+    }
+}
+
+/**
+ * «Entwickler: KI-Aufrufe»: every call to Gemini, ASK or Mistral of the last two days, newest first –
+ * station, purpose, model, time and tokens; a tap shows what went out and what came back.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LlmCallsContent(state: RadioState, actions: RadioActions) {
+    LaunchedEffect(Unit) { if (state.llmCalls == null) actions.loadLlmCalls() }
+    Text("Alle Stationen auf deinem Server. Prompts und Antworten sind gekürzt; Audio steht nur als Grösse da.",
+        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = !state.llmFailedOnly, onClick = { state.llmFailedOnly = false; actions.loadLlmCalls() }, label = { Text("Alle") })
+        FilterChip(selected = state.llmFailedOnly, onClick = { state.llmFailedOnly = true; actions.loadLlmCalls() }, label = { Text("Nur Fehler") })
+        TextButton(onClick = { actions.loadLlmCalls() }) { Text("Neu laden") }
+    }
+    val calls = state.llmCalls ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    if (calls.isEmpty()) return Text(if (state.llmFailedOnly) "Keine Fehler." else "Noch keine Aufrufe.", style = MaterialTheme.typography.bodyMedium)
+    val clock = java.time.format.DateTimeFormatter.ofPattern("d.M. HH:mm:ss").withZone(java.time.ZoneId.systemDefault())
+    for (call in calls) {
+        Column(Modifier.fillMaxWidth().clickable { state.llmCallOpen = call }.padding(vertical = 6.dp)) {
+            val at = runCatching { clock.format(java.time.Instant.parse(call.at)) }.getOrDefault(call.at)
+            Text(listOfNotNull(at, call.station, call.model).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = if (call.failed) Nocturne.kind(Kind.NEWS) else Nocturne.muted)
+            Text(call.purpose, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(listOfNotNull(if (call.failed) "Fehler ${call.status}" else null, call.meta).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        }
+    }
+    if (calls.size % 50 == 0) TextButton(onClick = { actions.loadLlmCalls(more = true) }) { Text("Ältere laden") }
+    state.llmCallOpen?.let { call ->
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        AlertDialog(
+            onDismissRequest = { state.llmCallOpen = null },
+            title = { Text("${call.model} · ${call.meta}", style = MaterialTheme.typography.titleSmall) },
+            text = {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+                        Text("ANFRAGE", style = Kicker, color = Nocturne.muted)
+                        Text(call.request.ifBlank { "–" }, style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                        Text("ANTWORT${if (call.failed) " (HTTP ${call.status})" else ""}", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 12.dp))
+                        Text(call.response.ifBlank { "–" }, style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { state.llmCallOpen = null }) { Text("Schliessen") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString("${call.model} ${call.at}\n\n${call.request}\n\n---\n\n${call.response}"))
+                    state.say("Kopiert.")
+                }) { Text("Kopieren") }
+            },
             containerColor = Nocturne.surface,
         )
     }

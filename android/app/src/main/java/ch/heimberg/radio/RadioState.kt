@@ -177,6 +177,10 @@ class RadioState {
     var insights by mutableStateOf<Insights?>(null)
     /** «Diagnose»: the latest errors; null until loaded. */
     var diagnostics by mutableStateOf<List<ch.heimberg.radio.core.ErrorEntry>?>(null)
+    /** Developer view: the provider calls loaded so far (newest first), only failed ones, the call opened. */
+    var llmCalls by mutableStateOf<List<ch.heimberg.radio.core.LlmCall>?>(null)
+    var llmFailedOnly by mutableStateOf(false)
+    var llmCallOpen by mutableStateOf<ch.heimberg.radio.core.LlmCall?>(null)
     /** Weekly copies of the settings (newest first), and the one asked about before it is restored. */
     var backups by mutableStateOf<List<String>?>(null)
     var restoreAsk by mutableStateOf<String?>(null)

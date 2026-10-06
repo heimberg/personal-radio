@@ -47,3 +47,48 @@ test('speech counts under the model named in the request; quota refusals apart; 
   ]);
   assert.equal((await usageSummary(db, 'o', now, 14, { generations: 24, ttsCharacters: 12000 })).speech, undefined);
 });
+
+test('every provider call is kept for the developer view: readable request and answer, station and item, newest 1000', async () => {
+  const { llmCalls, purposeOf, requestText, responseText } = await import('../server/usage.ts');
+  const { withCallContext } = await import('../server/trace.ts');
+  const db = sqliteD1(), now = new Date('2026-10-06T08:00:00Z');
+  const counted = meteredFetch(db, { now: () => now }, async () => Response.json({
+    candidates: [{ content: { parts: [{ text: '{"songs":[]}' }, { inlineData: { data: 'A'.repeat(4096) } }] }, finishReason: 'STOP', groundingMetadata: { webSearchQueries: ['Wässermatten Lotzwil'] } }],
+    usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 3 },
+  }));
+  const body = JSON.stringify({ systemInstruction: { parts: [{ text: 'Du bist Musikredaktion eines persönlichen Radios. Schlage Songs vor.' }] },
+    contents: [{ role: 'user', parts: [{ text: '{"geschmack":"Indie"}' }] }], tools: [{ google_search: {} }] });
+  await withCallContext({ owner: 'o@example.test', itemId: 'item-1' }, () => counted('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent', { method: 'POST', body }));
+  const [call] = await llmCalls(db);
+  assert.deepEqual({ ...call, request: undefined, response: undefined, id: undefined, ms: undefined }, {
+    id: undefined, at: now.toISOString(), owner: 'o@example.test', itemId: 'item-1', provider: 'gemini', model: 'gemini-2.5-flash-lite',
+    purpose: 'Du bist Musikredaktion eines persönlichen Radios.', status: 200, ms: undefined, inputTokens: 12, outputTokens: 3, request: undefined, response: undefined,
+  });
+  assert.match(call.request, /^SYSTEM: Du bist Musikredaktion[\s\S]*USER: \{"geschmack":"Indie"\}[\s\S]*TOOLS: google_search$/);
+  assert.equal(call.response, '{"songs":[]}\n\n[Audio, 3 KB]\n\nSUCHE: Wässermatten Lotzwil');
+  // Speech, OpenAI-style answers, unreadable bodies.
+  assert.equal(requestText(JSON.stringify({ model: 'voxtral', input: 'Hallo' })), 'TEXT: Hallo');
+  assert.equal(responseText({ choices: [{ message: { content: 'ok' }, finish_reason: 'length' }] }), 'ok\n\nENDE: length');
+  assert.equal(requestText('nicht json'), '');
+  assert.equal(purposeOf(''), 'Aufruf');
+  // Only the newest thousand stay.
+  for (let n = 0; n < 1005; n++) db.raw.prepare("INSERT INTO llm_calls (at, provider, model, purpose, status, ms, request, response) VALUES (?, 'gemini', 'm', 'p', 200, 1, '', '')").run(now.toISOString());
+  await counted('https://generativelanguage.googleapis.com/v1beta/models/m:generateContent', { method: 'POST', body });
+  assert.equal((db.raw.prepare('SELECT COUNT(*) AS n FROM llm_calls').get() as { n: number }).n, 1000);
+  assert.equal((await llmCalls(db, { limit: 500 })).length, 100, 'one page is at most 100');
+});
+
+test('only the owner sees the calls; stations are named, never by email', async () => {
+  const { devRoutes } = await import('../server/routes/dev.ts');
+  const db = sqliteD1();
+  db.raw.prepare("INSERT INTO llm_calls (at, owner_id, provider, model, purpose, status, ms, request, response) VALUES ('2026-10-06T08:00:00Z', 'owner@example.test', 'gemini', 'm', 'p', 200, 5, 'q', 'a')").run();
+  db.raw.prepare("INSERT INTO llm_calls (at, owner_id, provider, model, purpose, status, ms, request, response) VALUES ('2026-10-06T08:01:00Z', 'listener:lea', 'gemini', 'm', 'p', 500, 5, 'q', 'kaputt')").run();
+  const env = { DB: db, ALLOWED_EMAIL: 'owner@example.test', OWNER_NAME: 'Papa', LISTENERS: 'abcd.access=lea:kids' } as never;
+  const get = (owner: string, query = '') => devRoutes(new Request(`https://r.example/api/dev/calls${query}`), env, owner, new URL(`https://r.example/api/dev/calls${query}`));
+  assert.equal((await get('listener:lea'))!.status, 403);
+  const body = await (await get('owner@example.test'))!.json() as { calls: Array<{ station: string; status: number }> };
+  assert.deepEqual(body.calls.map(call => [call.station, call.status]), [['Lea', 500], ['Papa', 200]]);
+  assert.doesNotMatch(JSON.stringify(body), /owner@example\.test/);
+  const failed = await (await get('owner@example.test', '?failed=1'))!.json() as { calls: unknown[] };
+  assert.equal(failed.calls.length, 1);
+});

@@ -1,3 +1,4 @@
+Studio → Entwickler: jeder KI-Aufruf der letzten zwei Tage mit Prompt, Antwort, Dauer und Tokens
 Die Recherche sucht mit einem kleineren, günstigeren Modell (Gemini 2.5 Flash Lite)
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).

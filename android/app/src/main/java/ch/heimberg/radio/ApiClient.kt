@@ -183,6 +183,11 @@ class ApiClient(private val connection: Connection) {
     suspend fun deleteInvite(id: String) { withContext(Dispatchers.IO) { request("DELETE", "api/invites/$id") } }
     suspend fun removeListener(key: String) { withContext(Dispatchers.IO) { request("DELETE", "api/listeners/$key") } }
 
+    suspend fun llmCalls(before: Long?, failedOnly: Boolean): List<ch.heimberg.radio.core.LlmCall> = withContext(Dispatchers.IO) {
+        val query = listOfNotNull(before?.let { "before=$it" }, if (failedOnly) "failed=1" else null).joinToString("&")
+        ch.heimberg.radio.core.LlmCall.parse(request("GET", "api/dev/calls" + if (query.isEmpty()) "" else "?$query"))
+    }
+
     suspend fun diagnostics(): List<ErrorEntry> = withContext(Dispatchers.IO) { ErrorEntry.parse(request("GET", "api/diagnostics")) }
 
     suspend fun insights(): Insights = withContext(Dispatchers.IO) { Insights.parse(request("GET", "api/insights")) }
