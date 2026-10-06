@@ -66,21 +66,32 @@ import kotlin.math.roundToInt
 @Composable
 fun ShowsContent(state: RadioState, actions: RadioActions) {
     val draft = state.station ?: return
-    Text("Eigene Formate mit eigenem Auftrag. Im Tagesplan stehen sie neben den Bausteinen.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    Text(
+        "Sendungen kommen immer wieder: Eingeschaltete plant das Radio von selbst ins Programm ein, ausgeschaltete pausieren. " +
+            "Antippen öffnet eine Sendung zum Bearbeiten. Einzelne Beiträge holst du dagegen im Programm mit «＋ Einfügen».",
+        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted,
+    )
+    if (draft.shows.isEmpty()) Text("Noch keine Sendungen.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
     for (show in draft.shows) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Nocturne.bg).clickable { state.showEdit = show }
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Nocturne.bg).clickable(onClickLabel = "Bearbeiten") { state.showEdit = show }
                 .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(show.name.ifBlank { "Ohne Namen" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(show.summary, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(show.name.ifBlank { "Ohne Namen" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (show.enabled) Nocturne.text else Nocturne.muted)
+                Text(show.summary, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Switch(checked = show.enabled, onCheckedChange = { actions.editStation(draft.withShow(show.copy(enabled = it))) })
+            Text("›", style = MaterialTheme.typography.titleLarge, color = Nocturne.muted, modifier = Modifier.padding(horizontal = 8.dp))
+            Switch(checked = show.enabled, onCheckedChange = { actions.editStation(draft.withShow(show.copy(enabled = it))) },
+                modifier = Modifier.semantics { contentDescription = "${show.name}: ${if (show.enabled) "läuft" else "pausiert"}" })
         }
     }
     Text("NEUE SENDUNG", style = Kicker, color = Nocturne.muted, modifier = Modifier.padding(top = 4.dp))
+    Text("Kurzbeitrag und Dialog sind Wortbeiträge zu deinen Themen. Die Stunden und der Musikblock bringen vor allem Musik: " +
+        "eine Stunde zu einem Künstler, einem Genre oder einem Thema, der Block Songs am Stück.",
+        style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (format in ShowFormat.entries) {
             OutlinedButton(onClick = { state.showEdit = Show.new(format, draft.shows.map { it.id }) }) { Text("+ ${format.label}") }

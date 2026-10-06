@@ -837,3 +837,12 @@ class TranscriptFollowTest {
         assertEquals(null, hour.lineAt(0.5))
     }
 }
+
+class ShowSummaryTest {
+    @Test fun aShowSaysWhetherItRunsWithoutRepeatingItsFormat() {
+        val hour = Show("a", "Künstler-Stunde", true, ShowFormat.ARTIST, 60, subject = "Guns n Roses")
+        assertEquals("Läuft · 60 Min. · Guns n Roses", hour.summary)
+        val brief = Show("b", "Entdeckungen", false, ShowFormat.BRIEF, 2, sourceMode = "web")
+        assertEquals("Pausiert · Kurzbeitrag · 2 Min. · mit Websuche", brief.summary)
+    }
+}
