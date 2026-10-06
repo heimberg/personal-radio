@@ -1,6 +1,4 @@
-Mehr Abwechslung in der Musik: ein Künstler kommt erst nach etwa 40 Songs wieder
-Breitere Auswahl über Jahrzehnte, Länder, Sprachen und benachbarte Stile
-Deine Spotify-Lieblinge erscheinen in wechselnder Auswahl, höchstens ein Viertel der Songs
+Die Recherche sucht mit einem kleineren, günstigeren Modell (Gemini 2.5 Flash Lite)
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

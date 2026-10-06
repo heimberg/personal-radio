@@ -1,6 +1,6 @@
 /** Providers, pipeline and station dependencies, built once per database binding and isolate. */
 import { SegmentPipeline } from './segment-pipeline.ts';
-import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
+import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, RESEARCH_MODEL, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
 import type { Researcher } from './providers.ts';
 import type { EditorialVerifier } from './segment-pipeline.ts';
 import type { TextGenerator } from '../src/domain/program.ts';
@@ -57,7 +57,7 @@ export function providersFor(env: Environment): Providers {
       ...(askReady ? { ask: new AskTextGenerator(askConfig, counted) } : {}),
       ...(gemini ? {
         geminiBrief: new GeminiBriefGenerator(gemini, counted), geminiDialog: new GeminiPodcastGenerator(gemini, counted),
-        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || gemini.model }, counted),
+        researcher: new GeminiResearcher({ key: gemini.key, model: env.GEMINI_RESEARCH_MODEL || RESEARCH_MODEL, fallback: gemini.model }, counted),
       } : {}),
       verifier: askReady && gemini ? new FallbackVerifier(new AskEditorialVerifier(askConfig, counted), new GeminiEditorialVerifier(gemini, counted))
         : askReady ? new AskEditorialVerifier(askConfig, counted) : gemini ? new GeminiEditorialVerifier(gemini, counted) : unavailable,
