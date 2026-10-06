@@ -69,7 +69,7 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
     val family = state.family
     Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
         if (family == null) {
-            Text("Familie wird geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
+            SkeletonRows(4, "Familie", Modifier.padding(20.dp))
             return@Column
         }
         val list = rememberLazyListState()
@@ -80,7 +80,7 @@ fun FamilyScreen(state: RadioState, actions: RadioActions, padding: PaddingValue
             for (entry in chatEntries(family.messages, Instant.now()).asReversed()) when (entry) {
                 is ChatEntry.Day -> item(key = "day-${entry.label}-${entry.firstId}") { DayDivider(entry.label) }
                 is ChatEntry.Message -> item(key = "message-${entry.message.id}") {
-                    MessageRow(entry, entry.message.from == family.me, family.members.firstOrNull { it.key == entry.message.from }, actions)
+                    Box(Modifier.animateItem()) { MessageRow(entry, entry.message.from == family.me, family.members.firstOrNull { it.key == entry.message.from }, actions) }
                 }
             }
             if (family.messages.isEmpty()) {

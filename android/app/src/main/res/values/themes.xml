@@ -163,14 +163,6 @@
         <item name="android:fontFamily">@font/figtree</item>
     </style>
 
-    <!-- Longer text to read, such as a transcript. -->
-    <style name="Widget.PersonalRadio.Text.Reading" parent="">
-        <item name="android:textSize">15sp</item>
-        <item name="android:lineSpacingMultiplier">1.35</item>
-        <item name="android:textColor">@color/text</item>
-        <item name="android:fontFamily">@font/figtree</item>
-    </style>
-
     <style name="Widget.PersonalRadio.Text.Meta" parent="">
         <item name="android:textSize">11sp</item>
         <item name="android:textColor">@color/neutral_500</item>

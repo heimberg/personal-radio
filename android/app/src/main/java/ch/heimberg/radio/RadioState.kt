@@ -189,6 +189,10 @@ class RadioState {
     /** Invitations and who listens; null until the card opens. */
     var invites by mutableStateOf<ch.heimberg.radio.core.InviteOverview?>(null)
     /** A listener the owner is about to remove (asks first). */
+    /** «Text»: the item being read along, its text once loaded, or why it could not be loaded. */
+    var transcriptFor by mutableStateOf<String?>(null)
+    var transcript by mutableStateOf<ch.heimberg.radio.core.Transcript?>(null)
+    var transcriptError by mutableStateOf<String?>(null)
     var removeListenerAsk by mutableStateOf<ch.heimberg.radio.core.InvitedListener?>(null)
     var listening by mutableStateOf<ListeningProfile?>(null)
     var settingUp by mutableStateOf(false)
@@ -274,6 +278,8 @@ interface RadioActions : StudioActions, VoiceActions, FamilyActions, MitmachenAc
     fun reason(itemId: String, reason: FeedbackReason)
     fun deepen()
     fun transcript(item: TimelineItem? = null)
+    /** Loads (again) the text of the item open in the reading sheet. */
+    fun loadTranscript(itemId: String)
     fun sleep(minutes: Int)
 
     fun play(item: TimelineItem)

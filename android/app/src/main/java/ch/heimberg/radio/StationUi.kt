@@ -120,7 +120,7 @@ fun FeedsContent(state: RadioState, actions: RadioActions) {
 fun AgentsContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadAgents() }
     val draft = state.station ?: return
-    if (state.agentInfo.isEmpty()) return Text("Redaktion wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    if (state.agentInfo.isEmpty()) return SkeletonRows(4, "Redaktion")
     Text("STIL-VORLAGEN", style = Kicker, color = Nocturne.muted)
     Text("Ein Tipp setzt Anweisungen und Schreibweise mehrerer Agenten. Gespeichert wird mit «Speichern».", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     val active = draft.activePreset(state.agentPresets)
@@ -153,7 +153,7 @@ fun AgentsContent(state: RadioState, actions: RadioActions) {
 @Composable
 fun QualityContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadInsights() }
-    val insights = state.insights ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val insights = state.insights ?: return SkeletonLines(4, "Auswertung")
     val days = insights.qualityByDay
     if (days.isEmpty()) {
         Text("Noch keine Noten. Sobald die Jury Beiträge bewertet, erscheint hier der Verlauf der letzten 30 Tage.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
@@ -216,7 +216,7 @@ fun BackupsContent(state: RadioState, actions: RadioActions) {
     Text("Jeden Sonntag sichert der Server Sender, Sendungen, Tagesplan, Redaktion und Feeds. Die letzten acht Sicherungen bleiben.",
         style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     FilledTonalButton(onClick = actions::backupNow) { Text("Jetzt sichern") }
-    val backups = state.backups ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val backups = state.backups ?: return SkeletonRows(3, "Sicherungen")
     if (backups.isEmpty()) Text("Noch keine Sicherung.", style = MaterialTheme.typography.bodyMedium)
     for (name in backups) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -240,7 +240,7 @@ fun BackupsContent(state: RadioState, actions: RadioActions) {
 @Composable
 fun DiagnosticsContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadDiagnostics() }
-    val errors = state.diagnostics ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val errors = state.diagnostics ?: return SkeletonLines(5, "Diagnose")
     Text("Die letzten Fehler von Produktionen, Übergängen und der Warteschlange (30 Tage).", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     if (errors.isEmpty()) return Text("Keine Fehler – alles läuft.", style = MaterialTheme.typography.bodyMedium)
     val shows = state.station?.shows.orEmpty().associate { it.id to it.name }
@@ -259,7 +259,7 @@ fun DiagnosticsContent(state: RadioState, actions: RadioActions) {
 @Composable
 fun UsageContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadInsights() }
-    val insights = state.insights ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val insights = state.insights ?: return SkeletonLines(4, "Auswertung")
     val today = insights.days.firstOrNull()
     if (today == null) return Text("Noch kein Verbrauch.", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
     Meter("Produktionen heute", today.generations, insights.generationLimit)
@@ -312,7 +312,7 @@ private fun Meter(label: String, value: Int, limit: Int) {
 @Composable
 fun ListeningContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadListening() }
-    val profile = state.listening ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val profile = state.listening ?: return SkeletonLines(2, "Hörprofil")
     if (profile.connected) {
         Text(
             if (profile.artists.isEmpty()) "Verbunden. Deine Top-Künstler werden beim nächsten Song geladen."
@@ -607,7 +607,7 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
         onClick = { actions.createInvite(name.trim(), kind); name = "" },
         enabled = name.trim().length >= 2 && overview?.ready != false,
     ) { Text("Einladung erstellen und senden") }
-    if (overview == null) return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    if (overview == null) return SkeletonRows(3, "Hörerliste")
     val date = java.time.format.DateTimeFormatter.ofPattern("d.M.").withZone(java.time.ZoneId.systemDefault())
     val day = { at: String? -> at?.let { runCatching { date.format(java.time.Instant.parse(it)) }.getOrNull() } ?: "" }
     if (overview.open.isNotEmpty()) {
@@ -677,7 +677,7 @@ fun LlmCallsContent(state: RadioState, actions: RadioActions) {
         FilterChip(selected = state.llmFailedOnly, onClick = { state.llmFailedOnly = true; actions.loadLlmCalls() }, label = { Text("Nur Fehler") })
         TextButton(onClick = { actions.loadLlmCalls() }) { Text("Neu laden") }
     }
-    val calls = state.llmCalls ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val calls = state.llmCalls ?: return SkeletonRows(6, "KI-Aufrufe")
     if (calls.isEmpty()) return Text(if (state.llmFailedOnly) "Keine Fehler." else "Noch keine Aufrufe.", style = MaterialTheme.typography.bodyMedium)
     val clock = java.time.format.DateTimeFormatter.ofPattern("d.M. HH:mm:ss").withZone(java.time.ZoneId.systemDefault())
     for (call in calls) {

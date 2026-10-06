@@ -168,7 +168,23 @@ data class BlockList(val blocks: List<BlockView> = emptyList())
 
 /** `GET /api/timeline/{id}/script`: what was said, for reading along, and the sources behind it. */
 @Serializable
-data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList(), val quality: Quality? = null)
+data class Transcript(val title: String, val lines: List<TranscriptLine> = emptyList(), val sources: List<SourceRef> = emptyList(), val quality: Quality? = null) {
+    /** Spoken only: one audio file read from start to end, so a position maps to a line. */
+    val followable: Boolean get() = lines.isNotEmpty() && lines.none { it.song }
+
+    /**
+     * The line being read at [progress] (0–1 of the audio), estimated from the text length: speech runs at an
+     * even pace, so the share of characters read is about the share of time. Null when it cannot be followed.
+     */
+    fun lineAt(progress: Double): Int? {
+        if (!followable || progress.isNaN()) return null
+        val lengths = lines.map { it.text.length + (it.speaker?.length ?: 0) + 1 }
+        val target = progress.coerceIn(0.0, 1.0) * lengths.sum()
+        var sum = 0
+        lengths.forEachIndexed { index, length -> sum += length; if (target < sum) return index }
+        return lines.lastIndex
+    }
+}
 
 /**
  * The quality jury's marks (1–5) after the final edit: what is left to fix, what would need research

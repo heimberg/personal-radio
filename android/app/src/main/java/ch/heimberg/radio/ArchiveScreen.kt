@@ -80,9 +80,10 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                     }
                     Text(
                         if (state.readingList) { if (state.bookmarks.isEmpty()) "Noch nichts gemerkt. Im Player oder im Menü eines Beitrags: «Merken»." else "" }
-                        else state.archiveNote.ifBlank { if (items == null) "Archiv wird geladen …" else "" },
+                        else state.archiveNote,
                         style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(vertical = 6.dp),
                     )
+                    if (!state.readingList && items == null && state.archiveNote.isBlank()) SkeletonRows(5, "Archiv")
                 }
             }
             if (state.readingList) {
@@ -113,7 +114,8 @@ fun ArchiveScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
                     })
                     SwipeToDismissBox(
                         state = swipe, enableDismissFromStartToEnd = false,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        // Neighbours glide together when one is deleted or comes back with «Rückgängig».
+                        modifier = Modifier.animateItem().padding(horizontal = 16.dp, vertical = 4.dp),
                         backgroundContent = {
                             Box(
                                 Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Nocturne.danger.copy(alpha = 0.18f)).padding(horizontal = 20.dp),

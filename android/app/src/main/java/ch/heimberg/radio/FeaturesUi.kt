@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun FeaturesContent(state: RadioState, actions: RadioActions) {
     LaunchedEffect(Unit) { actions.loadFeatures() }
-    val catalog = state.features ?: return Text("Wird geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+    val catalog = state.features ?: return SkeletonRows(5, "Funktionen")
     Text("VON SELBST", style = Kicker, color = Nocturne.muted)
     for (feature in catalog.features) {
         SwitchRow(feature.name, feature.description, "Kosten: ${feature.cost}", feature.enabled, !state.featuresBusy) { actions.setFeature(feature.id, it) }

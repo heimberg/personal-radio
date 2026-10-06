@@ -442,7 +442,18 @@ class MainActivity private constructor(
     /** Text and sources of [item], or of what is playing. */
     override fun transcript(item: TimelineItem?) {
         val id = item?.id ?: currentId() ?: return state.say(getString(R.string.nothing_playing))
-        TranscriptActivity.open(this, id, item?.displayTitle ?: state.title)
+        state.transcriptFor = id
+        loadTranscript(id)
+    }
+
+    override fun loadTranscript(itemId: String) {
+        state.transcript = null
+        state.transcriptError = null
+        lifecycleScope.launch {
+            runCatching { api.transcript(itemId) }
+                .onSuccess { if (state.transcriptFor == itemId) state.transcript = it }
+                .onFailure { if (state.transcriptFor == itemId) state.transcriptError = failure(it) }
+        }
     }
 
     override fun sleep(minutes: Int) {
