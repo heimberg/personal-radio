@@ -9,7 +9,7 @@ const OWNED = [
   'daily_usage', 'daily_requests', 'daily_feed_requests', 'daily_linker_requests', 'station_config', 'timeline_items', 'feedback_events',
   'covered_sources', 'station_activity', 'spotify_listening', 'agent_steps', 'quality_log', 'agent_changes', 'spotify_oauth_states', 'series',
   'family_reads', 'family_presence', 'family_avatars', 'stickers', 'radio_questions', 'followed_topics', 'bookmarks', 'research_cache',
-  'error_log', 'llm_calls',
+  'error_log', 'llm_calls', 'owner_usage',
 ] as const;
 
 /**

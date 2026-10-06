@@ -1,8 +1,6 @@
-Neue Hörer richten ihr Radio in drei Schritten ein: Interessen, Stimme, Musik
-Einladen: Verbrauch und Tageslimit pro Hörer; beim Entfernen auf Wunsch alle Daten löschen
-Kein Themenfeld mehr dreimal am Tag: das Radio setzt den Schwerpunkt anderswo
-Qualität: Sendungen unter der Latte mit den Notizen der Jury und einem Vorschlag
-Mehr Puffer offline: etwa eine halbe Stunde Wort liegt vorab auf dem Handy
+Kosten in Franken: heute und 30 Tage, gesamt und pro Hörer (geschätzt)
+Warnung aufs Handy, wenn ein KI-Anbieter ausfällt oder die Produktion stockt
+👎 bei Musik mit Grund: «zu oft gehört», «zu wild» … die Musikredaktion lernt mit
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

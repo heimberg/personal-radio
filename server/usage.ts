@@ -125,6 +125,11 @@ export function meteredFetch(db: D1Database, options: { askHost?: string; now?: 
           ON CONFLICT(utc_day, provider, model) DO UPDATE SET calls = model_usage.calls + 1,
           input_tokens = model_usage.input_tokens + excluded.input_tokens, output_tokens = model_usage.output_tokens + excluded.output_tokens`)
           .bind(utcDay(now), target.provider, target.model, tokens.input, tokens.output),
+        // The same per station, for the costs per listener.
+        db.prepare(`INSERT INTO owner_usage (utc_day, owner_id, provider, model, calls, input_tokens, output_tokens) VALUES (?, ?, ?, ?, 1, ?, ?)
+          ON CONFLICT(utc_day, owner_id, provider, model) DO UPDATE SET calls = owner_usage.calls + 1,
+          input_tokens = owner_usage.input_tokens + excluded.input_tokens, output_tokens = owner_usage.output_tokens + excluded.output_tokens`)
+          .bind(utcDay(now), owner ?? '', target.provider, target.model, tokens.input, tokens.output),
         db.prepare(`INSERT INTO llm_calls (at, owner_id, item_id, provider, model, purpose, status, ms, input_tokens, output_tokens, request, response)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .bind(now.toISOString(), owner ?? null, itemId ?? null, target.provider, model, purposeOf(request), response.status, Date.now() - started, tokens.input, tokens.output, request, answer),

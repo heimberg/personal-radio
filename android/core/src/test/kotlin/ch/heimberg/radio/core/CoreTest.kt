@@ -301,6 +301,25 @@ class NoticeStateTest {
         assertEquals(listOf("hour"), notices.ready.map { it.id })
         assertEquals(NoticeState(), NoticeState.parse("kaputt"))
     }
+
+    @Test fun serverWarningsAreReportedOnceEvenOnTheFirstLook() {
+        val tracker = NoticeTracker()
+        val alert = HealthAlert("quota:gemini:2026-10-06", "Gemini: Kontingent erschöpft")
+        assertEquals(listOf(alert), tracker.update(Timeline(emptyList(), alerts = listOf(alert))).alerts)
+        val again = NoticeTracker(NoticeState.parse(tracker.state.toJson()))
+        assertEquals(emptyList(), again.update(Timeline(emptyList(), alerts = listOf(alert))).alerts)
+        val stalled = HealthAlert("stalled:2026-10-06", "Die Produktion stockt")
+        assertEquals(listOf(stalled), again.update(Timeline(emptyList(), alerts = listOf(alert, stalled))).alerts)
+    }
+
+    @Test fun costsReadInFrancs() {
+        assertEquals("heute ca. CHF 0.40 · 30 Tage ca. CHF 12.05", CostSpan(0.4, 12.05).line())
+        val insights = Insights.parse("""{"usage":{"days":[],"limits":{},"costs":{"today":1.2,"month":9.5,"scope":"server"}}}""")
+        assertEquals(CostSpan(1.2, 9.5), insights.costs)
+        assertEquals(true, insights.wholeServer)
+        val overview = InviteOverview.parse("""{"own":{"limit":24,"usage":{"costs":{"today":0.1,"month":2}}}}""")
+        assertEquals(CostSpan(0.1, 2.0), overview.own?.usage?.costs)
+    }
 }
 
 class StationSoundTest {

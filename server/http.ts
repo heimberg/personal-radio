@@ -58,6 +58,10 @@ export interface Environment {
   /** Invitations: the Cloudflare account and an API token with `Access: Service Tokens Edit` (secret). */
   CF_ACCOUNT_ID?: string;
   CF_ACCESS_API_TOKEN?: string;
+  /** Price list overrides for the cost estimate, `{"flash": [0.3, 2.5]}` (US dollars per million input/output tokens). */
+  MODEL_PRICES?: string;
+  /** Francs per US dollar for the cost estimate (default 0.80). */
+  USD_CHF?: string;
 }
 
 export function json(body: unknown, status: number) {

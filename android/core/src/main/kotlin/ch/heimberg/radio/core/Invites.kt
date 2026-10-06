@@ -65,9 +65,20 @@ data class Invite(val id: String, val name: String, val kind: String, val expire
 @Serializable
 data class UsageCount(val generations: Int = 0, val characters: Int = 0)
 
-/** What a station used today and in the last seven days. */
+/** An estimate of the provider costs in francs: today and the last 30 days. */
 @Serializable
-data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount()) {
+data class CostSpan(val today: Double = 0.0, val month: Double = 0.0) {
+    /** «heute ca. CHF 0.40 · 30 Tage ca. CHF 6.20» */
+    fun line(): String = "heute ca. ${chf(today)} · 30 Tage ca. ${chf(month)}"
+
+    companion object {
+        fun chf(value: Double): String = "CHF " + String.format(java.util.Locale.ROOT, "%.2f", value)
+    }
+}
+
+/** What a station used today and in the last seven days, and what it probably cost. */
+@Serializable
+data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount(), val costs: CostSpan? = null) {
     /** «Heute 4 von 6 · 7 Tage 30 Produktionen» */
     fun line(limit: Int): String = "Heute ${today.generations} von $limit · 7 Tage ${week.generations} Produktionen"
 }

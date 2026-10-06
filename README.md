@@ -236,8 +236,14 @@ Optional Worker variables (type *Text*). They live in the dashboard; `wrangler.t
 | `GEMINI_VOICE_A`, `GEMINI_VOICE_B` | `Kore`, `Puck` | the two dialog voices |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral voices |
 | `SPOTIFY_MARKET` | `CH` | Spotify catalogue |
+| `MODEL_PRICES` | built-in estimates | prices for the cost estimate, US dollars per million input/output tokens by part of the model name, e.g. `{"flash-tts": [0.5, 10]}`; first match wins |
+| `USD_CHF` | `0.80` | francs per dollar for the cost estimate |
 
-Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The app's **Studio → Verbrauch** shows productions, speech and calls per day, and the daily limits above cap spending.
+Costs depend on how much you listen. For one listener, D1, R2 and Queues usage is small; the main cost is AI usage billed by Google (and ASK/Mistral if used). The app's **Studio → Verbrauch** shows productions, speech and calls per day and an estimate in francs (today and 30 days; the whole server for the owner), **Studio → Einladen** the same per listener; the provider's bill is what counts. The daily limits above cap spending.
+
+**Warnings.** The owner's phone gets a notification when a provider fails five times within 30 minutes (quota refusals are named as such) or when waiting productions have not been picked up for 30 minutes; each at most once a day.
+
+**Health check.** `GET /join/health` answers without a token (it is under the `/join` bypass of step 12) with yes/no for database, migrations, storage, speech key and Access settings: `200` when all hold, else `503`. The deploy calls it after `wrangler deploy` and fails on `503`; it uses the `workers.dev` address from the deploy, or the repository variable `RADIO_URL` (Settings → Secrets and variables → Actions → Variables) when the Worker runs under your own domain. Without the bypass the check only warns.
 
 ## Development
 

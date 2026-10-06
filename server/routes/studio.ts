@@ -9,6 +9,7 @@ import { endOfDay } from '../../src/domain/mood.ts';
 import { AGENTS, agentOf, parseAgentConfig, resolveAgents } from '../../src/domain/agents.ts';
 import { AGENT_PRESETS } from '../../src/domain/agent-presets.ts';
 import { usageSummary } from '../usage.ts';
+import { costsByOwner, priceList, totalCosts } from '../costs.ts';
 import { FEATURES, featureOn, parseFeatures, parseHiddenBlocks } from '../../src/domain/features.ts';
 import { allBlockViews } from '../../src/domain/blocks.ts';
 import { generationLimit, isKids, listenersOf } from '../listeners.ts';
@@ -145,12 +146,15 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
   if (url.pathname === '/api/insights') {
     if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
     const now = new Date(), since = new Date(now.getTime() - 30 * 86_400_000);
-    const [counts, quality, changes, usage, config, byShow] = await Promise.all([
+    // The owner sees what the whole Worker costs; a listener only their own station.
+    const isHost = owner === env.ALLOWED_EMAIL?.toLowerCase(), prices = priceList(env);
+    const [counts, quality, changes, usage, config, byShow, costs] = await Promise.all([
       store.reasonCounts(owner, new Date(now.getTime() - NOTE_WINDOW_DAYS * 86_400_000)), store.qualityLog(owner, since), store.agentChanges(owner, since),
       usageSummary(env.DB, owner, now, 14, { generations: generationLimit(owner, await listenersOf(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24)), ttsCharacters: Math.max(1, Number(env.DAILY_TTS_CHARACTERS) || 12_000) },
         env.GEMINI_API_KEY ? { model: env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts', liteModel: env.GEMINI_TTS_LITE_MODEL || 'gemini-3.8-flash-lite-tts', dailyRequests: Math.max(1, Number(env.GEMINI_TTS_DAILY_REQUESTS) || 100) } : undefined),
       store.getConfig(owner),
       store.producedByShow(owner, new Date(now.getTime() - 7 * 86_400_000)),
+      isHost ? totalCosts(env.DB, now, prices) : costsByOwner(env.DB, now, prices).then(all => all.get(owner) ?? { today: 0, month: 0 }),
     ]);
     // Shows the jury keeps marking below its bar over 30 days (at least three marks), weakest first, with its latest notes.
     const bar = agentOf(config?.agents ? resolveAgents(config.agents) : undefined, 'jury').threshold;
@@ -165,7 +169,7 @@ export async function studioRoutes(request: Request, env: Environment, owner: st
       reasons: counts.map(item => ({ ...item, label: FEEDBACK_REASONS[item.reason].label, active: item.count >= NOTE_MIN_COUNT })),
       notes: [...listenerNotes(counts), ...listenerNotes(counts, 'music')],
       quality: quality.map(entry => ({ ...entry, showName: showNameOf(entry.showId, config) })),
-      changes, usage, timezone: config?.timezone ?? 'UTC',
+      changes, usage: { ...usage, costs: { ...costs, scope: isHost ? 'server' : 'station' } }, timezone: config?.timezone ?? 'UTC',
     }, 200);
   }
   if (url.pathname === '/api/insights/reasons') {

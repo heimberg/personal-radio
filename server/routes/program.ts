@@ -1,4 +1,5 @@
 import { PipelineError } from '../segment-pipeline.ts';
+import { healthAlerts } from '../alerts.ts';
 import { ProviderError } from '../providers.ts';
 import { StationStore } from '../station-store.ts';
 import { blockViews } from '../../src/domain/blocks.ts';
@@ -53,7 +54,10 @@ export async function programRoutes(request: Request, env: Environment, owner: s
     // Unread family messages, for the badge on the family tab and the notification.
     const family = inFamily ? { family: { unread, ...(latest ? { latest: { id: latest.id, line: messageLine(latest, members) } } : {}) } } : {};
     // Only the owner hands out invitations.
-    const host = owner === env.ALLOWED_EMAIL?.toLowerCase() ? { host: true } : {};
+    const isHost = owner === env.ALLOWED_EMAIL?.toLowerCase();
+    // The owner also hears about trouble with the providers or a stuck production (on every station).
+    const alerts = isHost ? await healthAlerts(env.DB, new Date()).catch(() => []) : [];
+    const host = isHost ? { host: true, ...(alerts.length ? { alerts } : {}) } : {};
     // Mitmachen: how many stickers, whether this is a child's station, and whether questions can be answered on air.
     const play = { play: { stickers: stickerList.length, kids: isKids(owner, listeners), ask: !!(sounds.linker && env.GEMINI_API_KEY) } };
     return unchangedOr(request, json({ items: rows.map(row => toView(row, config)), failures, ...(config?.name ? { station: config.name } : {}), ...host, ...budget, ...spotify, ...mood, ...family, ...play,
