@@ -190,6 +190,11 @@ class ApiClient(private val connection: Connection) {
         withContext(Dispatchers.IO) { request("PATCH", "api/listeners/$key", JSONObject().put("dailyGenerations", dailyGenerations ?: JSONObject.NULL).toString()) }
     }
 
+    /** A monthly budget in francs: [station] is `server`, `own` or a listener's key; null removes it. */
+    suspend fun setBudget(station: String, monthlyChf: Double?) {
+        withContext(Dispatchers.IO) { request("PATCH", "api/budgets", JSONObject().put("station", station).put("monthlyChf", monthlyChf ?: JSONObject.NULL).toString()) }
+    }
+
     suspend fun llmCalls(before: Long?, failedOnly: Boolean): List<ch.heimberg.radio.core.LlmCall> = withContext(Dispatchers.IO) {
         val query = listOfNotNull(before?.let { "before=$it" }, if (failedOnly) "failed=1" else null).joinToString("&")
         ch.heimberg.radio.core.LlmCall.parse(request("GET", "api/dev/calls" + if (query.isEmpty()) "" else "?$query"))

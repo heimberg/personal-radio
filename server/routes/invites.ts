@@ -7,6 +7,7 @@ import { eraseStation } from '../erase.ts';
 import { avatarKey } from '../family.ts';
 import { costsByOwner, priceList } from '../costs.ts';
 import { healthCheck } from '../health.ts';
+import { BUDGET_FLOOR, SERVER_BUDGET, budgetStatus, parseBudget, setBudget } from '../budget.ts';
 
 const APP_APK = 'app/personal-radio.apk';
 
@@ -18,24 +19,38 @@ const clientIp = (request: Request) => request.headers.get('CF-Connecting-IP') ?
  * `LISTENERS` secret are listed too, but only the secret can change them.
  */
 export async function inviteRoutes(request: Request, env: Environment, owner: string, url: URL, _ctx?: unknown, issuer: TokenIssuer | null = cloudflareIssuer(env)): Promise<Response | null> {
-  if (url.pathname !== '/api/invites' && !url.pathname.startsWith('/api/invites/') && !url.pathname.startsWith('/api/listeners/')) return null;
+  if (url.pathname !== '/api/invites' && !url.pathname.startsWith('/api/invites/') && !url.pathname.startsWith('/api/listeners/') && url.pathname !== '/api/budgets') return null;
   if (owner !== env.ALLOWED_EMAIL?.toLowerCase()) return json({ error: 'owner_only' }, 403);
   // Like every write: only from the app (its Origin), never from another site.
   if (request.method !== 'GET' && request.headers.get('Origin') !== url.origin) return json({ error: 'origin_rejected' }, 403);
   const invites = new InviteStore(env.DB), now = new Date();
+  // Monthly budgets: `server` for every station together, `own` for the owner's, else a listener's key.
+  if (url.pathname === '/api/budgets') {
+    if (request.method !== 'PATCH') return json({ error: 'method_not_allowed' }, 405);
+    const body = await readJson(request, 500);
+    if (body.error) return body.error;
+    const input = (body.value ?? {}) as { station?: unknown; monthlyChf?: unknown };
+    const monthly = parseBudget(input.monthlyChf);
+    if (monthly === undefined) return json({ error: 'invalid_budget', detail: 'Zwischen CHF 0.50 und CHF 10 000 im Monat, oder keins.' }, 400);
+    const station = input.station === 'server' ? SERVER_BUDGET : input.station === 'own' ? owner
+      : typeof input.station === 'string' && [...(await listenersOf(env)).values()].some(item => item.owner === `listener:${input.station}`) ? `listener:${input.station}` : null;
+    if (!station) return json({ error: 'not_found' }, 404);
+    await setBudget(env.DB, station, monthly, now);
+    return json({ monthlyChf: monthly }, 200);
+  }
   if (url.pathname === '/api/invites' && request.method === 'GET') {
     const since = new Date(now.getTime() - 6 * 86_400_000).toISOString().slice(0, 10), today = now.toISOString().slice(0, 10);
-    const [open, joined, generations, speech, costs] = await Promise.all([invites.list(now), invites.listeners(),
+    const [open, joined, generations, speech, costs, budgets] = await Promise.all([invites.list(now), invites.listeners(),
       env.DB.prepare('SELECT owner_id, utc_day, requests FROM daily_requests WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; requests: number }>(),
       env.DB.prepare('SELECT owner_id, utc_day, characters FROM daily_usage WHERE utc_day >= ?').bind(since).all<{ owner_id: string; utc_day: string; characters: number }>(),
-      costsByOwner(env.DB, now, priceList(env))]);
+      costsByOwner(env.DB, now, priceList(env)), budgetStatus(env.DB, now, priceList(env))]);
     // What each station used: productions and spoken characters, today and over seven days, and an estimate of its costs.
     const usage = (station: string) => {
       const mine = <T extends { owner_id: string; utc_day: string }>(rows: T[]) => rows.filter(row => row.owner_id === station);
       const g = mine(generations.results), c = mine(speech.results);
       return { today: { generations: g.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.requests), 0), characters: c.filter(row => row.utc_day === today).reduce((sum, row) => sum + Number(row.characters), 0) },
         week: { generations: g.reduce((sum, row) => sum + Number(row.requests), 0), characters: c.reduce((sum, row) => sum + Number(row.characters), 0) },
-        costs: costs.get(station) ?? { today: 0, month: 0 } };
+        costs: costs.get(station) ?? { today: 0, month: 0 }, ...(budgets.stations.has(station) ? { budget: budgets.stations.get(station) } : {}) };
     };
     const fallback = Math.max(1, Number(env.DAILY_GENERATIONS) || 24);
     const fromSecret = [...parseListeners(env.LISTENERS).values()].map(listener => ({
@@ -49,6 +64,7 @@ export async function inviteRoutes(request: Request, env: Environment, owner: st
       listeners: [...fromSecret, ...joined.map(row => ({ key: row.owner_id.slice('listener:'.length), name: row.name, kind: row.kind, since: row.created_at, removable: true,
         limit: row.daily_generations ?? fallback, ownLimit: row.daily_generations ?? null, usage: usage(row.owner_id) }))],
       own: { limit: fallback, usage: usage(owner) },
+      ...(budgets.server ? { serverBudget: budgets.server } : {}), budgetFloor: BUDGET_FLOOR,
     }, 200);
   }
   if (url.pathname === '/api/invites' && request.method === 'POST') {

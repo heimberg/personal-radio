@@ -1,4 +1,5 @@
 /** Providers, pipeline and station dependencies, built once per database binding and isolate. */
+import { dailyGenerationLimit } from './budget.ts';
 import { SegmentPipeline } from './segment-pipeline.ts';
 import { AskEditorialVerifier, AskTextGenerator, FallbackVerifier, GeminiBriefGenerator, GeminiEditorialVerifier, GeminiPodcastGenerator, GeminiPodcastSpeechSynthesizer, GeminiResearcher, GeminiSpeechSynthesizer, RESEARCH_MODEL, MistralSpeechSynthesizer, ProviderError, VoiceRouter } from './providers.ts';
 import type { Researcher } from './providers.ts';
@@ -119,7 +120,7 @@ export function stationDeps(env: Environment, owner: string): StationDeps {
     store: new StationStore(env.DB, kids ? forKids : undefined), pipeline: pipelineFor(env), audio: env.AUDIO,
     fetchFeed: url => fetchFeed(url),
     reserveFeed: owner => new D1FeedCounter(env.DB).reserve(owner, Math.max(1, Number(env.DAILY_FEED_REQUESTS) || 60)),
-    reserveGeneration: owner => new D1DailyCounter(env.DB).reserve(owner, generationLimit(owner, listenersNow(env), Math.max(1, Number(env.DAILY_GENERATIONS) || 24))),
+    reserveGeneration: async owner => new D1DailyCounter(env.DB).reserve(owner, await dailyGenerationLimit(env, owner, listenersNow(env))),
     podcastAvailable: Boolean(env.GEMINI_API_KEY), compressSpeech: env.SPEECH_MP3 === 'on', now: () => new Date(), random: Math.random,
     generator: (provider, format) => {
       const providers = providersFor(env);

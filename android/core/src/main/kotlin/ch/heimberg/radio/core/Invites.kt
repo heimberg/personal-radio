@@ -76,9 +76,19 @@ data class CostSpan(val today: Double = 0.0, val month: Double = 0.0) {
     }
 }
 
+/** A monthly budget in francs and what has been spent against it since the first of the month. */
+@Serializable
+data class MoneyBudget(val limit: Double = 0.0, val spent: Double = 0.0) {
+    val share: Double get() = if (limit > 0) spent / limit else 0.0
+    val usedUp: Boolean get() = limit > 0 && spent >= limit
+
+    /** «Budget: CHF 3.20 von CHF 5.00 im Monat (64 %)» */
+    fun line(): String = "Budget: ${CostSpan.chf(spent)} von ${CostSpan.chf(limit)} im Monat (${Math.round(share * 100)} %)"
+}
+
 /** What a station used today and in the last seven days, and what it probably cost. */
 @Serializable
-data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount(), val costs: CostSpan? = null) {
+data class StationUsage(val today: UsageCount = UsageCount(), val week: UsageCount = UsageCount(), val costs: CostSpan? = null, val budget: MoneyBudget? = null) {
     /** «Heute 4 von 6 · 7 Tage 30 Produktionen» */
     fun line(limit: Int): String = "Heute ${today.generations} von $limit · 7 Tage ${week.generations} Produktionen"
 }
@@ -96,7 +106,13 @@ data class OwnStation(val limit: Int = 0, val usage: StationUsage = StationUsage
 
 /** `GET /api/invites`: whether invitations work on this Worker, the invitations and who listens. */
 @Serializable
-data class InviteOverview(val ready: Boolean = false, val invites: List<Invite> = emptyList(), val listeners: List<InvitedListener> = emptyList(), val own: OwnStation? = null) {
+data class InviteOverview(
+    val ready: Boolean = false, val invites: List<Invite> = emptyList(), val listeners: List<InvitedListener> = emptyList(), val own: OwnStation? = null,
+    /** The budget for every station together, if set. */
+    val serverBudget: MoneyBudget? = null,
+    /** Productions a day once a budget is used up. */
+    val budgetFloor: Int = 4,
+) {
     /** Still waiting to be used, newest first. */
     val open: List<Invite> get() = invites.filter { it.usedAt == null && !it.expired }
 

@@ -50,6 +50,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.heimberg.radio.core.CostSpan
+import ch.heimberg.radio.core.MoneyBudget
 import ch.heimberg.radio.core.AgentInfo
 import ch.heimberg.radio.core.AgentSettings
 import ch.heimberg.radio.core.Insights
@@ -267,6 +268,7 @@ fun UsageContent(state: RadioState, actions: RadioActions) {
         }
         Text("30 Tage ca. ${CostSpan.chf(costs.month)} · geschätzt aus den Tokens und Listenpreisen, die Rechnung des Anbieters gilt",
             style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        BudgetRow(insights.budget, if (insights.wholeServer) "server" else null, "Monatsbudget, alle Sender", insights.budgetFloor, actions)
     }
     if (insights.byShow.isNotEmpty()) {
         Text("Letzte 7 Tage nach Sendung", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
@@ -497,6 +499,43 @@ private fun TrialSide(label: String, side: Pair<String, Double?>?) {
     }
 }
 
+/**
+ * A monthly budget in francs: what is spent against it, and (with [station], for the owner) a dialog to set,
+ * change or remove it. Once used up, the station makes only [floor] productions a day until the month ends.
+ */
+@Composable
+private fun BudgetRow(budget: MoneyBudget?, station: String?, title: String, floor: Int, actions: RadioActions) {
+    var editing by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(budget?.line() ?: "Kein Monatsbudget", style = MaterialTheme.typography.bodySmall,
+            color = if (budget?.let { it.share >= 0.8 } == true) Nocturne.kind(Kind.NEWS) else Nocturne.muted, modifier = Modifier.weight(1f))
+        if (station != null) TextButton(onClick = { editing = true }) { Text(if (budget == null) "Budget setzen" else "Ändern") }
+    }
+    if (!editing || station == null) return
+    var text by remember { mutableStateOf(budget?.limit?.let { String.format(java.util.Locale.ROOT, "%.2f", it) } ?: "") }
+    val value = text.replace(',', '.').toDoubleOrNull()?.takeIf { it in 0.5..10_000.0 }
+    AlertDialog(
+        onDismissRequest = { editing = false },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(text, { text = it.take(8) }, label = { Text("CHF pro Monat") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                Text("Gezählt ab dem Ersten des Monats, geschätzt aus den Tokens. Bei 80 % kommt eine Warnung; ist es aufgebraucht, macht der Sender bis Monatsende höchstens $floor Beiträge am Tag.",
+                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+            }
+        },
+        confirmButton = { TextButton(onClick = { actions.setBudget(station, value); editing = false }, enabled = value != null) { Text("Speichern") } },
+        dismissButton = {
+            Row {
+                if (budget != null) TextButton(onClick = { actions.setBudget(station, null); editing = false }) { Text("Entfernen", color = Nocturne.danger) }
+                TextButton(onClick = { editing = false }) { Text("Abbrechen") }
+            }
+        },
+        containerColor = Nocturne.surface,
+    )
+}
+
 /** Shows the station's usage at a glance for the card summary. */
 fun usageSummary(insights: Insights?): String {
     val today = insights?.days?.firstOrNull() ?: return "Produktionen, Sprache und Aufrufe pro Tag"
@@ -550,6 +589,7 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
     overview.own?.let { own ->
         Text("Du: ${own.usage.line(own.limit)}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
         own.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+        BudgetRow(own.usage.budget, "own", "Monatsbudget, dein Sender", overview.budgetFloor, actions)
     }
     if (overview.listeners.isEmpty()) Text("Noch niemand – nur du.", style = MaterialTheme.typography.bodyMedium)
     for (listener in overview.listeners) {
@@ -560,6 +600,7 @@ fun InvitesContent(state: RadioState, actions: RadioActions) {
                     style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 Text(listener.usage.line(listener.limit), style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 listener.usage.costs?.let { Text("Kosten ${it.line()}", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+                BudgetRow(listener.usage.budget, listener.key, "Monatsbudget, ${listener.name}", overview.budgetFloor, actions)
             }
             if (listener.removable) TextButton(onClick = { state.removeListenerAsk = listener }) { Text("Verwalten") }
         }
