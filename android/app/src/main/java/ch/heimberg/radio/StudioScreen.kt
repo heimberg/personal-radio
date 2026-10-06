@@ -98,7 +98,7 @@ fun StudioScreen(state: RadioState, actions: RadioActions, version: String, padd
                     Cards(settings, state, actions)
                 }
                 state.studioMissing -> FirstStart(state, actions)
-                else -> Text("Einstellungen werden geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
+                else -> SkeletonCards(7)
             }
             if (page == null) More(state, actions)
         }
@@ -181,7 +181,7 @@ private fun Cards(settings: StudioSettings, state: RadioState, actions: RadioAct
         val current = if (cohost) settings.cohostVoiceId else settings.voiceId
         val choose = { id: String? -> edit(if (cohost) settings.copy(cohostVoiceId = id) else settings.copy(voiceId = id)) }
         VoiceRow("Voreinstellung des Servers", selected = current == null, previewing = false, onPreview = null) { choose(null) }
-        if (state.voices.isEmpty()) Text("Stimmen werden geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+        if (state.voices.isEmpty()) SkeletonRows(3, "Stimmen")
         for ((group, label) in VoiceGroups.ORDER) {
             val voices = state.voices.filter { it.group == group }
             if (voices.isEmpty()) continue
@@ -602,7 +602,7 @@ private fun FirstStart(state: RadioState, actions: RadioActions) {
                 Text("Wer moderiert?", style = MaterialTheme.typography.headlineSmall)
                 Text("Tippe auf eine Stimme, um sie zu hören.", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted)
                 val voices = state.voices.filter { !it.own }.take(12)
-                if (voices.isEmpty()) Text("Die Stimmen werden geladen …", style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
+                if (voices.isEmpty()) SkeletonRows(3, "Stimmen")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (voice in voices) {
                         FilterChip(selected = voiceId == voice.id, onClick = { voiceId = voice.id; actions.previewVoice(voice.id) }, label = { Text(voice.name) })

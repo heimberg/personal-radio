@@ -194,7 +194,7 @@ private fun AlbumDialog(state: RadioState) {
         onDismissRequest = { state.albumOpen = false },
         title = { Text(if (album == null) "Sticker-Album" else "Sticker-Album · ${album.count} von ${album.total}") },
         text = {
-            if (album == null) Text("Wird geladen …", color = Nocturne.muted)
+            if (album == null) SkeletonLines(4, "Sticker-Album")
             else Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
                 Text("Sticker gibt es für richtige Quiz-Antworten, für deine Wahl in Mitmach-Geschichten und für jede Folge, die du bis zum Schluss hörst.",
                     style = MaterialTheme.typography.bodySmall, color = Nocturne.muted, modifier = Modifier.padding(bottom = 10.dp))

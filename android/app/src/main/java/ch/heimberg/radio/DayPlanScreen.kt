@@ -64,7 +64,7 @@ fun DayPlanScreen(state: RadioState, actions: RadioActions, padding: PaddingValu
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         if (plan == null) {
-            Text("Tagesplan wird geladen …", style = MaterialTheme.typography.bodyMedium, color = Nocturne.muted, modifier = Modifier.padding(20.dp))
+            SkeletonRows(5, "Tagesplan", Modifier.padding(20.dp))
             return@Column
         }
         val now = ZonedDateTime.now()

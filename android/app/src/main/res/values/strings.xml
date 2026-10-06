@@ -98,8 +98,6 @@
     <string name="delete_message">Die Produktion und ihr Audio werden endgültig entfernt.</string>
     <string name="deleted">Gelöscht.</string>
     <string name="transcript">Text und Quellen</string>
-    <string name="transcript_loading">Text wird geladen …</string>
-    <string name="transcript_empty">Für diesen Beitrag gibt es noch keinen Text.</string>
     <string name="sources">Quellen</string>
     <string name="sleep">Einschlaf-Timer</string>
     <string name="sleep_off">Aus</string>

@@ -1,6 +1,6 @@
-Studio aufgeräumt: «Mein Radio», «Programm» und «Betrieb»; Spotify jetzt unter «Musik»
-Der erste Beitrag zeigt, wie weit er ist: Recherche, Text, Prüfung, Stimme
-Einladen: pro Person eine kurze Zeile mit Budgetbalken, Details per Antippen
+Mitlesen neu: der Text läuft beim Hören mit und markiert die aktuelle Stelle
+Programm, Archiv und Chat: Einträge gleiten an ihren Platz statt zu springen
+Beim Laden graue Platzhalter statt «Wird geladen …»
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

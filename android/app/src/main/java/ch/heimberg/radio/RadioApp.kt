@@ -216,6 +216,7 @@ private fun Dialogs(state: RadioState, actions: RadioActions) {
             containerColor = Nocturne.surface,
         )
     }
+    if (state.transcriptFor != null) TranscriptSheet(state, actions)
     state.actionsFor?.let { item ->
         ModalBottomSheet(onDismissRequest = { state.actionsFor = null }, containerColor = Nocturne.surface) {
             ItemActions(item, state, actions)

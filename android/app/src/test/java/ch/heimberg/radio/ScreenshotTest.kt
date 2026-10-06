@@ -111,6 +111,22 @@ class ScreenshotTest {
         RadioTheme { Screen { ListenScreen(state, actions, PaddingValues(0.dp)) } }
     }
 
+    /** «Text» while the item plays: the line being read is marked, the others step back. */
+    @Test fun transcriptFollowing() = captureRoboImage("src/test/screenshots/transcript-following.png", roborazziOptions = options) {
+        val transcript = ch.heimberg.radio.core.Transcript(
+            "Warum der Aaregletscher schwindet",
+            listOf(
+                ch.heimberg.radio.core.TranscriptLine("Guten Morgen. Heute geht es um einen Gletscher, den viele vom Wandern kennen.", speaker = "Mia"),
+                ch.heimberg.radio.core.TranscriptLine("Der Unteraargletscher hat in den letzten zwanzig Jahren fast einen Kilometer an Länge verloren.", speaker = "Mia"),
+                ch.heimberg.radio.core.TranscriptLine("Und das Schmelzwasser fehlt im Spätsommer der Aare – mit Folgen bis nach Bern.", speaker = "Luca"),
+                ch.heimberg.radio.core.TranscriptLine("Was man dagegen tun kann, und was nicht, hören Sie gleich.", speaker = "Mia"),
+            ),
+            listOf(ch.heimberg.radio.core.SourceRef("Gletscherbericht 2026", "https://glamos.ch/bericht")),
+        )
+        val state = RadioState().apply { currentItemId = "a"; partDurationMs = 100_000; partPositionMs = 40_000 }
+        RadioTheme { Screen { Column(Modifier.padding(top = 16.dp)) { TranscriptBody(transcript, "a", state) } } }
+    }
+
     /** «Einladen»: one compact line per station with today's use and costs, and a thin bar for a budget. */
     @Test fun invitesLight() = captureRoboImage("src/test/screenshots/invites-light.png", roborazziOptions = options) {
         RadioTheme { Screen { Column(Modifier.padding(16.dp)) { InvitesContent(studioState(), actions) } } }

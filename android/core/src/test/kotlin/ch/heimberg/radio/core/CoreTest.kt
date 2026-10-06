@@ -824,3 +824,16 @@ class ProductionStagesTest {
         assertEquals(3, ProductionStages.index(item.stage))
     }
 }
+
+class TranscriptFollowTest {
+    @Test fun positionMapsToTheLineBeingRead() {
+        val transcript = Transcript("T", listOf(TranscriptLine("a".repeat(99)), TranscriptLine("b".repeat(99)), TranscriptLine("c".repeat(199))))
+        assertEquals(0, transcript.lineAt(0.0))
+        assertEquals(0, transcript.lineAt(0.2))
+        assertEquals(1, transcript.lineAt(0.3))
+        assertEquals(2, transcript.lineAt(0.6))
+        assertEquals(2, transcript.lineAt(1.5))
+        val hour = Transcript("H", listOf(TranscriptLine("Hallo"), TranscriptLine("Song", song = true)))
+        assertEquals(null, hour.lineAt(0.5))
+    }
+}
