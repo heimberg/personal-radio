@@ -10,7 +10,7 @@ import { StationStore } from './station-store.ts';
 import { OpenMeteo } from './tools.ts';
 import { GeminiScriptEditor } from './editing.ts';
 import { tick } from './station.ts';
-import { GeminiMusicWriter, SpotifyCatalog } from './music.ts';
+import { GeminiMusicWriter, LITE_MODEL, SpotifyCatalog } from './music.ts';
 import { SpotifyListening } from './listening.ts';
 import { D1StepRunner } from './agentic/steps.ts';
 import type { MusicCatalog, PlaylistSource } from './music.ts';
@@ -104,7 +104,7 @@ export function musicFor(env: Environment) {
   if (!music) {
     const spotify = env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET ? { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET, market: env.SPOTIFY_MARKET } : null;
     music = {
-      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL, liteModel: env.GEMINI_LITE_MODEL ?? 'gemini-3.8-flash-lite' }, metered(env)) } : {}),
+      ...(env.GEMINI_API_KEY ? { writer: new GeminiMusicWriter({ key: env.GEMINI_API_KEY, model: env.GEMINI_TEXT_MODEL, liteModel: env.GEMINI_LITE_MODEL ?? LITE_MODEL }, metered(env)) } : {}),
       ...(spotify ? { catalog: new SpotifyCatalog(spotify), cleanCatalog: new SpotifyCatalog({ ...spotify, clean: true }) } : {}),
     };
     musicCache.set(env.DB as object, music);
