@@ -41,8 +41,8 @@ async function judgedMusic<T>(deps: StationDeps, owner: string, row: TimelineRow
   sources: Source[], revise: (text: T, notes: string) => Promise<T | undefined>): Promise<{ text: T; quality?: QualityScore }> {
   const agents = resolveAgents(config.agents);
   if (!agentOf(agents, 'jury').enabled || !deps.editor) return { text: first };
-  const judge = async (text: T) => { try { return parseQuality(await deps.editor!.judge(script(text), sources, { agents, stationName: config.name, persona: config.host })); } catch { return undefined; } };
-  const { best, score, rounds } = await juryRounds(first, judge, async (text, notes) => { try { return await revise(text, notes); } catch { return undefined; } });
+  const judge = async (text: T) => { try { return parseQuality(await deps.editor!.judge(script(text), sources, { agents, stationName: config.name, persona: config.host, music: true })); } catch { return undefined; } };
+  const { best, score, rounds } = await juryRounds(first, judge, async (text, notes) => { try { return await revise(text, notes); } catch { return undefined; } }, agentOf(agents, 'jury').threshold);
   if (score) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: score.overall, at: deps.now() });
   return { text: best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
 }
@@ -52,7 +52,7 @@ async function researchSongs(deps: StationDeps, config: StationConfig, songs: Ar
   if (!deps.researcher || !songs.length) return [];
   try {
     const { sources } = await deps.researcher.research({
-      brief: `Finde zu jeder dieser Aufnahmen ein bis zwei konkrete, belegbare Fakten: Erscheinungsjahr, Album, Entstehung, Besetzung oder was sie besonders macht. Keine allgemeinen Biografien.\n${songs.map((song, index) => `${index + 1}. ${song.artist} – ${song.title}`).join('\n')}`,
+      brief: `Finde zu jeder dieser Aufnahmen ein bis zwei konkrete, belegbare Details, die man erzählen kann: wie der Song entstand, eine Anekdote, wer mitspielte, worum es im Text geht oder was ihn besonders macht; Erscheinungsjahr und Album nur nebenbei. Keine allgemeinen Biografien.\n${songs.map((song, index) => `${index + 1}. ${song.artist} – ${song.title}`).join('\n')}`,
       interests: [], avoidTopics: [], now: deps.now(), agent: agentOf(resolveAgents(config.agents), 'research'),
     });
     return sources.slice(0, 12);

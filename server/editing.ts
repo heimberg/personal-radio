@@ -33,10 +33,12 @@ function contextPrompt(context: StationContext): string {
   return ` Voraussichtliche Sendezeit: ${context.when}. Der Beitrag ist vorproduziert: nenne keine Uhrzeit, Tageszeit-Bezüge höchstens allgemein.${bridge}${ident} Schliesse ohne Ankündigung, was als Nächstes kommt.`;
 }
 
+/** For music moderation the jury judges what the writer can do with the song research it was given. */
+const MUSIC_JURY = ' Das ist Musikmoderation zwischen Songs: kurze Ansagen sind gewollt, Tatsachen stammen nur aus der Recherche zu den Songs («quellen»); steht dort zu einem Song nichts, sind Künstler und Titel allein richtig. hook: macht die Ansage neugierig auf den Song? novelty: erzählt sie ein lebendiges Detail statt Jahr und Album aufzuzählen? length: kurz und ohne Füllsätze. Fordere in notes nur, was mit diesen Quellen geht; fehlende Fakten gehören in research.';
 /** How often the editor works the jury's notes in (each round is judged again). */
 export const REVISION_ROUNDS = 2;
-/** A revision is only dropped when the jury marks it this much worse: then the notes broke something. */
-export const REVISION_DROP = 1;
+/** Further rounds while the jury still marks the text below its bar after REVISION_ROUNDS. */
+export const EXTRA_ROUNDS = 2;
 
 /** Rewrites for the ear and scores; falls back to the draft whenever a step fails or breaks the contract. Either agent can be switched off. */
 export async function finishScript(editor: ScriptEditor, draft: Script, sources: Source[], direction: EditorialDirection | undefined, context: StationContext): Promise<Script> {
@@ -51,29 +53,32 @@ export async function finishScript(editor: ScriptEditor, draft: Script, sources:
   const editing = agentOf(direction?.agents, 'editor').enabled, jury = agentOf(direction?.agents, 'jury');
   const first = editing ? await polish(draft) : draft;
   if (!jury.enabled) return first;
-  const { best, score, rounds } = await juryRounds(first, judge, editing ? (script, notes) => polish(script, notes) : undefined);
+  const { best, score, rounds } = await juryRounds(first, judge, editing ? (script, notes) => polish(script, notes) : undefined, jury.threshold);
   return { ...best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
 }
 
 /**
- * The jury's notes are always worked in, whatever the mark: [revise] reworks the text as long as the jury
- * names something to fix, at most REVISION_ROUNDS times, and each revision is judged again. A revision stays
- * unless the jury marks it clearly worse; a revision that cannot be judged stays too (its notes were worked
- * in). Without [revise] the jury only scores. Used for spoken items and for music moderation alike.
+ * The jury's notes are always worked in, whatever the mark: [revise] reworks the best text so far as long as
+ * the jury names something to fix, REVISION_ROUNDS times, and up to EXTRA_ROUNDS more while the mark stays
+ * below [bar]. Each revision is judged again and only kept when the jury marks it at least as good, so the
+ * quality never drops; a worse attempt is dropped and the next round tries the same notes again, told what
+ * went wrong. A revision the jury cannot judge is dropped too. [rounds] are the marks of the kept versions.
+ * Without [revise] the jury only scores. Used for spoken items and for music moderation alike.
  */
-export async function juryRounds<T>(first: T, judge: (text: T) => Promise<QualityScore | undefined>, revise?: (text: T, notes: string) => Promise<T | undefined>):
+export async function juryRounds<T>(first: T, judge: (text: T) => Promise<QualityScore | undefined>, revise?: (text: T, notes: string) => Promise<T | undefined>, bar = 0):
   Promise<{ best: T; score?: QualityScore; rounds: number[] }> {
-  let best = first, score = await judge(first);
+  let best = first, score = await judge(first), failed = '';
   const rounds: number[] = score ? [score.overall] : [];
-  for (let round = 0; revise && score?.notes && round < REVISION_ROUNDS; round++) {
-    const second = await revise(best, score.notes);
+  const more = (round: number) => round < REVISION_ROUNDS || (!!score && score.overall < bar && round < REVISION_ROUNDS + EXTRA_ROUNDS);
+  for (let round = 0; revise && score?.notes && more(round); round++) {
+    const second = await revise(best, failed ? `${score.notes} (Ein früherer Versuch, diese Hinweise umzusetzen, wurde schlechter bewertet: ${failed.slice(0, 300)} Setze sie diesmal anders um.)` : score.notes);
     if (second === undefined || second === best) break;
     const secondScore = await judge(second);
-    if (!secondScore) { best = second; score = { ...score, notes: '' }; break; }
-    rounds.push(secondScore.overall);
-    if (secondScore.overall <= score.overall - REVISION_DROP) break;
+    if (!secondScore) break;
+    if (secondScore.overall < score.overall) { failed = `${secondScore.overall} statt ${score.overall}${secondScore.notes ? `, die Jury dazu: ${secondScore.notes}` : ''}.`; continue; }
     // What the sources lack stays known, even when the revision no longer names it.
-    best = second; score = { ...secondScore, ...(secondScore.research || !score.research ? {} : { research: score.research }) };
+    best = second; failed = ''; rounds.push(secondScore.overall);
+    score = { ...secondScore, ...(secondScore.research || !score.research ? {} : { research: score.research }) };
   }
   return { best, ...(score ? { score } : {}), rounds };
 }
@@ -135,7 +140,7 @@ export class GeminiScriptEditor implements ScriptEditor {
 
   judge(script: Script, sources: Source[], direction: EditorialDirection | undefined) {
     const jury = agentOf(direction?.agents, 'jury');
-    return this.ask(`Du bist die Qualitätsjury eines Radios. Vergib für hook, clarity, facts, novelty und length je eine Note von 1 bis 5. In notes steht konkret und vollständig, was die Schlussredaktion mit diesem Text und seinen Quellen beheben kann – sie setzt jeden Hinweis um; gibt es nichts zu beheben, bleibt notes leer (streichen, kürzen, umstellen, schärfen, Quellen besser nutzen); was dafür neue Recherche bräuchte (fehlende Fakten, Stimmen, Hintergründe), gehört in research, sonst bleibt research leer. ${jury.instructions}${listenerNotesPrompt(direction, 'Werte besonders streng, was der Hörer zuletzt bemängelt hat:')} Antworte als JSON: {"hook":4,"clarity":4,"facts":4,"novelty":3,"length":4,"notes":"...","research":""}.`,
+    return this.ask(`Du bist die Qualitätsjury eines Radios. Vergib für hook, clarity, facts, novelty und length je eine Note von 1 bis 5. In notes steht konkret und vollständig, was die Schlussredaktion mit diesem Text und seinen Quellen beheben kann – sie setzt jeden Hinweis um; gibt es nichts zu beheben, bleibt notes leer (streichen, kürzen, umstellen, schärfen, Quellen besser nutzen); was dafür neue Recherche bräuchte (fehlende Fakten, Stimmen, Hintergründe), gehört in research, sonst bleibt research leer.${direction?.music ? MUSIC_JURY : ''} ${jury.instructions}${listenerNotesPrompt(direction, 'Werte besonders streng, was der Hörer zuletzt bemängelt hat:')} Antworte als JSON: {"hook":4,"clarity":4,"facts":4,"novelty":3,"length":4,"notes":"...","research":""}.`,
       { beitrag: script.turns ?? script.text, titel: script.title, ziel_minuten: direction?.targetMinutes, quellen: sources.map(source => source.title) }, 'Gemini quality jury', jury.temperature);
   }
 }
