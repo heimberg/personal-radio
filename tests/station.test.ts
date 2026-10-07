@@ -600,6 +600,49 @@ test('a music hour retries research once and, if search stays empty, is written 
   assert.equal(toView((await h.store.getItem(OWNER, id))!, parsed).verification, 'off');
 });
 
+test('a music block researches its AI picks, and the jury\'s notes on the moderation are worked in', async () => {
+  const PLAYLIST = '37i9dQZF1DX4sWSpwq3LiO';
+  const station = config({ music: { between: 1, announce: true, taste: 'Indie' } });
+  station.shows = [...station.shows.map(show => ({ ...show, enabled: show.id === 'kurz' })), {
+    id: 'block', name: 'Morgenmusik', enabled: true, format: 'music_block', feedIds: [], verification: 'off', targetMinutes: 20, instructions: '',
+    textProvider: 'gemini', sourceMode: 'web', researchPrompt: '', talkSeconds: 20, switchAfterTracks: 2, switchAfterMinutes: 0,
+    groups: [{ name: 'Kaffee', playlists: [PLAYLIST], taste: '' }, { name: 'Entdeckungen', playlists: [], taste: 'Krautrock' }],
+    triggers: { blockStart: true, blockEnd: true, beforeTrack: 1, afterTrack: 0, everyMinutes: 0, groupTransition: true },
+  }];
+  const parsed = parseStationConfig(station);
+  const h = harness({ station: parsed }); await h.setup();
+  h.deps.playlists = { tracks: async () => Array.from({ length: 4 }, (_, index) => ({ uri: `spotify:track:P${index}`, title: `Geheim ${index}`, artist: 'Privat', durationMs: 180_000 })) };
+  h.deps.catalog = { find: async pick => ({ uri: `spotify:track:${pick.title}`, durationMs: 180_000, shown: { title: pick.title, artist: pick.artist.toLowerCase() } }) };
+  let n = 0;
+  const briefs: string[] = [], blocks: any[] = [];
+  h.deps.researcher = { research: async request => { briefs.push(request.brief); return { sources: [{ id: 'r1', url: 'https://example.org/neu', title: 'Neu!', excerpt: '1972 in Düsseldorf aufgenommen.', publishedAt: NOW.toISOString(), retrievedAt: NOW.toISOString() }], queries: [] }; } };
+  h.deps.musicWriter = {
+    pickSubject: async () => { throw new Error('unused'); }, pickTracks: async () => [], writeHour: async () => { throw new Error('unused'); },
+    pickSongs: async request => Array.from({ length: request.count ?? 3 }, () => ({ title: `A${++n}`, artist: `Band ${n}`, announcement: '' })),
+    writeBlock: async request => { blocks.push(request); return request.moments.map((_, index) => request.revise ? `Besser ${index}.` : `Erst ${index}.`); },
+  };
+  const judged: string[] = [];
+  h.deps.editor = { polish: async script => script, judge: async script => { judged.push(script.text);
+    return { hook: 4, clarity: 4, facts: 4, novelty: 4, length: 4, notes: judged.length === 1 ? 'Ansagen konkreter' : '' }; } };
+  const id = (await scheduleShowNow(h.deps, OWNER, 'block'))!;
+  assert.equal(await produceItem(h.deps, OWNER, id), 'ready');
+  // One search about the AI's picks only; its findings go to the writer.
+  assert.equal(briefs.length, 1);
+  assert.match(briefs[0], /Band 1 – A1/);
+  assert.doesNotMatch(briefs.join(' '), /Geheim|Privat/);
+  assert.deepEqual(blocks[0].sources.map((source: Source) => source.id), ['r1']);
+  // The jury's notes went back to the writer even with a good mark; the revision is what plays.
+  assert.deepEqual(blocks[1].revise, { texts: blocks[0].moments.map((_: unknown, index: number) => `Erst ${index}.`), notes: 'Ansagen konkreter' });
+  const row = (await h.store.getItem(OWNER, id))!;
+  const pkg = JSON.parse(row.script_json!);
+  assert.match(pkg.text, /^Besser 0\./);
+  assert.deepEqual(pkg.quality.rounds, [4, 4]);
+  // The app shows Spotify's spelling; the AI only ever saw its own.
+  const view = toView(row, parsed);
+  assert.ok(view.parts!.some(part => part.kind === 'track' && part.artist === 'band 1'));
+  assert.equal(view.quality, 4);
+});
+
 test('music block settings: defaults, playlist links and IDs, at least one moderation trigger', () => {
   const base = config();
   const withBlock = (block: Record<string, unknown>) => parseStationConfig({ ...base, shows: [...base.shows, { id: 'block', name: 'Morgenmusik', enabled: true, format: 'music_block',

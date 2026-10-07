@@ -1,7 +1,8 @@
 /** Music: hours (artist, genre, theme), single songs and music blocks, voiced part by part. */
 import { HOUR_FOCUS, MUSIC_SHOW_ID, SONG_MINUTES, activeSlot, hourSubject, localClock, stationSounds } from '../../src/domain/station.ts';
 import type { HourFocus, ShowConfig, StationConfig } from '../../src/domain/station.ts';
-import type { Source } from '../../src/domain/program.ts';
+import type { QualityScore, Script, Source } from '../../src/domain/program.ts';
+import { juryRounds, parseQuality } from '../editing.ts';
 import { TTS_PARALLEL } from '../providers.ts';
 import { usesHeadlines, usesWeather } from '../tools.ts';
 import { WILDCARD, WILDCARD_TASTES, blockOf, surpriseLevel } from '../../src/domain/blocks.ts';
@@ -21,12 +22,41 @@ import type { ProduceOutcome } from './produce.ts';
 
 /** Stored in script_json: the hour's speech and tracks in playing order. */
 export interface SpeechPart { kind: 'speech'; text: string; sourceIds: string[]; audioKey?: string; contentType?: string }
-export interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; imageUrl?: string; reason?: string; group?: string; picked?: 'ai' | 'playlist' | 'release' }
+/** [title] and [artist] are what the AI picked (and may be named to it again); [shown] is Spotify's spelling, for the app only. */
+export interface TrackPart { kind: 'track'; uri: string; title: string; artist: string; durationMs: number; imageUrl?: string; reason?: string; group?: string; picked?: 'ai' | 'playlist' | 'release'; shown?: { title: string; artist: string } }
 /** `artist_hour` packages were written before genre and theme hours existed; they are artist hours. */
 export interface HourPackage {
   kind: 'music_hour' | 'artist_hour' | 'song' | 'music_block'; focus?: HourFocus; subject?: string; artist?: string; title: string; text: string; sourceIds: string[]; parts: Array<SpeechPart | TrackPart>;
   /** Music blocks: the group the next block of this show starts with. */
   nextGroup?: number;
+  /** The jury's marks on the moderation, after its notes were worked in. */
+  quality?: QualityScore;
+}
+
+/**
+ * The jury judges the moderation of a music hour or block and the writer works its notes in (see juryRounds).
+ * Without the jury, or without an editor to judge with, the texts stay as written.
+ */
+async function judgedMusic<T>(deps: StationDeps, owner: string, row: TimelineRow, config: StationConfig, first: T, script: (text: T) => Script,
+  sources: Source[], revise: (text: T, notes: string) => Promise<T | undefined>): Promise<{ text: T; quality?: QualityScore }> {
+  const agents = resolveAgents(config.agents);
+  if (!agentOf(agents, 'jury').enabled || !deps.editor) return { text: first };
+  const judge = async (text: T) => { try { return parseQuality(await deps.editor!.judge(script(text), sources, { agents, stationName: config.name, persona: config.host })); } catch { return undefined; } };
+  const { best, score, rounds } = await juryRounds(first, judge, async (text, notes) => { try { return await revise(text, notes); } catch { return undefined; } });
+  if (score) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: score.overall, at: deps.now() });
+  return { text: best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
+}
+
+/** One grounded search for facts about the named songs (AI picks and new releases only), for the block's moderation. */
+async function researchSongs(deps: StationDeps, config: StationConfig, songs: Array<{ artist: string; title: string }>): Promise<Source[]> {
+  if (!deps.researcher || !songs.length) return [];
+  try {
+    const { sources } = await deps.researcher.research({
+      brief: `Finde zu jeder dieser Aufnahmen ein bis zwei konkrete, belegbare Fakten: Erscheinungsjahr, Album, Entstehung, Besetzung oder was sie besonders macht. Keine allgemeinen Biografien.\n${songs.map((song, index) => `${index + 1}. ${song.artist} – ${song.title}`).join('\n')}`,
+      interests: [], avoidTopics: [], now: deps.now(), agent: agentOf(resolveAgents(config.agents), 'research'),
+    });
+    return sources.slice(0, 12);
+  } catch { return []; }
 }
 export const packageFocus = (pkg: Partial<HourPackage>): HourFocus => pkg.focus ?? 'artist';
 export const packageSubject = (pkg: Partial<HourPackage>): string => pkg.subject ?? pkg.artist ?? '';
@@ -92,9 +122,10 @@ export async function produceMusicHour(deps: StationDeps, owner: string, config:
       if (!sources.length) ({ sources, queries } = await deps.researcher.research({ brief: `Suche mit Google nach: ${subject}. ${brief}`, interests: [subject], avoidTopics: [], now, agent: agentOf(agents, 'research') }));
     }
     const direction = { instructions: show.instructions, stationName: config.name, persona: config.host, avoidTopics: await recentTopics(deps, owner), agents, listenerNotes: await notesFor(deps, owner, now) };
-    let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number; imageUrl?: string }>;
+    let resolved: Array<{ pick: TrackPick; uri: string; durationMs: number; imageUrl?: string; shown?: { title: string; artist: string } }>;
     let hour: HourScript;
     let team: { songs: number; specialists: number; corrections: number } | undefined;
+    let quality: QualityScore | undefined;
     if (show.production === 'agents') {
       // The editorial team researches, plans, writes, checks and edits in durable steps.
       if (!deps.agentModel) return fail('GEMINI_NOT_CONFIGURED');
@@ -130,7 +161,11 @@ export async function produceMusicHour(deps: StationDeps, owner: string, config:
       });
       sources = [...sources, ...songSources];
       queries = [...new Set([...queries, ...songDossier.queries])];
-      hour = await deps.musicWriter.writeHour({ focus, subject, picks: resolved.map(item => item.pick), sources, talkSeconds: show.talkSeconds ?? 60, direction });
+      const found = resolved.map(item => item.pick), writer = deps.musicWriter;
+      hour = await writer.writeHour({ focus, subject, picks: found, sources, talkSeconds: show.talkSeconds ?? 60, direction });
+      const judged = await judgedMusic(deps, owner, row, config, hour, script => ({ title: script.title, text: [script.intro, ...script.tracks, script.outro].map(part => part.text).join('\n\n'), sourceIds: [] }),
+        sources, (script, notes) => writer.writeHour({ focus, subject, picks: found, sources, talkSeconds: show.talkSeconds ?? 60, direction, revise: { script, notes } }));
+      hour = judged.text; quality = judged.quality;
     }
     const verification = sources.length ? show.verification : 'off';
     const spoken = [hour.intro, ...hour.tracks, hour.outro];
@@ -142,10 +177,10 @@ export async function produceMusicHour(deps: StationDeps, owner: string, config:
     resolved.forEach((item, index) => {
       const moderation = hour.tracks.find(track => track.index === index);
       if (moderation) parts.push(...speech(moderation));
-      parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}), reason: item.pick.reason });
+      parts.push({ kind: 'track', uri: item.uri, title: item.pick.title, artist: item.pick.artist, durationMs: item.durationMs, ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}), ...(item.shown ? { shown: item.shown } : {}), reason: item.pick.reason });
     });
     parts.push(...speech(hour.outro));
-    pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts };
+    pkg = { kind: 'music_hour', focus, subject, title: hour.title, text, sourceIds, parts, ...(quality ? { quality } : {}) };
     await deps.store.markCovered(owner, sources.map(source => source.url), now);
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), sources_json: JSON.stringify(sources),
       verification, research_json: queries.length || team ? JSON.stringify({ queries, ...(team ? { team } : {}) }) : null }, deps.now());
@@ -251,7 +286,7 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     // the fresh picks chance decides, not the AI's order: its first choice is the most predictable one.
     const fresh = shuffled(picks.filter(pick => !recent.all.has(artistKey(pick.artist))), deps.random ?? Math.random);
     const ordered = [...fresh, ...picks.filter(pick => recent.all.has(artistKey(pick.artist)))];
-    let chosen: { pick: SongPick; uri: string; durationMs: number; imageUrl?: string } | null = null;
+    let chosen: { pick: SongPick; uri: string; durationMs: number; imageUrl?: string; shown?: { title: string; artist: string } } | null = null;
     for (const pick of ordered) {
       const track = await deps.catalog.find(pick);
       if (track) { chosen = { pick, ...track }; break; }
@@ -260,7 +295,7 @@ export async function produceSong(deps: StationDeps, owner: string, config: Stat
     const title = `${chosen.pick.artist} – ${chosen.pick.title}`;
     const intro: SpeechPart[] = config.music.announce && chosen.pick.announcement ? [{ kind: 'speech', text: chosen.pick.announcement, sourceIds: [] }] : [];
     pkg = { kind: 'song', title, subject: title, text: chosen.pick.announcement, sourceIds: [],
-      parts: [...intro, { kind: 'track', uri: chosen.uri, title: chosen.pick.title, artist: chosen.pick.artist, durationMs: chosen.durationMs, ...(chosen.imageUrl ? { imageUrl: chosen.imageUrl } : {}) }] };
+      parts: [...intro, { kind: 'track', uri: chosen.uri, title: chosen.pick.title, artist: chosen.pick.artist, durationMs: chosen.durationMs, ...(chosen.imageUrl ? { imageUrl: chosen.imageUrl } : {}), ...(chosen.shown ? { shown: chosen.shown } : {}) }] };
     await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), estimated_minutes: Math.max(1, Math.round(chosen.durationMs / 60_000)) }, deps.now());
   } else {
     pkg = JSON.parse(row.script_json ?? 'null') as HourPackage;
@@ -489,24 +524,31 @@ export async function produceMusicBlock(deps: StationDeps, owner: string, config
 
   const positions = [...moments.keys()].sort((a, b) => a - b);
   const groupNames = [...new Set(tracks.map(track => groups[track.group].name))];
-  const texts = await deps.musicWriter.writeBlock({
+  const ordered = positions.map(position => moments.get(position)!);
+  // Facts for the moderation: one search about the songs named to the AI (its picks and new releases).
+  const songs = [...new Map(ordered.flatMap(moment => [moment.next, moment.previous]).flatMap(song => song ? [[`${song.artist}|${song.title}`, song] as const] : [])).values()];
+  const sources = await researchSongs(deps, config, songs);
+  const writer = deps.musicWriter;
+  const write = (revise?: { texts: string[]; notes: string }) => writer.writeBlock({
     blockName: show.name, groups: groupNames, nextShow: nextShowName(config, show, new Date(row.planned_at)),
-    daytime: daytime(airTime(row, deps.now()), config.timezone), talkSeconds: show.talkSeconds ?? 20,
-    moments: positions.map(position => moments.get(position)!),
-    direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) },
+    daytime: daytime(airTime(row, deps.now()), config.timezone), talkSeconds: show.talkSeconds ?? 20, moments: ordered, sources,
+    direction: { instructions: show.instructions, stationName: config.name, persona: config.host, agents: resolveAgents(config.agents) }, ...(revise ? { revise } : {}),
   });
-  if (!texts.some(Boolean)) throw new Error('Gemini block moderation returned nothing');
+  const written = await write();
+  if (!written.some(Boolean)) throw new Error('Gemini block moderation returned nothing');
+  const { text: texts, quality } = await judgedMusic(deps, owner, row, config, written, list => ({ title: show.name, text: list.filter(Boolean).join('\n\n'), sourceIds: [] }), sources,
+    async (list, notes) => { const next = await write({ texts: list, notes }); return next.some(Boolean) ? next : undefined; });
   const speechAt = new Map(positions.map((position, index) => [position, texts[index]]));
   const parts: Array<SpeechPart | TrackPart> = [];
   const speak = (position: number) => { const body = speechAt.get(position); if (body) parts.push(...splitSpeech(body).map(chunk => ({ kind: 'speech' as const, text: chunk, sourceIds: [] }))); };
   tracks.forEach((track, index) => {
     speak(index);
-    parts.push({ kind: 'track', uri: track.uri, title: track.title, artist: track.artist, durationMs: track.durationMs, ...(track.imageUrl ? { imageUrl: track.imageUrl } : {}), group: groups[track.group].name, picked: track.picked });
+    parts.push({ kind: 'track', uri: track.uri, title: track.title, artist: track.artist, durationMs: track.durationMs, ...(track.imageUrl ? { imageUrl: track.imageUrl } : {}), ...(track.shown ? { shown: track.shown } : {}), group: groups[track.group].name, picked: track.picked });
   });
   speak(tracks.length);
   const text = parts.flatMap(part => part.kind === 'speech' ? [part.text] : []).join(' ');
   const pkg: HourPackage = { kind: 'music_block', title: show.name, subject: groupNames.join(' → '), text, sourceIds: [], parts,
-    nextGroup: (tracks.at(-1)!.group + 1) % groups.length };
+    nextGroup: (tracks.at(-1)!.group + 1) % groups.length, ...(quality ? { quality } : {}) };
   const spokenMs = text.split(/\s+/).length / 130 * 60_000;
   await deps.store.update(owner, row.id, { state: 'voicing', script_json: JSON.stringify(pkg), verification: 'off',
     estimated_minutes: Math.max(1, Math.round((musicMs + spokenMs) / 60_000)) }, deps.now());
