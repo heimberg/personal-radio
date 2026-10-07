@@ -83,9 +83,15 @@ internal fun TranscriptBody(transcript: Transcript, itemId: String, state: Radio
     var following by remember(itemId) { mutableStateOf(true) }
     val dragged by list.interactionSource.collectIsDraggedAsState()
     LaunchedEffect(dragged) { if (dragged) following = false }
-    // Header rows come first in the list, so the line's row is two further down.
+    // Header rows come first in the list, so the sentence's row is two further down. The list only moves
+    // when that row leaves the view; at the start it stays at the top, so the jury's line stays readable.
     LaunchedEffect(current, following) {
-        if (current != null && following) list.animateScrollToItem(current + HEADER_ROWS, scrollOffset = -160)
+        val target = (current ?: return@LaunchedEffect) + HEADER_ROWS
+        if (!following) return@LaunchedEffect
+        val visible = list.layoutInfo.visibleItemsInfo
+        val shown = visible.firstOrNull { it.index == target }
+        val inView = shown != null && shown.offset >= 0 && shown.offset + shown.size <= list.layoutInfo.viewportEndOffset - 120
+        if (!inView) list.animateScrollToItem(if (current == 0) 0 else target, scrollOffset = if (current == 0) 0 else -200)
     }
     Box {
         LazyColumn(state = list, modifier = Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp)) {
@@ -101,7 +107,7 @@ internal fun TranscriptBody(transcript: Transcript, itemId: String, state: Radio
                     Text("Bei Sendungen mit Musik läuft der Text nicht mit.", style = MaterialTheme.typography.bodySmall, color = Nocturne.faint, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            itemsIndexed(transcript.lines) { index, line ->
+            itemsIndexed(transcript.reading) { index, line ->
                 val marked = index == current
                 val back by animateColorAsState(if (marked) Nocturne.surfaceHigh else Color.Transparent, label = "line")
                 val text = buildAnnotatedString {
@@ -113,7 +119,7 @@ internal fun TranscriptBody(transcript: Transcript, itemId: String, state: Radio
                 }
                 Text(
                     text, style = MaterialTheme.typography.bodyLarge, color = if (current != null && !marked) Nocturne.muted else Nocturne.text,
-                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(back).padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(top = if (line.continues) 0.dp else 10.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(back).padding(horizontal = 8.dp, vertical = 4.dp),
                 )
             }
             if (transcript.sources.isNotEmpty()) {
@@ -127,7 +133,8 @@ internal fun TranscriptBody(transcript: Transcript, itemId: String, state: Radio
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                     ) {
                         Text(source.title.ifBlank { uri.host ?: source.url }, style = MaterialTheme.typography.bodyMedium, color = if (opens) Nocturne.kindLabel(Kind.DISCOVER) else Nocturne.text)
-                        uri.host?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
+                        // Web research links go through Google's redirect: its address says nothing, the title names the site.
+                        uri.host?.takeUnless { it.endsWith("vertexaisearch.cloud.google.com") || it == source.title }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Nocturne.muted) }
                     }
                 }
             }

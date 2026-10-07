@@ -421,3 +421,8 @@ test('research searches with gemini-3.5-flash-lite; without it the main model ta
   await missing.research(request);
   assert.deepEqual(models, ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash']);
 });
+
+test('briefs and dialogs tell one story; only headlines and briefings may gather several', async () => {
+  const { briefSystemPrompt } = await import('../server/providers.ts');
+  assert.match(briefSystemPrompt(undefined), /genau eine Geschichte[\s\S]*Schlagzeilen, Briefing, Presseschau/);
+});
