@@ -168,6 +168,8 @@ export function parseHourScript(value: unknown, songs: number, sourceIds: string
 }
 
 /** Gemini JSON calls for the three editorial steps of a music hour. */
+/** The cheaper model for the small tasks (Google's current flash-lite); GEMINI_LITE_MODEL overrides it. */
+export const LITE_MODEL = 'gemini-3.5-flash-lite';
 /** The labels of the small tasks the lite model takes (see [GeminiMusicWriter.ask]). */
 export const LITE_TASKS = new Set(['Gemini quality jury', 'Gemini linker', 'Gemini quiz', 'Gemini story choice', 'Gemini follow check']);
 

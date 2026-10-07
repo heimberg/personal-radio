@@ -49,7 +49,7 @@ crons = ["*/10 * * * *"]
 # while keep_vars = true keeps everything that is not defined in this file.
 # Optional variables and their defaults in the code:
 #   DAILY_GENERATIONS 24 · DAILY_FEED_REQUESTS 60 · DAILY_TTS_CHARACTERS 12000 · DAILY_LINKERS 40
-#   GEMINI_TEXT_MODEL gemini-3.8-flash · GEMINI_LITE_MODEL gemini-3.8-flash-lite (jury, transitions, quiz, story choices, novelty check; empty = off) · GEMINI_RESEARCH_MODEL gemini-3.5-flash-lite (web search; falls back to GEMINI_TEXT_MODEL) · GEMINI_TTS_MODEL gemini-3.8-flash-tts · GEMINI_TTS_LITE_MODEL gemini-3.8-flash-lite-tts · GEMINI_TTS_DAILY_REQUESTS 100
+#   GEMINI_TEXT_MODEL gemini-3.8-flash · GEMINI_LITE_MODEL gemini-3.5-flash-lite (jury, transitions, quiz, story choices, novelty check; empty = off) · GEMINI_RESEARCH_MODEL gemini-3.5-flash-lite (web search; falls back to GEMINI_TEXT_MODEL) · GEMINI_TTS_MODEL gemini-3.8-flash-tts · GEMINI_TTS_LITE_MODEL gemini-3.8-flash-lite-tts · GEMINI_TTS_DAILY_REQUESTS 100
 #   GEMINI_VOICE_A Kore · GEMINI_VOICE_B Puck · MISTRAL_TTS_MODEL voxtral-mini-tts-2603 · MISTRAL_VOICE_ID (none)
 #   ASK_BASE_URL, ASK_MODEL, ASK_API_KEY: all three set enables ASK; otherwise Gemini writes and verifies.
 #   SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET (secret): track search for artist hours · SPOTIFY_MARKET CH
