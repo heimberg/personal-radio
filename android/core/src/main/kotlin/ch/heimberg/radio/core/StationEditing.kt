@@ -95,11 +95,16 @@ data class Show(
     val taste: String = "",
     val raw: JsonObject = JsonObject(emptyMap()),
 ) {
-    /** One line for the list: format, length and what it is about. */
+    /**
+     * One line for the list: running or paused, the format (unless the name already says it), length, what it
+     * is about and where the material comes from – «Läuft · 60 Min. · Guns n Roses».
+     */
     val summary: String get() = listOfNotNull(
-        format.label, "$minutes Min.",
+        if (enabled) "Läuft" else "Pausiert",
+        format.label.takeUnless { name.contains(it, ignoreCase = true) },
+        "$minutes Min.",
         subject.ifBlank { null },
-        if (format.spoken) (if (sourceMode == "feeds") "Feeds" else "Websuche") else null,
+        if (format.spoken) (if (sourceMode == "feeds") "aus deinen Feeds" else "mit Websuche") else null,
     ).joinToString(" · ")
 
     /** Another format: the length moves into its limits, and what only the old format had is dropped. */

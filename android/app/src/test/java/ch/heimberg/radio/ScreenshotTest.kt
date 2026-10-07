@@ -127,6 +127,14 @@ class ScreenshotTest {
         RadioTheme { Screen { Column(Modifier.padding(top = 16.dp)) { TranscriptBody(transcript, "a", state) } } }
     }
 
+    /** «Sendungen»: running or paused in each line, what the page is for and what the formats are. */
+    @Test fun showsList() = captureRoboImage("src/test/screenshots/shows-list.png", roborazziOptions = options) {
+        val state = studioState().apply {
+            station = StationDraft(kotlinx.serialization.json.Json.parseToJsonElement(SHOWS).let { it as JsonObject })
+        }
+        RadioTheme { Screen { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { ShowsContent(state, actions) } } }
+    }
+
     /** «Einladen»: one compact line per station with today's use and costs, and a thin bar for a budget. */
     @Test fun invitesLight() = captureRoboImage("src/test/screenshots/invites-light.png", roborazziOptions = options) {
         RadioTheme { Screen { Column(Modifier.padding(16.dp)) { InvitesContent(studioState(), actions) } } }
@@ -162,3 +170,11 @@ private const val INVITES = """{"ready":true,"budgetFloor":4,
     {"key":"tom","name":"Tom","kind":"guest","since":"2026-10-03T10:00:00Z","removable":true,"limit":12,
      "usage":{"today":{"generations":1},"week":{"generations":3},"costs":{"today":0.05,"month":0.4}}}
   ]}"""
+
+private const val SHOWS = """{"shows":[
+  {"id":"kurz","name":"Kurzbeitrag","enabled":false,"format":"brief","targetMinutes":2,"sourceMode":"feeds"},
+  {"id":"hintergrund","name":"Hintergrund im Dialog","enabled":false,"format":"podcast","targetMinutes":5,"sourceMode":"feeds"},
+  {"id":"entdeckungen","name":"Entdeckungen","enabled":false,"format":"brief","targetMinutes":2,"sourceMode":"web"},
+  {"id":"gnr","name":"Künstler-Stunde","enabled":true,"format":"artist_hour","targetMinutes":60,"artist":"Guns n Roses"},
+  {"id":"poke","name":"Themen-Stunde","enabled":true,"format":"theme_hour","targetMinutes":60,"theme":"Pokemon"}
+]}"""

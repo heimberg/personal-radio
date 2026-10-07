@@ -1,6 +1,4 @@
-Mitlesen neu: der Text läuft beim Hören mit und markiert die aktuelle Stelle
-Programm, Archiv und Chat: Einträge gleiten an ihren Platz statt zu springen
-Beim Laden graue Platzhalter statt «Wird geladen …»
+Sendungen: jede zeigt «Läuft» oder «Pausiert», dazu eine kurze Erklärung der Seite und der Formate
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.
