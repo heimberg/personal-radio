@@ -426,3 +426,13 @@ test('briefs and dialogs tell one story; only headlines and briefings may gather
   const { briefSystemPrompt } = await import('../server/providers.ts');
   assert.match(briefSystemPrompt(undefined), /genau eine Geschichte[\s\S]*Schlagzeilen, Briefing, Presseschau/);
 });
+
+test('no Gemini request sends a retired sampling parameter (temperature, topP, topK, thinkingBudget)', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const files = ['server', 'server/agentic', 'server/station', 'server/routes'].flatMap(dir => readdirSync(dir).filter(name => name.endsWith('.ts')).map(name => `${dir}/${name}`));
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    for (const config of text.match(/generationConfig:\s*\{[^}]*\}/g) ?? []) assert.doesNotMatch(config, /temperature|topP|topK|thinkingBudget/, file);
+    assert.doesNotMatch(text, /thinking_?budget["']?\s*:/i, file);
+  }
+});

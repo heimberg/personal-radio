@@ -3,7 +3,7 @@
 import type { EditorialDirection, Source } from '../src/domain/program.ts';
 import type { HourFocus } from '../src/domain/station.ts';
 import { agentOf } from '../src/domain/agents.ts';
-import { PRE_PRODUCED, ProviderError, avoidTopicsPrompt, listenerNotesPrompt, parseModelJson, personaPrompt, showInstructions } from './providers.ts';
+import { PRE_PRODUCED, ProviderError, freedomPrompt, avoidTopicsPrompt, listenerNotesPrompt, parseModelJson, personaPrompt, showInstructions } from './providers.ts';
 
 type Fetch = typeof fetch;
 
@@ -209,9 +209,9 @@ export class GeminiMusicWriter implements MusicWriter {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(90_000),
       headers: { 'x-goog-api-key': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
+        systemInstruction: { parts: [{ text: system + freedomPrompt(temperature) }] },
         contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature },
+        generationConfig: { responseMimeType: 'application/json' },
       }),
     });
     if (!response.ok) {
