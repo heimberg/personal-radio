@@ -39,26 +39,28 @@ test('only changes from the defaults are stored; unknown agents and unsafe value
   assert.equal(agentOf(undefined, 'jury').threshold, 3.5);
 });
 
-test('the writer, research and fact check use the owner\'s instructions and temperature; the fact check rules stay', async () => {
+test('the writer, research and fact check use the owner\'s instructions and freedom as words, never a temperature; the fact check rules stay', async () => {
   const agents = resolveAgents({ writer: { instructions: 'Schreibe wie ein Wetterfrosch.', temperature: 0.8 }, research: { instructions: 'Nur Schweizer Quellen.', temperature: 0.1 },
     verifier: { instructions: 'Jahreszahlen besonders streng prüfen.' } });
   let body: any;
   const writer = new GeminiBriefGenerator({ key: 'g' }, async (_url, init) => { body = JSON.parse(String(init?.body)); return geminiText(JSON.stringify({ title: 'T', text: 'Ein Fakt.', sourceIds: ['s1'] })); });
   await writer.generate(defaultProfile, sources, { agents });
   assert.match(body.systemInstruction.parts[0].text, /Keine neuen Fakten erfinden\. Schreibe wie ein Wetterfrosch\. Antworte ausschliesslich als JSON/);
-  assert.equal(body.generationConfig.temperature, 0.8);
+  // Google retires temperature for Gemini: the freedom setting becomes words in the prompt.
+  assert.equal(body.generationConfig.temperature, undefined);
+  assert.match(body.systemInstruction.parts[0].text, /Formuliere frei, bildhaft/);
 
   const researcher = new GeminiResearcher({ key: 'g' }, async (_url, init) => { body = JSON.parse(String(init?.body)); return geminiText(''); });
   await researcher.research({ brief: 'x', interests: [], avoidTopics: [], now: NOW, agent: agents.research });
-  assert.match(body.systemInstruction.parts[0].text, /Nutze die Google-Suche\. Nur Schweizer Quellen\.$/);
-  assert.equal(body.generationConfig.temperature, 0.1);
+  assert.match(body.systemInstruction.parts[0].text, /Nutze die Google-Suche\. Nur Schweizer Quellen\. Formuliere genau, nüchtern/);
+  assert.equal(body.generationConfig, undefined);
 
   const verifier = new GeminiEditorialVerifier({ key: 'g' }, async (_url, init) => { body = JSON.parse(String(init?.body));
     return geminiText(JSON.stringify({ approved: true, reasons: [], checks: [{ claim: 'Fakt', sourceIds: ['s1'], quote: 'Ein Fakt', supported: true }] })); });
   const script: Script = { title: 'T', text: 'Ein Fakt.', sourceIds: ['s1'] };
   assert.equal((await verifier.verify(script, sources, agents.verifier.instructions)).approved, true);
   assert.match(body.systemInstruction.parts[0].text, /Freigabe nur, wenn .* verschärfen die Prüfung, lockern sie aber nie\): Jahreszahlen besonders streng prüfen\.$/);
-  assert.equal(body.generationConfig.temperature, 0);
+  assert.deepEqual(body.generationConfig, { responseMimeType: 'application/json' });
 });
 
 test('the final desk follows the switches; the jury\'s notes are always worked in; prompts carry the owner\'s text', async () => {
