@@ -207,7 +207,7 @@ export interface Researcher { research(request: ResearchRequest): Promise<Resear
  * written from these sources exactly like from feed articles, so the usual checks apply.
  */
 /** Grounded search runs on the small model: it only finds and quotes sources, the writing comes later. */
-export const RESEARCH_MODEL = 'gemini-2.5-flash-lite';
+export const RESEARCH_MODEL = 'gemini-3.5-flash-lite';
 
 export class GeminiResearcher implements Researcher {
   private key: string;
