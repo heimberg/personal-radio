@@ -69,7 +69,7 @@ export function transcriptView(row: TimelineRow, config: StationConfig | null): 
   let lines: TranscriptView['lines'];
   if (Array.isArray(script.parts)) {
     lines = script.parts.map(part => part.kind === 'track'
-      ? { text: `${part.title} – ${part.artist}`, song: true }
+      ? { text: `${part.shown?.title ?? part.title} – ${part.shown?.artist ?? part.artist}`, song: true }
       : { text: withoutVoiceTags(part.text) });
   } else if (Array.isArray(script.turns)) {
     lines = script.turns.map(turn => ({ speaker: turn.speaker === 'host-b' ? cohost : host, text: withoutVoiceTags(turn.text) }));
@@ -89,7 +89,7 @@ export function hourView(row: TimelineRow, pkg: Partial<HourPackage>): Pick<Time
   return {
     ...(pkg.kind === 'song' || pkg.kind === 'music_block' ? { subject } : { focus, subject, ...(focus === 'artist' ? { artist: subject } : {}) }),
     parts: pkg.parts.map((part, index) => part.kind === 'track'
-      ? { kind: 'track' as const, spotifyUri: part.uri, title: part.title, artist: part.artist, durationMs: part.durationMs, ...(part.imageUrl ? { imageUrl: part.imageUrl } : {}) }
+      ? { kind: 'track' as const, spotifyUri: part.uri, title: part.shown?.title ?? part.title, artist: part.shown?.artist ?? part.artist, durationMs: part.durationMs, ...(part.imageUrl ? { imageUrl: part.imageUrl } : {}) }
       : { kind: 'speech' as const, ...(playable && part.audioKey ? { audioUrl: `api/timeline/${row.id}/audio?part=${index}` } : {}) }),
   };
 }

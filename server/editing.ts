@@ -49,15 +49,25 @@ export async function finishScript(editor: ScriptEditor, draft: Script, sources:
     catch { return undefined; }
   };
   const editing = agentOf(direction?.agents, 'editor').enabled, jury = agentOf(direction?.agents, 'jury');
-  let best = editing ? await polish(draft) : draft;
-  let score = jury.enabled ? await judge(best) : undefined;
+  const first = editing ? await polish(draft) : draft;
+  if (!jury.enabled) return first;
+  const { best, score, rounds } = await juryRounds(first, judge, editing ? (script, notes) => polish(script, notes) : undefined);
+  return { ...best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
+}
+
+/**
+ * The jury's notes are always worked in, whatever the mark: [revise] reworks the text as long as the jury
+ * names something to fix, at most REVISION_ROUNDS times, and each revision is judged again. A revision stays
+ * unless the jury marks it clearly worse; a revision that cannot be judged stays too (its notes were worked
+ * in). Without [revise] the jury only scores. Used for spoken items and for music moderation alike.
+ */
+export async function juryRounds<T>(first: T, judge: (text: T) => Promise<QualityScore | undefined>, revise?: (text: T, notes: string) => Promise<T | undefined>):
+  Promise<{ best: T; score?: QualityScore; rounds: number[] }> {
+  let best = first, score = await judge(first);
   const rounds: number[] = score ? [score.overall] : [];
-  // The jury's notes are always worked in, whatever the mark: the editor revises as long as the jury names
-  // something to fix, at most REVISION_ROUNDS times, and each revision is judged again. A revision stays
-  // unless the jury marks it clearly worse. Without the editor nobody could act on the notes: it only scores.
-  for (let round = 0; editing && score?.notes && round < REVISION_ROUNDS; round++) {
-    const second = await polish(best, score.notes);
-    if (second === best) break;
+  for (let round = 0; revise && score?.notes && round < REVISION_ROUNDS; round++) {
+    const second = await revise(best, score.notes);
+    if (second === undefined || second === best) break;
     const secondScore = await judge(second);
     if (!secondScore) { best = second; score = { ...score, notes: '' }; break; }
     rounds.push(secondScore.overall);
@@ -65,7 +75,7 @@ export async function finishScript(editor: ScriptEditor, draft: Script, sources:
     // What the sources lack stays known, even when the revision no longer names it.
     best = second; score = { ...secondScore, ...(secondScore.research || !score.research ? {} : { research: score.research }) };
   }
-  return { ...best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
+  return { best, ...(score ? { score } : {}), rounds };
 }
 
 /**

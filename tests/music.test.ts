@@ -40,6 +40,8 @@ test('Spotify search uses an app token, resolves only matching tracks and refres
   assert.deepEqual(await catalog.find({ title: 'Glory Box', artist: 'Portishead' }), { uri: 'spotify:track:orig', durationMs: 305000, imageUrl: 'https://i.scdn.co/image/mid' });
   assert.equal(tokens, 2);
   assert.match(new URL(calls.at(-1)!).searchParams.get('q')!, /^track:Glory Box artist:Portishead$/);
+  // Spotify's spelling is kept for the app where it only differs in case; «- Remastered» stays out.
+  assert.deepEqual((await catalog.find({ title: 'Glory Box', artist: 'PORTISHEAD' }))?.shown, { title: 'Glory Box', artist: 'Portishead' });
   const limited = new SpotifyCatalog({ clientId: 'id', clientSecret: 'secret' }, async input => String(input).includes('token')
     ? Response.json({ access_token: 't', expires_in: 3600 }) : new Response('', { status: 429, headers: { 'Retry-After': '30' } }));
   await assert.rejects(limited.find({ title: 'x', artist: 'y' }), (error: any) => error.status === 429 && error.retryAfterMs === 30_000);
@@ -189,7 +191,9 @@ test('block moderation: one text per moment, only the AI\'s own picks are named,
   const input = JSON.parse(body.contents[0].parts[0].text);
   assert.deepEqual(input.momente[1], { index: 1, anlässe: ['group_transition', 'before_track'], danach: { artist: 'Neu!', title: 'Hallogallo' }, von: 'Kaffee', nach: 'Entdeckungen' });
   assert.equal(input['nächste Sendung'], 'Kurzbeitrag');
-  assert.match(body.systemInstruction.parts[0].text, /über andere Songs weisst du nichts[\s\S]*Du sprichst als Mira/);
+  // Facts only from the research; no filler, no greeting; the music rules come after the persona and win.
+  assert.match(body.systemInstruction.parts[0].text, /Tatsachen über Songs und Künstler nur aus den Quellen[\s\S]*Du sprichst als Mira[\s\S]*Für Musikmoderation gilt zusätzlich und vorrangig[\s\S]*«lass dich darauf ein»[\s\S]*«Guten Morgen»/);
+  assert.deepEqual(input.quellen, []);
 });
 
 test('album covers come only from Spotify\'s image CDN', () => {
