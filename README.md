@@ -8,7 +8,7 @@ The station speaks German. Everything runs in your own Cloudflare and Google acc
 
 **Program**
 - Spoken segments from web research (Google Search grounding) or your RSS/Atom feeds, written for the ear, every claim checked against its sources.
-- A final desk rewrites each script for radio, connects it to the item before, and a quality jury scores it (★) and sends weak scripts back once.
+- A final desk rewrites each script for radio, connects it to the item before, and a quality jury scores it (★); the editor works in every note the jury makes (up to two rounds, each judged again; a revision marked a full point worse is dropped).
 - Formats: short briefs, two-host dialogs, artist/genre/theme hours with songs, music blocks from your playlists or AI picks.
 - Building blocks you add with one tap: morning briefing, weather, headlines, discovery, background, music hours, «new from your artists», «surprise». In the app they are sorted into five colour-coded rubrics (Aktuell, Wissen, Musik, Geschichten, Spezial): «Für dich» suggests four that fit the time of day and your habits, «＋ Einfügen» opens the whole catalog with search and ⭐ favourites.
 - Series: a knowledge series or an invented story in five episodes; the next episode joins the program once the one before was heard.
