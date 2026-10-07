@@ -405,19 +405,19 @@ test('a quote with a dropped or bent word still counts; an invented one does not
   assert.equal(quoteInSource('das Team hat am Dienstag nichts mitgeteilt', excerpt), false);
 });
 
-test('research searches with gemini-2.5-flash-lite; without it the main model takes over for good', async () => {
+test('research searches with gemini-3.5-flash-lite; without it the main model takes over for good', async () => {
   const models: string[] = [];
   const request = { brief: 'Raumfahrt', interests: [], avoidTopics: [], now: new Date('2026-10-06T08:00:00Z') };
   const offered = new GeminiResearcher({ key: 'g', fallback: 'gemini-3.8-flash' }, async url => { models.push(String(url).split('/models/')[1].split(':')[0]); return geminiText(''); });
   await offered.research(request);
-  assert.deepEqual(models, ['gemini-2.5-flash-lite']);
+  assert.deepEqual(models, ['gemini-3.5-flash-lite']);
   models.length = 0;
   const missing = new GeminiResearcher({ key: 'g', fallback: 'gemini-3.8-flash' }, async url => {
     const model = String(url).split('/models/')[1].split(':')[0];
     models.push(model);
-    return model === 'gemini-2.5-flash-lite' ? new Response('{}', { status: 404 }) : geminiText('');
+    return model === 'gemini-3.5-flash-lite' ? new Response('{}', { status: 404 }) : geminiText('');
   });
   await missing.research(request);
   await missing.research(request);
-  assert.deepEqual(models, ['gemini-2.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.deepEqual(models, ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash']);
 });

@@ -20,7 +20,7 @@ const sources: Source[] = [{ id: 's1', url: 'https://example.org/a', title: 'Que
 const geminiText = (text: string) => Response.json({ candidates: [{ content: { parts: [{ text }] } }] });
 const fail = (path: string, expected: string): never => { throw new ConfigError(`${path}: ${expected}`); };
 const context: StationContext = { stationName: 'Radio', when: 'Montag, 07:30', afterMusic: false };
-const marks = (overall: number) => ({ hook: overall, clarity: overall, facts: overall, novelty: overall, length: overall, notes: 'mehr Tempo' });
+const marks = (overall: number, notes = 'mehr Tempo') => ({ hook: overall, clarity: overall, facts: overall, novelty: overall, length: overall, notes });
 
 test('only changes from the defaults are stored; unknown agents and unsafe values are refused', () => {
   const writer = AGENTS.find(agent => agent.id === 'writer')!;
@@ -61,20 +61,22 @@ test('the writer, research and fact check use the owner\'s instructions and temp
   assert.equal(body.generationConfig.temperature, 0);
 });
 
-test('the final desk follows the switches and the jury\'s bar; editor and jury prompts carry the owner\'s text', async () => {
+test('the final desk follows the switches; the jury\'s notes are always worked in; prompts carry the owner\'s text', async () => {
   const draft: Script = { title: 'Entwurf', text: 'Ein Satz mit einigen Wörtern für die Probe hier.', sourceIds: ['s1'] };
   const calls: string[] = [];
+  let notes = '';
   const editor: ScriptEditor = {
     polish: async script => { calls.push('polish'); return { ...script, text: `${script.text} Neu.` }; },
-    judge: async () => { calls.push('judge'); return marks(3.8); },
+    judge: async () => { calls.push('judge'); return marks(4.8, notes); },
   };
   const run = async (config: Parameters<typeof resolveAgents>[0]) => { calls.length = 0; return finishScript(editor, draft, sources, { agents: resolveAgents(config) }, context); };
-  assert.equal((await run(undefined)).quality?.overall, 3.8);
+  assert.equal((await run(undefined)).quality?.overall, 4.8);
   assert.deepEqual(calls, ['polish', 'judge']);
-  // Below the bar the editor gets the notes again, at most twice.
-  const revised = await run({ jury: { threshold: 4.5 } });
+  // Notes are worked in even above the bar, at most twice.
+  notes = 'mehr Tempo';
+  const revised = await run(undefined);
   assert.deepEqual(calls, ['polish', 'judge', 'polish', 'judge', 'polish', 'judge']);
-  assert.deepEqual(revised.quality?.rounds, [3.8, 3.8, 3.8]);
+  assert.deepEqual(revised.quality?.rounds, [4.8, 4.8, 4.8]);
   const unedited = await run({ editor: { enabled: false }, jury: { threshold: 5 } });
   assert.deepEqual(calls, ['judge']);
   assert.equal(unedited.text, draft.text);
@@ -100,7 +102,7 @@ test('a trial run uses the unsaved settings on the last spoken item and stores n
     store, podcastAvailable: false, now: () => NOW, newId: () => 'x',
     fetchFeed: async () => [], reserveFeed: async () => {}, reserveGeneration: async () => {},
     audio: { put: async () => {}, delete: async () => {} },
-    editor: { polish: async (script, _s, direction) => ({ ...script, text: `${script.text} ${direction?.agents?.editor.instructions}` }), judge: async () => marks(4.5) },
+    editor: { polish: async (script, _s, direction) => ({ ...script, text: `${script.text} ${direction?.agents?.editor.instructions}` }), judge: async () => marks(4.5, '') },
     pipeline: {
       draft: async (_profile, _sources, _mode, direction) => ({ title: 'Neu', text: `Frisch: ${direction?.agents?.writer.instructions}`, sourceIds: ['s1'] }),
       review: async () => ({ approved: true, reasons: [] }), voice: async () => { throw new Error('no voice'); },

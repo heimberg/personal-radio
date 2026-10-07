@@ -25,7 +25,7 @@ function editor(replies: { polish: unknown[]; judge: unknown[] }) {
   return { fake, calls };
 }
 
-test('the final edit rewrites for the ear; below the bar the jury sends it back once with its notes', async () => {
+test('the final edit rewrites for the ear; the jury sends it back with its notes', async () => {
   const first = { title: 'Klarer', text: 'Ein klarer Satz. Und noch ein kurzer Satz dazu, gut hörbar.', sourceIds: ['s1'] };
   const second = { title: 'Am klarsten', text: 'Radio Melchnau. Ein klarer Einstieg, ein Gedanke pro Satz, gut.', sourceIds: ['s1'] };
   const { fake, calls } = editor({ polish: [first, second], judge: [marks(2.8, 'Einstieg schwach'), marks(4.2)] });
@@ -37,20 +37,30 @@ test('the final edit rewrites for the ear; below the bar the jury sends it back 
   assert.deepEqual(result.quality?.rounds, [2.8, 4.2]);
 });
 
-test('a second round follows when the first revision stays below the bar; a worse one is dropped and what lacks research is kept', async () => {
+test('every note is worked in: a second round follows while there are notes; only a clearly worse revision is dropped', async () => {
   const one = { title: 'Eins', text: 'Ein klarer Satz. Und noch ein kurzer Satz dazu, gut hörbar.', sourceIds: ['s1'] };
   const two = { title: 'Zwei', text: 'Ein klarer Einstieg. Ein Gedanke pro Satz, und gut hörbar dazu.', sourceIds: ['s1'] };
   const three = { title: 'Drei', text: 'Ein schwacher Einstieg, der wieder holpert und zu lang wird, leider.', sourceIds: ['s1'] };
-  const { fake, calls } = editor({
+  // Well above the bar, the notes are still worked in; a revision marked a bit lower stays.
+  const kept = editor({ polish: [one, two, three], judge: [marks(4.4, 'Einschub streichen'), marks(4.2, 'Schluss schärfen'), marks(4.5)] });
+  const result = await finishScript(kept.fake, draft, sources, undefined, context);
+  assert.deepEqual(kept.calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'Einschub streichen', 'Schluss schärfen']);
+  assert.equal(result.title, 'Drei');
+  assert.deepEqual(result.quality?.rounds, [4.4, 4.2, 4.5]);
+  // A full point worse means the notes broke something: that revision is dropped, what lacks research is kept.
+  const dropped = editor({
     polish: [one, two, three],
-    judge: [{ ...marks(2.6, 'Einschub streichen'), research: 'Wer die Wässerer heute sind' }, marks(3.1, 'Schluss schärfen'), marks(2.9, 'schlechter')],
+    judge: [{ ...marks(3.6, 'Einschub streichen'), research: 'Wer die Wässerer heute sind' }, marks(3.8, 'Schluss schärfen'), marks(2.8, 'schlechter')],
   });
-  const result = await finishScript(fake, draft, sources, undefined, context);
-  assert.equal(result.title, 'Zwei');
-  assert.deepEqual(calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'Einschub streichen', 'Schluss schärfen']);
-  assert.deepEqual(result.quality?.rounds, [2.6, 3.1, 2.9]);
-  assert.equal(result.quality?.overall, 3.1);
-  assert.equal(result.quality?.research, 'Wer die Wässerer heute sind');
+  const worse = await finishScript(dropped.fake, draft, sources, undefined, context);
+  assert.equal(worse.title, 'Zwei');
+  assert.equal(worse.quality?.overall, 3.8);
+  assert.equal(worse.quality?.research, 'Wer die Wässerer heute sind');
+  // «Keine» is nothing to fix.
+  assert.equal(parseQuality(marks(4, 'Keine.')).notes, '');
+  assert.equal(parseQuality(marks(4, '–')).notes, '');
+  assert.equal(parseQuality(marks(4, 'Gut so.')).notes, '');
+  assert.equal(parseQuality(marks(4, 'Keinen Einschub am Anfang')).notes, 'Keinen Einschub am Anfang');
 });
 
 test('with the jury\'s notes the editor may cut whole passages; the jury keeps fixes and missing research apart', async () => {
@@ -60,7 +70,7 @@ test('with the jury\'s notes the editor may cut whole passages; the jury keeps f
   await gemini.polish(draft, sources, undefined, context, 'Den Einschub streichen');
   await gemini.polish(draft, sources, undefined, context);
   await gemini.judge(draft, sources, undefined);
-  assert.match(asked[0], /darfst du ganze Passagen streichen.*Hinweise der Jury, die du beheben sollst: Den Einschub streichen/);
+  assert.match(asked[0], /Setze jeden einzelnen Hinweis der Jury.*darfst du ganze Passagen streichen.*Hinweise der Jury, die du beheben sollst: Den Einschub streichen/);
   assert.match(asked[1], /Behalte alle Tatsachen/);
   assert.match(asked[2], /gehört in research/);
   assert.deepEqual(parseQuality({ ...marks(4), notes: 'a', research: '  Wer   heute? ' }).research, 'Wer heute?');

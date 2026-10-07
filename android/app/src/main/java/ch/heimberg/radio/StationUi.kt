@@ -471,7 +471,9 @@ private fun AgentEditor(agent: AgentInfo, state: RadioState, actions: RadioActio
             Slider(value = temperature.toFloat(), onValueChange = { set(AgentSettings(temperature = (it * 20).roundToInt() / 20.0)) }, valueRange = 0f..1f, steps = 19)
             agent.threshold?.let { shipped ->
                 val threshold = own.threshold ?: shipped
-                Text("Zurück an die Schlussredaktion unter ★ ${"%.1f".format(threshold)}", style = MaterialTheme.typography.bodyMedium)
+                Text("Latte für die Auswertung: ★ ${"%.1f".format(threshold)}", style = MaterialTheme.typography.bodyMedium)
+                Text("Die Hinweise der Jury setzt die Schlussredaktion bei jedem Beitrag um. Die Latte zeigt unter «Qualität», welche Sendungen regelmässig darunter liegen.",
+                    style = MaterialTheme.typography.bodySmall, color = Nocturne.muted)
                 Slider(value = threshold.toFloat(), onValueChange = { set(AgentSettings(threshold = (it * 2).roundToInt() / 2.0)) }, valueRange = 1f..5f, steps = 7)
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, Nocturne.divider, RoundedCornerShape(12.dp)).padding(12.dp)) {
