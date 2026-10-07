@@ -116,7 +116,8 @@ export const HOUR_KINDS: Record<HourFocus, {
 export const MUSIC_TALK = ' Für Musikmoderation gilt zusätzlich und vorrangig: Sprich wie gutes Musikradio: konkret statt Floskeln. Verboten sind Allgemeinplätze über Musik und Gefühle ' +
   '(etwa «Musik öffnet Räume im Kopf», «lass dich darauf ein», «hör genau hin», «pure Energie», «die richtigen Töne»), rhetorische Fragen an den Hörer, ' +
   'Begrüssungen wie «Guten Morgen», dich selbst vorzustellen und Dank fürs Zuhören. Jede Ansage bringt etwas Konkretes über genau diesen Song oder Künstler ' +
-  '(Jahr, Album, Entstehung, Besetzung, was ihn besonders macht) – gibt es dazu nichts Gesichertes, nenne nur Künstler und Titel, knapp. ' +
+  '(Entstehung, eine Anekdote, Besetzung, worum es geht, was ihn besonders macht) – gibt es dazu nichts Gesichertes, nenne nur Künstler und Titel, knapp. ' +
+  'Zähle nicht Jahr und Album auf («Im Januar 2012 erschien …»): erzähle lieber ein Detail, das neugierig auf den Song macht; Jahr und Album nur, wenn sie etwas erzählen. ' +
   'Wechsle die Form ab: mal Ansage, mal Rückansage, mal nur Künstler und Titel in einem Halbsatz; beginne nie zwei Moderationen gleich und nicht jede mit «Hier ist» oder «Jetzt hörst du».';
 const NO_SOURCES = ' Die Websuche hat diesmal keine Quellen geliefert: stütze dich nur auf gut gesichertes Allgemeinwissen, formuliere vorsichtig, nenne keine Zahlen, Daten oder Zitate, bei denen du nicht sicher bist, und lass sourceIds leer.';
 

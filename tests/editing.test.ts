@@ -37,25 +37,34 @@ test('the final edit rewrites for the ear; the jury sends it back with its notes
   assert.deepEqual(result.quality?.rounds, [2.8, 4.2]);
 });
 
-test('every note is worked in: a second round follows while there are notes; only a clearly worse revision is dropped', async () => {
+test('every note is worked in, but only a revision the jury marks at least as good is kept', async () => {
   const one = { title: 'Eins', text: 'Ein klarer Satz. Und noch ein kurzer Satz dazu, gut hörbar.', sourceIds: ['s1'] };
   const two = { title: 'Zwei', text: 'Ein klarer Einstieg. Ein Gedanke pro Satz, und gut hörbar dazu.', sourceIds: ['s1'] };
   const three = { title: 'Drei', text: 'Ein schwacher Einstieg, der wieder holpert und zu lang wird, leider.', sourceIds: ['s1'] };
-  // Well above the bar, the notes are still worked in; a revision marked a bit lower stays.
-  const kept = editor({ polish: [one, two, three], judge: [marks(4.4, 'Einschub streichen'), marks(4.2, 'Schluss schärfen'), marks(4.5)] });
+  // Well above the bar, the notes are still worked in; an equally good revision stays.
+  const kept = editor({ polish: [one, two, three], judge: [marks(4.4, 'Einschub streichen'), marks(4.4, 'Schluss schärfen'), marks(4.5)] });
   const result = await finishScript(kept.fake, draft, sources, undefined, context);
   assert.deepEqual(kept.calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'Einschub streichen', 'Schluss schärfen']);
   assert.equal(result.title, 'Drei');
-  assert.deepEqual(result.quality?.rounds, [4.4, 4.2, 4.5]);
-  // A full point worse means the notes broke something: that revision is dropped, what lacks research is kept.
+  assert.deepEqual(result.quality?.rounds, [4.4, 4.4, 4.5]);
+  // A worse revision is dropped: the next round works the same notes into the better text again, told what went wrong.
   const dropped = editor({
     polish: [one, two, three],
-    judge: [{ ...marks(3.6, 'Einschub streichen'), research: 'Wer die Wässerer heute sind' }, marks(3.8, 'Schluss schärfen'), marks(2.8, 'schlechter')],
+    judge: [{ ...marks(3.6, 'Einschub streichen'), research: 'Wer die Wässerer heute sind' }, marks(3.4, 'holpert'), marks(3.8)],
   });
   const worse = await finishScript(dropped.fake, draft, sources, undefined, context);
-  assert.equal(worse.title, 'Zwei');
+  const notes = dropped.calls.filter(call => call.step === 'polish').map(call => call.notes);
+  assert.equal(notes[1], 'Einschub streichen');
+  assert.match(notes[2] ?? '', /^Einschub streichen \(Ein früherer Versuch.*3\.4 statt 3\.6, die Jury dazu: holpert/);
+  assert.equal(worse.title, 'Drei');
   assert.equal(worse.quality?.overall, 3.8);
+  assert.deepEqual(worse.quality?.rounds, [3.6, 3.8]);
   assert.equal(worse.quality?.research, 'Wer die Wässerer heute sind');
+  // Never worse than the first version, however the revisions turn out.
+  const never = editor({ polish: [one, two, three], judge: [marks(3.2, 'Einstieg'), marks(2.8, 'a'), marks(2.0, 'b')] });
+  const first = await finishScript(never.fake, draft, sources, undefined, context);
+  assert.equal(first.title, 'Eins');
+  assert.equal(first.quality?.overall, 3.2);
   // «Keine» is nothing to fix.
   assert.equal(parseQuality(marks(4, 'Keine.')).notes, '');
   assert.equal(parseQuality(marks(4, '–')).notes, '');
@@ -70,11 +79,11 @@ test('below the jury\'s bar after two rounds, the editor keeps revising (two mor
   const better = await finishScript(lifted.fake, draft, sources, undefined, context);
   assert.deepEqual(better.quality?.rounds, [2.6, 3.0, 3.2, 3.6]);
   assert.equal(better.title, 'Vier');
-  // Never above the bar: four revisions at most; a clearly worse one is skipped and the next round starts from the better text.
+  // Never above the bar: four revisions at most; a worse one is dropped and the next round starts from the better text.
   const stuck = editor({ polish: texts.slice(), judge: [marks(2.6, 'a'), marks(2.8, 'b'), marks(1.6, 'kaputt'), marks(3.0, 'c'), marks(3.1, 'd'), marks(3.9, 'zu spät')] });
   const result = await finishScript(stuck.fake, draft, sources, undefined, context);
-  assert.deepEqual(stuck.calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'a', 'b', 'b', 'c']);
-  assert.deepEqual(result.quality?.rounds, [2.6, 2.8, 1.6, 3.0, 3.1]);
+  assert.deepEqual(stuck.calls.filter(call => call.step === 'polish').map(call => (call.notes ?? '').slice(0, 1)), ['', 'a', 'b', 'b', 'c']);
+  assert.deepEqual(result.quality?.rounds, [2.6, 2.8, 3.0, 3.1]);
   assert.equal(result.title, 'Fünf');
 });
 
@@ -188,4 +197,14 @@ test('a topic field that came up twice in a day and a half is named as crowded; 
   assert.match(prompt, /wiederhole sie nicht, ausser es gibt wirklich Neues: «Mond», «Roboter», «Chips», «Alt»\./);
   assert.match(prompt, /Themenfelder kamen in den letzten anderthalb Tagen schon mehrfach vor; .*«KI»\./);
   assert.doesNotMatch(prompt, /«Themenfeld/);
+});
+
+test('for music moderation the jury knows announcements are short and facts come only from the song research', async () => {
+  const { GeminiScriptEditor } = await import('../server/editing.ts');
+  const asked: string[] = [];
+  const gemini = new GeminiScriptEditor(async system => { asked.push(system); return {}; });
+  await gemini.judge(draft, sources, { music: true });
+  await gemini.judge(draft, sources, undefined);
+  assert.match(asked[0], /Musikmoderation zwischen Songs.*Jahr und Album aufzuzählen/);
+  assert.doesNotMatch(asked[1], /Musikmoderation/);
 });

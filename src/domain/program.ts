@@ -55,6 +55,8 @@ export interface EditorialDirection {
   listenerNotes?: string[];
   /** A chapter of an invented story (series): written from its plan, not from news sources. */
   story?: boolean;
+  /** Music moderation between songs: short announcements by design, facts only from the song research. */
+  music?: boolean;
 }
 export interface TextGenerator {
   generate(profile: Profile, sources: Source[], direction?: EditorialDirection): Promise<Script>;
