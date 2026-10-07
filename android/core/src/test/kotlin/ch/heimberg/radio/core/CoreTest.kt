@@ -833,6 +833,11 @@ class TranscriptFollowTest {
         assertEquals(1, transcript.lineAt(0.3))
         assertEquals(2, transcript.lineAt(0.6))
         assertEquals(2, transcript.lineAt(1.5))
+        val brief = Transcript("B", listOf(TranscriptLine("Erster Satz hier. Zweiter Satz, z. B. Bern! «Dritter» folgt? Ja.", speaker = "Mia")))
+        assertEquals(listOf("Erster Satz hier.", "Zweiter Satz, z. B. Bern!", "«Dritter» folgt?", "Ja."), brief.reading.map { it.text })
+        assertEquals(listOf("Mia", null, null, null), brief.reading.map { it.speaker })
+        assertEquals(listOf(false, true, true, true), brief.reading.map { it.continues })
+        assertEquals(3, brief.lineAt(0.99))
         val hour = Transcript("H", listOf(TranscriptLine("Hallo"), TranscriptLine("Song", song = true)))
         assertEquals(null, hour.lineAt(0.5))
     }

@@ -1,4 +1,5 @@
-Die Hinweise der Qualitätsjury setzt die Schlussredaktion jetzt bei jedem Beitrag um, nicht nur bei schwachen
+Mitlesen markiert jetzt den einzelnen Satz statt den ganzen Absatz
+Quellen ohne Google-Weiterleitungsadresse
 
 # Above the first empty line: what is new in the next build, in German, one line each (at most six).
 # The Android workflow puts these lines into latest.json; the app shows them in the update note.

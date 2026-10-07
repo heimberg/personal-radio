@@ -173,16 +173,44 @@ data class Transcript(val title: String, val lines: List<TranscriptLine> = empty
     val followable: Boolean get() = lines.isNotEmpty() && lines.none { it.song }
 
     /**
-     * The line being read at [progress] (0–1 of the audio), estimated from the text length: speech runs at an
-     * even pace, so the share of characters read is about the share of time. Null when it cannot be followed.
+     * The text as it is read along: every spoken line split into its sentences, so the marking moves with the
+     * voice instead of covering a whole paragraph. A sentence that continues a line has [TranscriptLine.continues].
+     */
+    val reading: List<TranscriptLine> by lazy {
+        lines.flatMap { line ->
+            if (line.song) listOf(line)
+            else sentences(line.text).mapIndexed { index, sentence -> TranscriptLine(sentence, if (index == 0) line.speaker else null, continues = index > 0) }
+        }
+    }
+
+    /**
+     * The sentence of [reading] being read at [progress] (0–1 of the audio), estimated from the text length:
+     * speech runs at an even pace, so the share of characters read is about the share of time. Null when it
+     * cannot be followed.
      */
     fun lineAt(progress: Double): Int? {
         if (!followable || progress.isNaN()) return null
-        val lengths = lines.map { it.text.length + (it.speaker?.length ?: 0) + 1 }
+        val lengths = reading.map { it.text.length + (it.speaker?.length ?: 0) + 1 }
         val target = progress.coerceIn(0.0, 1.0) * lengths.sum()
         var sum = 0
         lengths.forEachIndexed { index, length -> sum += length; if (target < sum) return index }
-        return lines.lastIndex
+        return reading.lastIndex
+    }
+
+    companion object {
+        private val BREAK = Regex("""(?<=[.!?…][»"”]?)\s+(?=[A-ZÄÖÜ0-9«"„])""")
+
+        /** Splits after . ! ? … when a capital, a digit or a quote follows; «z. B.» and initials stay together. */
+        fun sentences(text: String): List<String> {
+            val result = mutableListOf<String>()
+            for (piece in text.trim().split(BREAK)) {
+                val previous = result.lastOrNull()
+                // «z. B. Bern», «Dr. Meier», «J. S. Bach»: a word of at most two letters before the dot is no sentence end.
+                if (previous != null && previous.endsWith(".") && previous.substringAfterLast(' ').trimEnd('.').length <= 2) result[result.lastIndex] = "$previous $piece"
+                else result += piece
+            }
+            return result.filter { it.isNotBlank() }.ifEmpty { listOf(text) }
+        }
     }
 }
 
@@ -202,7 +230,7 @@ data class Quality(val overall: Double, val notes: String = "", val research: St
 }
 
 @Serializable
-data class TranscriptLine(val text: String, val speaker: String? = null, val song: Boolean = false)
+data class TranscriptLine(val text: String, val speaker: String? = null, val song: Boolean = false, val continues: Boolean = false)
 
 /** `GET /api/library`: productions that can still be heard, newest first, and how long heard audio is kept. */
 @Serializable
