@@ -42,7 +42,7 @@ async function judgedMusic<T>(deps: StationDeps, owner: string, row: TimelineRow
   const agents = resolveAgents(config.agents);
   if (!agentOf(agents, 'jury').enabled || !deps.editor) return { text: first };
   const judge = async (text: T) => { try { return parseQuality(await deps.editor!.judge(script(text), sources, { agents, stationName: config.name, persona: config.host })); } catch { return undefined; } };
-  const { best, score, rounds } = await juryRounds(first, judge, async (text, notes) => { try { return await revise(text, notes); } catch { return undefined; } });
+  const { best, score, rounds } = await juryRounds(first, judge, async (text, notes) => { try { return await revise(text, notes); } catch { return undefined; } }, agentOf(agents, 'jury').threshold);
   if (score) await deps.store.logQuality(owner, { itemId: row.id, showId: row.show_id, overall: score.overall, at: deps.now() });
   return { text: best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
 }

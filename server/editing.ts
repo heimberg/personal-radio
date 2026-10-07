@@ -37,6 +37,8 @@ function contextPrompt(context: StationContext): string {
 export const REVISION_ROUNDS = 2;
 /** A revision is only dropped when the jury marks it this much worse: then the notes broke something. */
 export const REVISION_DROP = 1;
+/** Further rounds while the jury still marks the text below its bar after REVISION_ROUNDS. */
+export const EXTRA_ROUNDS = 2;
 
 /** Rewrites for the ear and scores; falls back to the draft whenever a step fails or breaks the contract. Either agent can be switched off. */
 export async function finishScript(editor: ScriptEditor, draft: Script, sources: Source[], direction: EditorialDirection | undefined, context: StationContext): Promise<Script> {
@@ -51,27 +53,29 @@ export async function finishScript(editor: ScriptEditor, draft: Script, sources:
   const editing = agentOf(direction?.agents, 'editor').enabled, jury = agentOf(direction?.agents, 'jury');
   const first = editing ? await polish(draft) : draft;
   if (!jury.enabled) return first;
-  const { best, score, rounds } = await juryRounds(first, judge, editing ? (script, notes) => polish(script, notes) : undefined);
+  const { best, score, rounds } = await juryRounds(first, judge, editing ? (script, notes) => polish(script, notes) : undefined, jury.threshold);
   return { ...best, ...(score ? { quality: { ...score, ...(rounds.length > 1 ? { rounds } : {}) } } : {}) };
 }
 
 /**
  * The jury's notes are always worked in, whatever the mark: [revise] reworks the text as long as the jury
- * names something to fix, at most REVISION_ROUNDS times, and each revision is judged again. A revision stays
- * unless the jury marks it clearly worse; a revision that cannot be judged stays too (its notes were worked
- * in). Without [revise] the jury only scores. Used for spoken items and for music moderation alike.
+ * names something to fix, REVISION_ROUNDS times, and up to EXTRA_ROUNDS more while the mark stays below [bar];
+ * each revision is judged again. A revision stays unless the jury marks it clearly worse (below the bar the
+ * next round tries again from the better text); a revision that cannot be judged stays too (its notes were
+ * worked in). Without [revise] the jury only scores. Used for spoken items and for music moderation alike.
  */
-export async function juryRounds<T>(first: T, judge: (text: T) => Promise<QualityScore | undefined>, revise?: (text: T, notes: string) => Promise<T | undefined>):
+export async function juryRounds<T>(first: T, judge: (text: T) => Promise<QualityScore | undefined>, revise?: (text: T, notes: string) => Promise<T | undefined>, bar = 0):
   Promise<{ best: T; score?: QualityScore; rounds: number[] }> {
   let best = first, score = await judge(first);
   const rounds: number[] = score ? [score.overall] : [];
-  for (let round = 0; revise && score?.notes && round < REVISION_ROUNDS; round++) {
+  const more = (round: number) => round < REVISION_ROUNDS || (!!score && score.overall < bar && round < REVISION_ROUNDS + EXTRA_ROUNDS);
+  for (let round = 0; revise && score?.notes && more(round); round++) {
     const second = await revise(best, score.notes);
     if (second === undefined || second === best) break;
     const secondScore = await judge(second);
     if (!secondScore) { best = second; score = { ...score, notes: '' }; break; }
     rounds.push(secondScore.overall);
-    if (secondScore.overall <= score.overall - REVISION_DROP) break;
+    if (secondScore.overall <= score.overall - REVISION_DROP) { if (score.overall < bar) continue; break; }
     // What the sources lack stays known, even when the revision no longer names it.
     best = second; score = { ...secondScore, ...(secondScore.research || !score.research ? {} : { research: score.research }) };
   }

@@ -63,6 +63,21 @@ test('every note is worked in: a second round follows while there are notes; onl
   assert.equal(parseQuality(marks(4, 'Keinen Einschub am Anfang')).notes, 'Keinen Einschub am Anfang');
 });
 
+test('below the jury\'s bar after two rounds, the editor keeps revising (two more at most)', async () => {
+  const texts = ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs'].map(title => ({ title, text: `${title}: ein klarer Satz. Und noch ein kurzer Satz dazu, gut hörbar.`, sourceIds: ['s1'] }));
+  // Still 3.2 after two rounds (bar 3.5): a third round lifts it over the bar, and there it stops.
+  const lifted = editor({ polish: texts.slice(), judge: [marks(2.6, 'a'), marks(3.0, 'b'), marks(3.2, 'c'), marks(3.6, 'd'), marks(3.8, 'e')] });
+  const better = await finishScript(lifted.fake, draft, sources, undefined, context);
+  assert.deepEqual(better.quality?.rounds, [2.6, 3.0, 3.2, 3.6]);
+  assert.equal(better.title, 'Vier');
+  // Never above the bar: four revisions at most; a clearly worse one is skipped and the next round starts from the better text.
+  const stuck = editor({ polish: texts.slice(), judge: [marks(2.6, 'a'), marks(2.8, 'b'), marks(1.6, 'kaputt'), marks(3.0, 'c'), marks(3.1, 'd'), marks(3.9, 'zu spät')] });
+  const result = await finishScript(stuck.fake, draft, sources, undefined, context);
+  assert.deepEqual(stuck.calls.filter(call => call.step === 'polish').map(call => call.notes), [undefined, 'a', 'b', 'b', 'c']);
+  assert.deepEqual(result.quality?.rounds, [2.6, 2.8, 1.6, 3.0, 3.1]);
+  assert.equal(result.title, 'Fünf');
+});
+
 test('with the jury\'s notes the editor may cut whole passages; the jury keeps fixes and missing research apart', async () => {
   const { GeminiScriptEditor } = await import('../server/editing.ts');
   const asked: string[] = [];
