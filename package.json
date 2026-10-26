@@ -14,11 +14,11 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
-    "jose": "^6.2.12"
+    "jose": "^6.2.13"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.152.0"
   }
 }
