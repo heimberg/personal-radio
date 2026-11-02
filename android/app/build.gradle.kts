@@ -67,8 +67,8 @@ dependencies {
     // Screenshot tests (src/test, golden images in src/test/screenshots): ./gradlew :app:verifyRoborazziDebug
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.77.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.77.0")
     testImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("ch.heimberg.radio:core")
@@ -99,7 +99,7 @@ dependencies {
     implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
     // Spotify's login, released together with App Remote 0.8.0: grants «app-remote-control» when App Remote asks for it.
     implementation("com.spotify.android:auth:5.0.0")
-    implementation("com.google.code.gson:gson:2.14.0")
+    implementation("com.google.code.gson:gson:2.15.0")
 }
 
 roborazzi {
